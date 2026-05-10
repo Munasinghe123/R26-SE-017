@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Header from '../components/Header';
 import InputForm from '../components/InputForm';
 import UIOutput from '../components/UIOutput';
 import DocumentationTabs from '../components/DocumentationTabs';
@@ -212,6 +211,25 @@ export default function Home() {
     }
   };
 
+  const handleClearSession = async () => {
+    if (!confirm('Clear all session data? This removes the screen plan, generated screens, and score reports.')) return;
+    try {
+      await fetch('/api/clear-session', { method: 'POST' });
+      setRequirements('');
+      setPlanScreens([]);
+      setSelectedScreenId('');
+      setGeneratedUI('');
+      setEvaluationReports([]);
+      setLogs('');
+      setOutputScreens([]);
+      setSelectedScreensForEval([]);
+      setError('');
+      setActiveStep('plan');
+    } catch (err) {
+      setError('Failed to clear session.');
+    }
+  };
+
   if (restoring) {
     return (
       <div className="min-h-screen bg-dark-bg text-text-primary flex items-center justify-center">
@@ -222,7 +240,18 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-dark-bg text-text-primary">
-      <Header />
+      <div className="flex items-center justify-between bg-dark-card border-b border-dark-hover shadow-lg px-6 py-4">
+        <div>
+          <h1 className="text-3xl font-bold text-primary">UI/UX Usability Agent</h1>
+          <p className="text-text-secondary text-sm mt-1">Generate and Evaluate UI Prototypes</p>
+        </div>
+        <button
+          onClick={handleClearSession}
+          className="px-4 py-2 text-sm rounded-md border border-red-700 text-red-400 hover:bg-red-900 transition"
+        >
+          New Session
+        </button>
+      </div>
       <main className="container mx-auto p-6">
         <div className="flex flex-wrap gap-3 mb-6">
           <button
