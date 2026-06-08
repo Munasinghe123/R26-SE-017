@@ -35,7 +35,7 @@ def generate_ui(requirements: dict, screen_type: str) -> str:
        The generated HTML as a string.
     """
     # Read the enhanced prompt template
-    with open("prompts\\generation_prompt.txt", "r", encoding="utf-8") as f:
+    with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "generation_prompt.txt"), "r", encoding="utf-8") as f:
         prompt_template_string = f.read()
 
     # Create the prompt template

@@ -5,3 +5,5 @@ jinja2
 rich
 langchain-groq
 python-dotenv
+fastapi
+uvicorn[standard]

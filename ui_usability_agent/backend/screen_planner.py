@@ -184,7 +184,7 @@ def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> Lis
 
     return per_screen_reqs
 
-def save_screen_plan(screens: List[Dict], output_path: str = "outputs/screen_plan.json"):
+def save_screen_plan(screens: List[Dict], output_path: str = os.path.join(os.path.dirname(__file__), "outputs", "screen_plan.json")):
     """Save the screen plan for inspection."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
