@@ -1,1 +1,30 @@
-{}
+{
+  "project_name": "UI Usability Agent Demo",
+  "system_description": "A simple demo app for testing the UI generation pipeline.",
+  "functional_requirements": [
+    {
+      "id": "FR1",
+      "title": "User login",
+      "description": "Users can sign in with email and password."
+    },
+    {
+      "id": "FR2",
+      "title": "View dashboard",
+      "description": "Signed-in users can see a dashboard with summary cards."
+    }
+  ],
+  "non_functional_requirements": [
+    {
+      "type": "Accessibility",
+      "description": "The UI must be keyboard accessible and meet WCAG 2.2 AA."
+    },
+    {
+      "type": "Responsiveness",
+      "description": "The UI must work well on mobile and desktop screens."
+    },
+    {
+      "type": "Usability",
+      "description": "The UI should be simple, clear, and consistent."
+    }
+  ]
+}
