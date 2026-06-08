@@ -148,6 +148,41 @@ def reports():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/clear-session")
+def clear_session():
+    import shutil
+    try:
+        to_delete = [
+            os.path.join(BASE, "outputs", "screen_plan.json"),
+            os.path.join(BASE, "outputs", "generated_screens"),
+            os.path.join(BASE, "outputs", "score_reports"),
+            os.path.join(BASE, "samples", "sample_requirements.json"),
+        ]
+        for p in to_delete:
+            try:
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                elif os.path.isfile(p):
+                    os.unlink(p)
+            except Exception:
+                pass
+        return {"cleared": True}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/plan-status")
+def plan_status():
+    try:
+        plan_path = os.path.join(BASE, "outputs", "screen_plan.json")
+        with open(plan_path, "r", encoding="utf-8") as f:
+            screens = json.load(f)
+        return {"screens": screens}
+    except Exception:
+        return {"screens": []}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
