@@ -17,7 +17,7 @@ def run_planning_phase():
     print("Starting screen planning phase...")
 
     # 1. Clean up old generated screens to avoid confusion
-    output_dir = "outputs/generated_screens"
+    output_dir = os.path.join(os.path.dirname(__file__), "outputs", "generated_screens")
     if os.path.exists(output_dir):
         print(f"[main] Cleaning up old screens in {output_dir}...")
         try:
@@ -26,7 +26,7 @@ def run_planning_phase():
             print(f"[main] Warning: Could not clean up {output_dir} (directory may be in use). Continuing anyway.")
 
     # 2. Load raw requirements
-    requirements_path = "samples/sample_requirements.json"
+    requirements_path = os.path.join(os.path.dirname(__file__), "samples", "sample_requirements.json")
     print(f"\n[main] Loading requirements from: {requirements_path}")
     try:
         with open(requirements_path, "r", encoding="utf-8") as f:
@@ -60,7 +60,7 @@ def run_generation_phase(screen_identifier: str):
     print(f"Starting generation for screen: '{screen_identifier}'...")
 
     # 1. Load the existing screen plan
-    plan_path = "outputs/screen_plan.json"
+    plan_path = os.path.join(os.path.dirname(__file__), "outputs", "screen_plan.json")
     print(f"\n[main] Loading screen plan from: {plan_path}")
     try:
         with open(plan_path, "r", encoding="utf-8") as f:
@@ -94,7 +94,7 @@ def run_generation_phase(screen_identifier: str):
         return
 
     # 3. Load the base requirements to get full context
-    requirements_path = "samples/sample_requirements.json"
+    requirements_path = os.path.join(os.path.dirname(__file__), "samples", "sample_requirements.json")
     with open(requirements_path, "r", encoding="utf-8") as f:
         raw_requirements = json.load(f)
     normalized_requirements = normalize_input(raw_requirements)
@@ -116,7 +116,7 @@ def run_generation_phase(screen_identifier: str):
     generated_html = generate_ui(screen_req, screen_type)
 
     # 6. Save the generated HTML
-    output_dir = "outputs/generated_screens"
+    output_dir = os.path.join(os.path.dirname(__file__), "outputs", "generated_screens")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{screen_id}.html")
     
@@ -131,8 +131,8 @@ def run_evaluation_phase():
     """
     Evaluates all generated screens in outputs/generated_screens/.
     """
-    screens_dir = "outputs/generated_screens"
-    reports_dir = "outputs/score_reports"
+    screens_dir = os.path.join(os.path.dirname(__file__), "outputs", "generated_screens")
+    reports_dir = os.path.join(os.path.dirname(__file__), "outputs", "score_reports")
     # Clean up old reports
     if os.path.exists(reports_dir):
         print(f"[main] Cleaning up old reports in {reports_dir}...")
