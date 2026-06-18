@@ -58,4 +58,44 @@ def generate_ui(requirements: dict, screen_type: str) -> str:
     })
 
     return generated_html
+def refine_ui(existing_html: str, requirements: dict, screen_type: str, instructions: str) -> str:
+    """
+    Revise an already-generated HTML screen to fix one targeted usability/
+    accessibility weakness, instead of regenerating the whole page from
+    scratch. Used by generator/refinement_controller.py.
+
+    Args:
+        existing_html: The HTML produced by a previous generate_ui()/refine_ui() call.
+        requirements:  The same per-screen requirements dict used originally.
+        screen_type:   The screen type (e.g. 'list', 'form', 'auth', 'detail').
+        instructions:  Targeted fix instructions from
+                        prompts.refinement_templates.get_refinement_instructions().
+
+    Returns:
+        The revised HTML as a string.
+    """
+    prompt_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "prompts", "refinement_prompt.txt"
+    )
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        prompt_template_string = f.read()
+
+    prompt_template = ChatPromptTemplate.from_template(
+        template=prompt_template_string,
+        template_format="jinja2"
+    )
+
+    requirements_json_string = json.dumps(requirements, indent=2)
+
+    llm = get_llm()
+    chain = prompt_template | llm | StrOutputParser()
+
+    revised_html = chain.invoke({
+        "existing_html": existing_html,
+        "instructions": instructions,
+        "requirements_json": requirements_json_string,
+        "screen_type_explicit": screen_type,
+    })
+
+    return revised_html
     
