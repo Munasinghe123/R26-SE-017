@@ -22,6 +22,7 @@ logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("langchain").setLevel(logging.WARNING)
 logging.getLogger("langchain_groq").setLevel(logging.WARNING)
 
+from generator.refinement_controller import run_refinement_loop
 from input_normalizer import normalize_input
 from screen_planner import plan_screens, screens_to_requirements, save_screen_plan
 from generator.ui_generator import generate_ui
@@ -164,6 +165,106 @@ def generate(req: GenerateRequest):
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))
 
+class RefineRequest(BaseModel):
+    screenId: str
+
+
+@app.post("/api/refine")
+def refine(req: RefineRequest):
+    try:
+        with capture_logs() as buf:
+            _log(buf, f"Refinement loop started for screen: '{req.screenId}'")
+
+            plan_path = os.path.join(BASE, "outputs", "screen_plan.json")
+            with open(plan_path, "r", encoding="utf-8") as f:
+                screens = json.load(f)
+
+            screen_id = req.screenId
+            target = None
+            if screen_id.isdigit():
+                idx = int(screen_id) - 1
+                if 0 <= idx < len(screens):
+                    target = screens[idx]
+            if not target:
+                target = next((s for s in screens if s.get("screen_id") == screen_id), None)
+            if not target:
+                raise HTTPException(status_code=404, detail=f"Screen '{screen_id}' not found")
+
+            req_path = os.path.join(BASE, "samples", "sample_requirements.json")
+            with open(req_path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            normalized = normalize_input(raw)
+            per_screen = screens_to_requirements([target], normalized)
+            screen_req = per_screen[0]
+            screen_type = screen_req.get("screen_type", "unknown")
+
+            existing_html_path = os.path.join(BASE, "outputs", "generated_screens", f"{screen_req['screen_id']}.html")
+            initial_html = None
+            if os.path.exists(existing_html_path):
+                with open(existing_html_path, "r", encoding="utf-8") as f:
+                    initial_html = f.read()
+                _log(buf, "Found existing generated HTML — refining it instead of generating fresh.")
+            else:
+                _log(buf, "No existing HTML found — will generate a first pass before refining.")
+
+            _log(buf, "Running refinement loop (up to 5 iterations)...")
+            start = time.time()
+            result = run_refinement_loop(screen_req, screen_type, initial_html=initial_html)
+            elapsed = round(time.time() - start, 1)
+            _log(buf, f"Refinement loop finished in {elapsed}s after {result['iterations']} iteration(s).")
+
+            for entry in result["history"]:
+                rpt = entry["report"]
+                _log(buf, f"  Iter {entry['iteration']}: total={rpt['total_score']} "
+                          f"(ISO {rpt['iso_score']} / Nielsen {rpt['nielsen_score']} / WCAG {rpt['wcag_score']}) "
+                          f"threshold={rpt['threshold']} passed={rpt['passed']}")
+                if entry["applied_fix"]:
+                    _log(buf, f"    -> fixed: {entry['applied_fix']['weakest_standard']} / "
+                              f"{entry['applied_fix']['weakest_metric']}")
+                if entry["regressions"]:
+                    _log(buf, f"    -> WARNING regressions: {entry['regressions']}")
+
+            _log(buf, f"Final score: {result['final_report']['total_score']} "
+                      f"(passed={result['passed']}, regressed_from_best={result['regressed']})")
+
+            out_dir = os.path.join(BASE, "outputs", "generated_screens")
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f"{screen_req['screen_id']}.html")
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(result["final_html"])
+            _log(buf, f"Final HTML saved to {out_path}")
+
+            reports_dir = os.path.join(BASE, "outputs", "score_reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            report_path = os.path.join(reports_dir, f"{screen_req['screen_id']}_score_report.json")
+            with open(report_path, "w", encoding="utf-8") as f:
+                json.dump(result["final_report"], f, indent=2, ensure_ascii=False)
+            _log(buf, f"Final report saved to {report_path}")
+
+            history_summary = [
+                {
+                    "iteration": e["iteration"],
+                    "report": e["report"],
+                    "appliedFix": e["applied_fix"],
+                    "regressions": e["regressions"],
+                }
+                for e in result["history"]
+            ]
+
+        return {
+            "screenId": screen_req["screen_id"],
+            "html": result["final_html"],
+            "finalReport": result["final_report"],
+            "passed": result["passed"],
+            "iterations": result["iterations"],
+            "regressed": result["regressed"],
+            "history": history_summary,
+            "logs": {"stdout": buf.getvalue(), "stderr": ""},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/evaluate")
 def evaluate_screens(req: EvaluateRequest):
