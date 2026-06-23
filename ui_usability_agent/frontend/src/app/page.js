@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import InputForm from '../components/InputForm';
 import UIOutput from '../components/UIOutput';
 import DocumentationTabs from '../components/DocumentationTabs';
+import RefinementHistory from '../components/RefinementHistory';
 
 export default function Home() {
   const [activeStep, setActiveStep] = useState('plan');
@@ -12,13 +13,15 @@ export default function Home() {
   const [selectedScreenId, setSelectedScreenId] = useState('');
   const [generatedUI, setGeneratedUI] = useState('');
   const [evaluationReports, setEvaluationReports] = useState([]);
-  const [loading, setLoading] = useState({ plan: false, generate: false, evaluate: false });
+  const [loading, setLoading] = useState({ plan: false, generate: false, evaluate: false ,refine: false});
   const [error, setError] = useState('');
   const [logs, setLogs] = useState('');
   const [outputScreens, setOutputScreens] = useState([]);
   const [outputsLoading, setOutputsLoading] = useState(false);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [selectedScreensForEval, setSelectedScreensForEval] = useState([]);
+  const [selectedScreenForRefine, setSelectedScreenForRefine] = useState('');
+  const [refinementResult, setRefinementResult] = useState(null);
   const [restoring, setRestoring] = useState(true);
 
   useEffect(() => {
@@ -210,6 +213,38 @@ export default function Home() {
       setLoading((prev) => ({ ...prev, evaluate: false }));
     }
   };
+  
+  const handleRefine = async () => {
+    try {
+      setError('');
+      if (!selectedScreenForRefine) {
+        setError('Select a screen to refine.');
+        return;
+      }
+
+      setLoading((prev) => ({ ...prev, refine: true }));
+      const response = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ screenId: selectedScreenForRefine }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Refinement failed.');
+      }
+
+      setGeneratedUI(data.html || '');
+      setRefinementResult(data);
+      setLogs(formatLogs(data.logs));
+      loadOutputs();
+      loadReports();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refinement failed.');
+    } finally {
+      setLoading((prev) => ({ ...prev, refine: false }));
+    }
+  };
 
   const handleClearSession = async () => {
     if (!confirm('Clear all session data? This removes the screen plan, generated screens, and score reports.')) return;
@@ -223,6 +258,8 @@ export default function Home() {
       setLogs('');
       setOutputScreens([]);
       setSelectedScreensForEval([]);
+      setSelectedScreenForRefine('');
+      setRefinementResult(null);
       setError('');
       setActiveStep('plan');
     } catch (err) {
@@ -271,6 +308,12 @@ export default function Home() {
             onClick={() => setActiveStep('evaluate')}
           >
             3. Evaluation
+          </button>
+          <button
+            className={`px-4 py-2 rounded-full border transition ${activeStep === 'refine' ? 'bg-primary-dark text-dark-bg font-semibold' : 'bg-dark-card border-dark-hover text-text-primary hover:border-primary'}`}
+            onClick={() => setActiveStep('refine')}
+          >
+            4. Refinement
           </button>
         </div>
 
@@ -494,6 +537,66 @@ export default function Home() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+        {activeStep === 'refine' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-dark-card p-6 rounded-lg shadow-md border border-dark-hover">
+              <h2 className="text-xl font-semibold mb-4 text-primary">Run Refinement Loop</h2>
+              <p className="text-text-secondary mb-4">
+                Evaluates the selected screen, fixes its weakest sub-metric, re-evaluates, and
+                repeats up to 5 iterations or until the threshold is reached.
+              </p>
+              <label className="block text-sm font-medium text-text-secondary mb-2">Select screen</label>
+              <select
+                className="w-full p-2 border border-dark-hover bg-dark-bg text-text-primary rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                value={selectedScreenForRefine}
+                onChange={(e) => setSelectedScreenForRefine(e.target.value)}
+              >
+                <option value="">Choose a screen</option>
+                {outputScreens.map((screenId) => (
+                  <option key={screenId} value={screenId}>
+                    {screenId}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="mt-4 bg-primary text-black px-6 py-2 rounded-md hover:bg-primary-light transition font-semibold"
+                onClick={handleRefine}
+                disabled={loading.refine}
+              >
+                {loading.refine ? 'Refining (this can take a while)...' : 'Run Refinement'}
+              </button>
+              {refinementResult && (
+                <div className="mt-4 flex gap-3">
+                  <button
+                    className="text-sm text-primary hover:text-primary-light transition"
+                    onClick={() => window.open(`/preview/${refinementResult.screenId}`, '_blank')}
+                  >
+                    Open refined preview
+                  </button>
+                  <button
+                    className="text-sm text-primary hover:text-primary-light transition"
+                    onClick={() => window.open(`/reports/${refinementResult.screenId}`, '_blank')}
+                  >
+                    Open full report
+                  </button>
+                </div>
+              )}
+            </div>
+            <UIOutput generatedUI={generatedUI} />
+          </div>
+        )}
+
+        {activeStep === 'refine' && refinementResult && (
+          <div className="bg-dark-card p-6 rounded-lg shadow-md mt-6 border border-dark-hover">
+            <h2 className="text-xl font-semibold mb-4 text-primary">Refinement History — {refinementResult.screenId}</h2>
+            <RefinementHistory
+              history={refinementResult.history}
+              finalReport={refinementResult.finalReport}
+              passed={refinementResult.passed}
+              regressed={refinementResult.regressed}
+            />
           </div>
         )}
 

@@ -158,9 +158,5 @@ yarn.lock
 
 # Backend generated outputs and runtime files
 /backend/outputs/
-/backend/samples/
-/backend/outputs/screen_plan.json
-/backend/outputs/generated_screens/
-/backend/outputs/score_reports/
 
 
