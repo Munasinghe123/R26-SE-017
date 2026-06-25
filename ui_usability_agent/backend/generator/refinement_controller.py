@@ -3,16 +3,13 @@ generator/refinement_controller.py
 ===================================
 Iterative refinement loop for generated UI prototypes.
 
-Pipeline: evaluate -> if it doesn't pass this iteration's threshold, look
-up a targeted fix prompt for the weakest sub-metric and ask the LLM to
-revise the existing HTML (not regenerate from scratch) -> re-evaluate ->
-repeat, up to 5 iterations total, matching the thresholds already defined
-in evaluator/composite_scorer.py (65 / 75 / 85 / 85 / 85).
+Each iteration collects ALL sub-metrics scoring below 2 across every
+standard, bundles their fix instructions into one combined prompt, and
+sends a single targeted revision request to the LLM. This is more
+effective than fixing one metric per pass, because Nielsen typically has
+multiple low-scoring sub-metrics simultaneously.
 
-This is intentionally a plain bounded loop, not a LangGraph agent graph —
-each step is a straightforward evaluate -> diagnose -> revise -> re-evaluate
-cycle with explicit regression checking, which doesn't need branching or
-shared graph state to express.
+Deliberately a plain bounded loop — no LangGraph needed.
 """
 
 from typing import Dict, List, Optional
@@ -22,6 +19,57 @@ from generator.ui_generator import generate_ui, refine_ui
 from prompts.refinement_templates import get_refinement_instructions
 
 MAX_ITERATIONS = 5
+WEAK_THRESHOLD = 2   # sub-metric scores at or below this get included in fix
+
+
+def _collect_weak_instructions(report: dict) -> tuple:
+    """
+    Scan all sub-metric scores across ISO, Nielsen, and WCAG and collect
+    fix instructions for every metric scoring <= WEAK_THRESHOLD.
+
+    Returns (combined_instructions: str, fixes_list: list)
+    where fixes_list is for logging/history.
+    """
+    fixes = []
+
+    # ISO sub-scores
+    iso_sub = report.get("iso_details", {}).get("sub_scores", {})
+    for metric, score in iso_sub.items():
+        if score <= WEAK_THRESHOLD:
+            instructions = get_refinement_instructions("ISO", metric)
+            fixes.append({"standard": "ISO", "metric": metric, "score": score, "instructions": instructions})
+
+    # Nielsen sub-scores
+    nielsen_sub = report.get("nielsen_details", {}).get("sub_scores", {})
+    for metric, score in nielsen_sub.items():
+        if score <= WEAK_THRESHOLD:
+            instructions = get_refinement_instructions("Nielsen", metric)
+            fixes.append({"standard": "Nielsen", "metric": metric, "score": score, "instructions": instructions})
+
+    # WCAG — use weakest_pour if WCAG score is low
+    if report.get("wcag_score", 100) < 70:
+        weakest_pour = report.get("wcag_details", {}).get("weakest_pour", "unavailable")
+        instructions = get_refinement_instructions("WCAG", weakest_pour)
+        fixes.append({"standard": "WCAG", "metric": weakest_pour, "score": report["wcag_score"], "instructions": instructions})
+
+    if not fixes:
+        # nothing obviously weak — fall back to weakest standard
+        instructions = get_refinement_instructions(
+            report["weakest_standard"], report["weakest_metric"]
+        )
+        fixes.append({
+            "standard": report["weakest_standard"],
+            "metric": report["weakest_metric"],
+            "score": None,
+            "instructions": instructions,
+        })
+
+    # Combine into one prompt block
+    combined = "\n\n".join(
+        f"FIX {i+1} ({f['standard']} / {f['metric']}):\n{f['instructions']}"
+        for i, f in enumerate(fixes)
+    )
+    return combined, fixes
 
 
 def run_refinement_loop(
@@ -35,32 +83,15 @@ def run_refinement_loop(
 
     Parameters
     ----------
-    requirements   : dict  Per-screen requirements payload, as produced by
-                            screen_planner.screens_to_requirements().
-    screen_type    : str   e.g. "list", "form", "auth", "detail".
-    initial_html   : str or None. If None, a fresh first-pass HTML is
-                            generated via generate_ui(). Pass an existing
-                            HTML string to refine an already generated
-                            screen instead of generating a new one.
-    max_iterations : int   Hard cap on refinement iterations (default 5,
-                            matching the thresholds defined in
-                            composite_scorer.evaluate()).
+    requirements   : dict
+    screen_type    : str
+    initial_html   : str or None — if None, generates a fresh first pass
+    max_iterations : int — hard cap (default 5)
 
     Returns
     -------
-    dict
-        final_html   str   Best-scoring HTML produced across all iterations.
-        final_report dict  evaluate() report matching final_html.
-        passed       bool  Whether final_report met its iteration threshold.
-        iterations   int   Number of iterations actually run.
-        history      list  One entry per iteration:
-                              {iteration, html, report, regressions,
-                               applied_fix}
-                            applied_fix is None on the iteration where the
-                            loop stopped (passed, or iterations exhausted).
-        regressed    bool  True if the last iteration run scored lower than
-                            the best iteration seen, meaning final_html was
-                            rolled back to an earlier iteration.
+    dict with keys:
+        final_html, final_report, passed, iterations, history, regressed
     """
     html = initial_html or generate_ui(requirements, screen_type)
 
@@ -81,23 +112,26 @@ def run_refinement_loop(
         }
         history.append(entry)
 
+        # Track best scoring iteration for regression rollback
         if best_entry is None or report["total_score"] >= best_entry["report"]["total_score"]:
             best_entry = entry
 
+        # Stop if target reached or iterations exhausted
         if report["total_score"] >= 85 or iteration == max_iterations:
             break
 
-        instructions = get_refinement_instructions(
-            report["weakest_standard"], report["weakest_metric"]
-        )
+        # Collect ALL weak sub-metrics and bundle into one fix prompt
+        combined_instructions, fixes_list = _collect_weak_instructions(report)
+
         entry["applied_fix"] = {
             "weakest_standard": report["weakest_standard"],
             "weakest_metric": report["weakest_metric"],
-            "instructions": instructions,
+            "all_fixes": fixes_list,
+            "instructions": combined_instructions,
         }
 
         previous_report = report
-        html = refine_ui(html, requirements, screen_type, instructions)
+        html = refine_ui(html, requirements, screen_type, combined_instructions)
 
     last_entry = history[-1]
     regressed = best_entry is not last_entry

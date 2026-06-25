@@ -54,34 +54,19 @@ def system_status_score(soup: BeautifulSoup) -> int:
 
 
 def user_control_score(soup: BeautifulSoup) -> int:
-    """
-    H3 — User control and freedom.
-
-    Counts elements whose visible text matches recognised control terms:
-    cancel, back, reset, undo, go back, return, clear, dismiss, close.
-
-    Non-linear mapping reflects that even one exit control provides a
-    meaningful escape path; additional controls give diminishing returns.
-
-    Returns: 0 found→0  1→2  2→3  3+→4
-
-    Ref: Nielsen (1994) H3; Cooper et al. (2014) About Face §18
-    """
     CONTROL_TERMS = {
         'cancel', 'back', 'reset', 'undo', 'go back',
         'return', 'clear', 'dismiss', 'close',
     }
     found = {
         id(el) for el in soup.find_all(True)
-        if el.get_text(strip=True).lower() in CONTROL_TERMS
+        if any(term in el.get_text(strip=True).lower() for term in CONTROL_TERMS)
     }
     count = len(found)
-
     if count == 0:   return 0
     elif count == 1: return 2
     elif count == 2: return 3
     else:            return 4
-
 
 def button_consistency_score(soup: BeautifulSoup) -> int:
     """
