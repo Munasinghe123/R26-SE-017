@@ -84,7 +84,7 @@ def run_refinement_loop(
         if best_entry is None or report["total_score"] >= best_entry["report"]["total_score"]:
             best_entry = entry
 
-        if report["passed"] or iteration == max_iterations:
+        if report["total_score"] >= 85 or iteration == max_iterations:
             break
 
         instructions = get_refinement_instructions(
@@ -105,7 +105,7 @@ def run_refinement_loop(
     return {
         "final_html": best_entry["html"],
         "final_report": best_entry["report"],
-        "passed": bool(best_entry["report"]["passed"]),
+        "passed": best_entry["report"]["total_score"] >= 85,
         "iterations": len(history),
         "history": history,
         "regressed": regressed,
