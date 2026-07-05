@@ -12,6 +12,8 @@ async def handle_audio_upload(file):
         "audio_path": path,
        
     })
+    
+    print("result", result);
 
     meeting_id=save_requirements(result["requirements"])
 

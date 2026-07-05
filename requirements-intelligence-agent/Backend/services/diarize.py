@@ -4,7 +4,7 @@ import os
 pipeline = Pipeline.from_pretrained(
     
     "pyannote/speaker-diarization-3.1",
-    token=os.getenv("DIARIZE_AUTH_TOKEN") 
+    use_auth_token=os.getenv("DIARIZE_AUTH_TOKEN") 
 )
 
 def diarize_audio(path):
