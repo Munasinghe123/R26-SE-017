@@ -12,7 +12,7 @@ The current workflow is implemented as separate planning, generation, and evalua
 
 ## Web Interface
 
-The project includes a Next.js-based web interface for interactive use without the command line.
+The project includes a Vite + React web interface for interactive use without the command line.
 
 ### Features
 
@@ -22,7 +22,16 @@ The project includes a Next.js-based web interface for interactive use without t
 - **Persistence**: Sessions persist across browser refreshes and server restarts
 - **Clear Session**: "New Session" button to clear all data and start fresh
 
-### Running the Frontend
+### Running the App
+
+Run the backend in one terminal:
+
+```bash
+cd backend
+python api.py
+```
+
+Run the frontend in a second terminal:
 
 ```bash
 cd frontend
@@ -75,40 +84,23 @@ ui_usability_agent/
 │   ├── score_reports/
 │   └── screen_plan.json
 ├── frontend/
+│   ├── index.html
+│   ├── vite.config.js
 │   ├── src/
-│   │   ├── app/
-│   │   │   ├── api/
-│   │   │   │   ├── clear-session/
-│   │   │   │   │   └── route.js
-│   │   │   │   ├── evaluate/
-│   │   │   │   │   └── route.js
-│   │   │   │   ├── generate/
-│   │   │   │   │   └── route.js
-│   │   │   │   ├── outputs/
-│   │   │   │   │   └── route.js
-│   │   │   │   ├── plan/
-│   │   │   │   │   └── route.js
-│   │   │   │   ├── plan-status/
-│   │   │   │   │   └── route.js
-│   │   │   │   └── reports/
-│   │   │   │       └── route.js
-│   │   │   ├── preview/
-│   │   │   │   └── [screenId]/
-│   │   │   │       └── page.js
-│   │   │   ├── reports/
-│   │   │   │   └── [screenId]/
-│   │   │   │       └── page.js
-│   │   │   ├── globals.css
-│   │   │   ├── layout.js
-│   │   │   └── page.js
+│   │   ├── App.jsx
+│   │   ├── index.css
+│   │   ├── main.jsx
+│   │   ├── pages/
+│   │   │   ├── Home.jsx
+│   │   │   ├── PreviewPage.jsx
+│   │   │   └── ReportPage.jsx
 │   │   └── components/
-│   │       ├── DocumentationTabs.js
-│   │       ├── Header.js
-│   │       ├── InputForm.js
-│   │       └── UIOutput.js
-│   ├── package.json
-│   ├── next.config.mjs
-│   └── ...
+│   │       ├── DocumentationTabs.jsx
+│   │       ├── Header.jsx
+│   │       ├── InputForm.jsx
+│   │       ├── RefinementHistory.jsx
+│   │       └── UIOutput.jsx
+│   └── package.json
 ├── input_normalizer.py
 ├── main.py
 ├── screen_planner.py
@@ -172,6 +164,8 @@ python main.py --evaluate
 ```
 
 If you run `python main.py` with no flags, the script prints the available commands.
+
+To run the web app, start the backend and frontend using the commands in the Web Interface section above.
 
 ## Outputs
 
