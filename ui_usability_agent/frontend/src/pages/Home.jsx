@@ -1,269 +1,225 @@
-'use client';
+import React, { useState, useEffect } from 'react'
+import axios from 'axios'
+import InputForm from '../components/InputForm'
+import UIOutput from '../components/UIOutput'
+import DocumentationTabs from '../components/DocumentationTabs'
+import RefinementHistory from '../components/RefinementHistory'
 
-import React, { useState, useEffect } from 'react';
-import InputForm from '../components/InputForm';
-import UIOutput from '../components/UIOutput';
-import DocumentationTabs from '../components/DocumentationTabs';
-import RefinementHistory from '../components/RefinementHistory';
+const API_BASE = 'http://127.0.0.1:8001'
 
 export default function Home() {
-  const [activeStep, setActiveStep] = useState('plan');
-  const [requirements, setRequirements] = useState('');
-  const [planScreens, setPlanScreens] = useState([]);
-  const [selectedScreenId, setSelectedScreenId] = useState('');
-  const [generatedUI, setGeneratedUI] = useState('');
-  const [evaluationReports, setEvaluationReports] = useState([]);
-  const [loading, setLoading] = useState({ plan: false, generate: false, evaluate: false ,refine: false});
-  const [error, setError] = useState('');
-  const [logs, setLogs] = useState('');
-  const [outputScreens, setOutputScreens] = useState([]);
-  const [outputsLoading, setOutputsLoading] = useState(false);
-  const [reportsLoading, setReportsLoading] = useState(false);
-  const [selectedScreensForEval, setSelectedScreensForEval] = useState([]);
-  const [selectedScreenForRefine, setSelectedScreenForRefine] = useState('');
-  const [refinementResult, setRefinementResult] = useState(null);
-  const [restoring, setRestoring] = useState(true);
+  const [activeStep, setActiveStep] = useState('plan')
+  const [requirements, setRequirements] = useState('')
+  const [planScreens, setPlanScreens] = useState([])
+  const [selectedScreenId, setSelectedScreenId] = useState('')
+  const [generatedUI, setGeneratedUI] = useState('')
+  const [evaluationReports, setEvaluationReports] = useState([])
+  const [loading, setLoading] = useState({ plan: false, generate: false, evaluate: false ,refine: false})
+  const [error, setError] = useState('')
+  const [logs, setLogs] = useState('')
+  const [outputScreens, setOutputScreens] = useState([])
+  const [outputsLoading, setOutputsLoading] = useState(false)
+  const [reportsLoading, setReportsLoading] = useState(false)
+  const [selectedScreensForEval, setSelectedScreensForEval] = useState([])
+  const [selectedScreenForRefine, setSelectedScreenForRefine] = useState('')
+  const [refinementResult, setRefinementResult] = useState(null)
+  const [restoring, setRestoring] = useState(true)
 
   useEffect(() => {
     const restore = async () => {
       try {
         const [outputsRes, planRes, reportsRes] = await Promise.all([
-          fetch('/api/outputs'),
-          fetch('/api/plan-status'),
-          fetch('/api/reports'),
-        ]);
+          axios.get(`${API_BASE}/api/outputs`),
+          axios.get(`${API_BASE}/api/plan-status`),
+          axios.get(`${API_BASE}/api/reports`),
+        ])
 
-        if (outputsRes.ok) {
-          const outputsData = await outputsRes.json();
-          const screens = outputsData.screens || [];
-          setOutputScreens(screens);
-          if (screens.length > 0) {
-            setActiveStep('evaluate');
-          }
+        const outputsData = outputsRes.data
+        const screens = outputsData.screens || []
+        setOutputScreens(screens)
+        if (screens.length > 0) {
+          setActiveStep('evaluate')
         }
 
-        if (planRes.ok) {
-          const planData = await planRes.json();
-          if (planData.screens && planData.screens.length > 0) {
-            setPlanScreens(planData.screens);
-            setSelectedScreenId(planData.screens[0]?.screen_id || '');
-          }
+        const planData = planRes.data
+        if (planData.screens && planData.screens.length > 0) {
+          setPlanScreens(planData.screens)
+          setSelectedScreenId(planData.screens[0]?.screen_id || '')
         }
 
-        if (reportsRes.ok) {
-          const reportsData = await reportsRes.json();
-          if (reportsData.reports && reportsData.reports.length > 0) {
-            setEvaluationReports(reportsData.reports);
-          }
+        const reportsData = reportsRes.data
+        if (reportsData.reports && reportsData.reports.length > 0) {
+          setEvaluationReports(reportsData.reports)
         }
       } catch (err) {
-        console.warn('[restore] Could not restore state:', err);
+        console.warn('[restore] Could not restore state:', err)
       } finally {
-        setRestoring(false);
+        setRestoring(false)
       }
-    };
+    }
 
-    restore();
-  }, []);
+    restore()
+  }, [])
 
   const formatLogs = (logData) => {
-    if (!logData) return '';
-    const stdout = logData.stdout ? `STDOUT:\n${logData.stdout}` : '';
-    const stderr = logData.stderr ? `STDERR:\n${logData.stderr}` : '';
-    return [stdout, stderr].filter(Boolean).join('\n\n');
-  };
+    if (!logData) return ''
+    const stdout = logData.stdout ? `STDOUT:\n${logData.stdout}` : ''
+    const stderr = logData.stderr ? `STDERR:\n${logData.stderr}` : ''
+    return [stdout, stderr].filter(Boolean).join('\n\n')
+  }
 
   const loadOutputs = async () => {
     try {
-      setOutputsLoading(true);
-      const response = await fetch('/api/outputs');
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load outputs.');
-      }
-      setOutputScreens(data.screens || []);
+      setOutputsLoading(true)
+      const response = await axios.get(`${API_BASE}/api/outputs`)
+      const data = response.data
+      setOutputScreens(data.screens || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load outputs.');
+      setError(err instanceof Error ? err.message : 'Failed to load outputs.')
     } finally {
-      setOutputsLoading(false);
+      setOutputsLoading(false)
     }
-  };
+  }
 
   const previewOutput = async (screenId) => {
     try {
-      setError('');
-      const response = await fetch(`/api/outputs?screenId=${encodeURIComponent(screenId)}`);
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load output.');
-      }
-      setGeneratedUI(data.html || '');
+      setError('')
+      const response = await axios.get(`${API_BASE}/api/outputs`, {
+        params: { screenId },
+      })
+      const data = response.data
+      setGeneratedUI(data.html || '')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load output.');
+      setError(err instanceof Error ? err.message : 'Failed to load output.')
     }
-  };
+  }
 
   const loadReports = async () => {
     try {
-      setReportsLoading(true);
-      const response = await fetch('/api/reports');
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load reports.');
-      }
-      setEvaluationReports(data.reports || []);
+      setReportsLoading(true)
+      const response = await axios.get(`${API_BASE}/api/reports`)
+      const data = response.data
+      setEvaluationReports(data.reports || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load reports.');
+      setError(err instanceof Error ? err.message : 'Failed to load reports.')
     } finally {
-      setReportsLoading(false);
+      setReportsLoading(false)
     }
-  };
+  }
 
   const handlePlan = async () => {
     try {
-      setError('');
-      setLoading((prev) => ({ ...prev, plan: true }));
+      setError('')
+      setLoading((prev) => ({ ...prev, plan: true }))
       if (!requirements.trim()) {
-        throw new Error('Please provide requirements JSON or upload a file.');
+        throw new Error('Please provide requirements JSON or upload a file.')
       }
 
-      let parsedRequirements;
+      let parsedRequirements
       try {
-        parsedRequirements = JSON.parse(requirements);
+        parsedRequirements = JSON.parse(requirements)
       } catch (parseError) {
-        throw new Error('Requirements must be valid JSON.');
+        throw new Error('Requirements must be valid JSON.')
       }
 
-      const response = await fetch('/api/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirements: parsedRequirements }),
-      });
+      const response = await axios.post(`${API_BASE}/api/plan`, { requirements: parsedRequirements })
+      const data = response.data
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Planning failed.');
-      }
-
-      setPlanScreens(data.screens || []);
-      setSelectedScreenId(data.screens?.[0]?.screen_id || '');
-      setLogs(formatLogs(data.logs));
-      setActiveStep('generate');
+      setPlanScreens(data.screens || [])
+      setSelectedScreenId(data.screens?.[0]?.screen_id || '')
+      setLogs(formatLogs(data.logs))
+      setActiveStep('generate')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Planning failed.');
+      setError(err instanceof Error ? err.message : 'Planning failed.')
     } finally {
-      setLoading((prev) => ({ ...prev, plan: false }));
+      setLoading((prev) => ({ ...prev, plan: false }))
     }
-  };
+  }
 
   const handleGenerate = async () => {
     try {
-      setError('');
+      setError('')
       if (!selectedScreenId) {
-        setError('Select a screen to generate.');
-        return;
+        setError('Select a screen to generate.')
+        return
       }
 
-      setLoading((prev) => ({ ...prev, generate: true }));
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ screenId: selectedScreenId }),
-      });
+      setLoading((prev) => ({ ...prev, generate: true }))
+      const response = await axios.post(`${API_BASE}/api/generate`, { screenId: selectedScreenId })
+      const data = response.data
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Generation failed.');
-      }
-
-      setGeneratedUI(data.html || '');
-      setLogs(formatLogs(data.logs));
-      setActiveStep('evaluate');
-      loadOutputs();
+      setGeneratedUI(data.html || '')
+      setLogs(formatLogs(data.logs))
+      setActiveStep('evaluate')
+      loadOutputs()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generation failed.');
+      setError(err instanceof Error ? err.message : 'Generation failed.')
     } finally {
-      setLoading((prev) => ({ ...prev, generate: false }));
+      setLoading((prev) => ({ ...prev, generate: false }))
     }
-  };
+  }
 
   const handleEvaluate = async () => {
     try {
-      setError('');
-      setLoading((prev) => ({ ...prev, evaluate: true }));
+      setError('')
+      setLoading((prev) => ({ ...prev, evaluate: true }))
 
-      const body = selectedScreensForEval.length > 0 ? { screenIds: selectedScreensForEval } : {};
-      const response = await fetch('/api/evaluate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await response.json();
+      const body = selectedScreensForEval.length > 0 ? { screenIds: selectedScreensForEval } : {}
+      const response = await axios.post(`${API_BASE}/api/evaluate`, body)
+      const data = response.data
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Evaluation failed.');
-      }
-
-      setEvaluationReports(data.reports || []);
-      setLogs(formatLogs(data.logs));
-      loadReports();
+      setEvaluationReports(data.reports || [])
+      setLogs(formatLogs(data.logs))
+      loadReports()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Evaluation failed.');
+      setError(err instanceof Error ? err.message : 'Evaluation failed.')
     } finally {
-      setLoading((prev) => ({ ...prev, evaluate: false }));
+      setLoading((prev) => ({ ...prev, evaluate: false }))
     }
-  };
+  }
   
   const handleRefine = async () => {
     try {
-      setError('');
+      setError('')
       if (!selectedScreenForRefine) {
-        setError('Select a screen to refine.');
-        return;
+        setError('Select a screen to refine.')
+        return
       }
 
-      setLoading((prev) => ({ ...prev, refine: true }));
-      const response = await fetch('/api/refine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ screenId: selectedScreenForRefine }),
-      });
+      setLoading((prev) => ({ ...prev, refine: true }))
+      const response = await axios.post(`${API_BASE}/api/refine`, { screenId: selectedScreenForRefine })
+      const data = response.data
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Refinement failed.');
-      }
-
-      setGeneratedUI(data.html || '');
-      setRefinementResult(data);
-      setLogs(formatLogs(data.logs));
-      loadOutputs();
-      loadReports();
+      setGeneratedUI(data.html || '')
+      setRefinementResult(data)
+      setLogs(formatLogs(data.logs))
+      loadOutputs()
+      loadReports()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Refinement failed.');
+      setError(err instanceof Error ? err.message : 'Refinement failed.')
     } finally {
-      setLoading((prev) => ({ ...prev, refine: false }));
+      setLoading((prev) => ({ ...prev, refine: false }))
     }
-  };
+  }
 
   const handleClearSession = async () => {
-    if (!confirm('Clear all session data? This removes the screen plan, generated screens, and score reports.')) return;
+    if (!confirm('Clear all session data? This removes the screen plan, generated screens, and score reports.')) return
     try {
-      await fetch('/api/clear-session', { method: 'POST' });
-      setRequirements('');
-      setPlanScreens([]);
-      setSelectedScreenId('');
-      setGeneratedUI('');
-      setEvaluationReports([]);
-      setLogs('');
-      setOutputScreens([]);
-      setSelectedScreensForEval([]);
-      setSelectedScreenForRefine('');
-      setRefinementResult(null);
-      setError('');
-      setActiveStep('plan');
+      await axios.post(`${API_BASE}/api/clear-session`)
+      setRequirements('')
+      setPlanScreens([])
+      setSelectedScreenId('')
+      setGeneratedUI('')
+      setEvaluationReports([])
+      setLogs('')
+      setOutputScreens([])
+      setSelectedScreensForEval([])
+      setSelectedScreenForRefine('')
+      setRefinementResult(null)
+      setError('')
+      setActiveStep('plan')
     } catch (err) {
-      setError('Failed to clear session.');
+      setError('Failed to clear session.')
     }
   };
 
@@ -272,7 +228,7 @@ export default function Home() {
       <div className="min-h-screen bg-dark-bg text-text-primary flex items-center justify-center">
         <p className="text-text-secondary animate-pulse">Restoring session...</p>
       </div>
-    );
+    )
   }
 
   return (
@@ -424,8 +380,8 @@ export default function Home() {
                 <button
                   className="text-sm text-primary hover:text-primary-light transition"
                   onClick={() => {
-                    loadOutputs();
-                    loadReports();
+                    loadOutputs()
+                    loadReports()
                   }}
                 >
                   Refresh lists
@@ -461,9 +417,9 @@ export default function Home() {
                         checked={selectedScreensForEval.length === outputScreens.length}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            setSelectedScreensForEval(outputScreens);
+                            setSelectedScreensForEval(outputScreens)
                           } else {
-                            setSelectedScreensForEval([]);
+                            setSelectedScreensForEval([])
                           }
                         }}
                         className="bg-dark-bg border border-dark-hover"
@@ -479,9 +435,9 @@ export default function Home() {
                             checked={selectedScreensForEval.includes(screenId)}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setSelectedScreensForEval((prev) => [...prev, screenId]);
+                                setSelectedScreensForEval((prev) => [...prev, screenId])
                               } else {
-                                setSelectedScreensForEval((prev) => prev.filter((id) => id !== screenId));
+                                setSelectedScreensForEval((prev) => prev.filter((id) => id !== screenId))
                               }
                             }}
                             className="bg-dark-bg border border-dark-hover"
@@ -612,5 +568,5 @@ export default function Home() {
         </div>
       </main>
     </div>
-  );
+  )
 }
