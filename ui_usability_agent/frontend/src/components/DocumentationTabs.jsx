@@ -258,3 +258,8 @@ export default function DocumentationTabs() {
               </table>
             </div>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
