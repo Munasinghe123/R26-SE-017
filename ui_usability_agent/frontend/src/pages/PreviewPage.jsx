@@ -1,74 +1,65 @@
-'use client';
+import React, { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import axios from 'axios'
 
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+const API_BASE = 'http://127.0.0.1:8001'
 
 export default function PreviewPage() {
-  const params = useParams();
-  const screenId = params?.screenId;
-  const [html, setHtml] = useState('');
-  const [error, setError] = useState('');
-  const [screens, setScreens] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [report, setReport] = useState(null);
-  const [reportLoading, setReportLoading] = useState(false);
+  const { screenId } = useParams()
+  const [html, setHtml] = useState('')
+  const [error, setError] = useState('')
+  const [screens, setScreens] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [report, setReport] = useState(null)
+  const [reportLoading, setReportLoading] = useState(false)
 
   const loadReport = async () => {
     try {
-      setReportLoading(true);
-      const response = await fetch('/api/reports');
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load reports.');
-      }
-      // Find the report for this screen
-      const screenReport = data.reports?.find(r => r.screenId === screenId);
-      setReport(screenReport || null);
+      setReportLoading(true)
+      const response = await axios.get(`${API_BASE}/api/reports`)
+      const data = response.data
+      const screenReport = data.reports?.find((r) => r.screenId === screenId)
+      setReport(screenReport || null)
     } catch (err) {
-      console.error('Failed to load report:', err);
-      // Don't set error state for missing reports, just leave report as null
+      console.error('Failed to load report:', err)
     } finally {
-      setReportLoading(false);
+      setReportLoading(false)
     }
-  };
+  }
 
   const loadScreens = async () => {
     try {
-      const response = await fetch('/api/outputs');
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load screens.');
-      }
-      setScreens(data.screens || []);
+      const response = await axios.get(`${API_BASE}/api/outputs`)
+      const data = response.data
+      setScreens(data.screens || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load screens.');
+      setError(err instanceof Error ? err.message : 'Failed to load screens.')
     }
-  };
+  }
 
   useEffect(() => {
-    if (!screenId) return;
+    if (!screenId) return
 
     const loadPreview = async () => {
       try {
-        setLoading(true);
-        setError('');
-        const response = await fetch(`/api/outputs?screenId=${encodeURIComponent(screenId)}`);
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to load preview.');
-        }
-        setHtml(data.html || '');
+        setLoading(true)
+        setError('')
+        const response = await axios.get(`${API_BASE}/api/outputs`, {
+          params: { screenId },
+        })
+        const data = response.data
+        setHtml(data.html || '')
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load preview.');
+        setError(err instanceof Error ? err.message : 'Failed to load preview.')
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    };
+    }
 
-    loadScreens();
-    loadPreview();
-    loadReport();
-  }, [screenId]);
+    loadScreens()
+    loadPreview()
+    loadReport()
+  }, [screenId])
 
   return (
     <div className="min-h-screen bg-dark-bg text-text-primary flex">
@@ -92,9 +83,9 @@ export default function PreviewPage() {
             ))
           )}
         </div>
-        <a className="mt-6 inline-flex text-sm text-primary hover:underline" href="/">
+        <Link className="mt-6 inline-flex text-sm text-primary hover:underline" to="/">
           Back to Wizard
-        </a>
+        </Link>
       </aside>
       <main className="flex-1 p-6 overflow-auto">
         <div className="mb-4">
@@ -122,12 +113,10 @@ export default function PreviewPage() {
               )}
             </div>
 
-            {/* Evaluation Report Section */}
             {report && (
               <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6">
                 <h3 className="text-xl font-bold text-primary mb-4">Usability Evaluation Report</h3>
 
-                {/* Overall Scores */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="text-center p-4 bg-dark-bg border border-green-700 rounded-lg">
                     <div className="text-3xl font-bold text-green-400">{report.report?.iso_score || 0}</div>
@@ -147,9 +136,7 @@ export default function PreviewPage() {
                   </div>
                 </div>
 
-                {/* Detailed Scores */}
                 <div className="grid md:grid-cols-3 gap-6">
-                  {/* ISO Details */}
                   <div>
                     <h4 className="font-semibold text-text-primary mb-3">ISO 9241-11 Details</h4>
                     <div className="space-y-2">
@@ -163,7 +150,6 @@ export default function PreviewPage() {
                     </div>
                   </div>
 
-                  {/* Nielsen Details */}
                   <div>
                     <h4 className="font-semibold text-text-primary mb-3">Nielsen Heuristics Details</h4>
                     <div className="space-y-2">
@@ -177,7 +163,6 @@ export default function PreviewPage() {
                     </div>
                   </div>
 
-                  {/* WCAG Details */}
                   <div>
                     <h4 className="font-semibold text-text-primary mb-3">WCAG 2.2 Details</h4>
                     <div className="space-y-2">
@@ -192,7 +177,6 @@ export default function PreviewPage() {
                   </div>
                 </div>
 
-                {/* Status */}
                 {report.status && (
                   <div className="mt-6 p-4 rounded-lg bg-dark-bg border border-green-700">
                     <div className="flex items-center">
@@ -215,5 +199,5 @@ export default function PreviewPage() {
         )}
       </main>
     </div>
-  );
+  )
 }

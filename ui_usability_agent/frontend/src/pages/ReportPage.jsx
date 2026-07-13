@@ -1,42 +1,37 @@
-'use client';
+import React, { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import axios from 'axios'
 
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import Link from 'next/link';
+const API_BASE = 'http://127.0.0.1:8001'
 
 export default function ReportPage() {
-  const params = useParams();
-  const screenId = params?.screenId;
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { screenId } = useParams()
+  const [report, setReport] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!screenId) return;
+    if (!screenId) return
 
     const loadReport = async () => {
       try {
-        setLoading(true);
-        const response = await fetch('/api/reports');
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to load reports.');
-        }
-        // Find the report for this screen
-        const screenReport = data.reports?.find(r => r.screenId === screenId);
+        setLoading(true)
+        const response = await axios.get(`${API_BASE}/api/reports`)
+        const data = response.data
+        const screenReport = data.reports?.find((r) => r.screenId === screenId)
         if (!screenReport) {
-          throw new Error('Report not found for this screen.');
+          throw new Error('Report not found for this screen.')
         }
-        setReport(screenReport.report);
+        setReport(screenReport.report)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load report.');
+        setError(err instanceof Error ? err.message : 'Failed to load report.')
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    };
+    }
 
-    loadReport();
-  }, [screenId]);
+    loadReport()
+  }, [screenId])
 
   if (loading) {
     return (
@@ -46,7 +41,7 @@ export default function ReportPage() {
           <p className="text-text-secondary">Loading report...</p>
         </div>
       </div>
-    );
+    )
   }
 
   if (error) {
@@ -55,12 +50,12 @@ export default function ReportPage() {
         <div className="bg-red-900 text-red-200 border border-red-700 p-6 rounded-lg max-w-md">
           <h2 className="text-lg font-bold mb-2">Error</h2>
           <p>{error}</p>
-          <Link href="/" className="inline-block mt-4 text-primary hover:underline">
+          <Link to="/" className="inline-block mt-4 text-primary hover:underline">
             Back to Home
           </Link>
         </div>
       </div>
-    );
+    )
   }
 
   if (!report) {
@@ -68,26 +63,25 @@ export default function ReportPage() {
       <div className="min-h-screen bg-dark-bg text-text-primary flex items-center justify-center">
         <div className="text-center">
           <p className="text-text-secondary mb-4">No report available for this screen.</p>
-          <Link href="/" className="text-primary hover:underline">
+          <Link to="/" className="text-primary hover:underline">
             Back to Home
           </Link>
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="min-h-screen bg-dark-bg text-text-primary">
       <div className="max-w-6xl mx-auto p-6">
         <div className="mb-6">
-          <Link href="/" className="text-primary hover:underline mb-4 inline-block">
+          <Link to="/" className="text-primary hover:underline mb-4 inline-block">
             ← Back to Home
           </Link>
           <h1 className="text-3xl font-bold text-primary">Evaluation Report: {screenId}</h1>
           <p className="text-text-secondary mt-2">Detailed usability evaluation breakdown</p>
         </div>
 
-        {/* Overall Scores */}
         <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6 mb-6">
           <h2 className="text-xl font-bold text-primary mb-4">Overall Scores</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -115,7 +109,6 @@ export default function ReportPage() {
           </div>
         </div>
 
-        {/* ISO Details */}
         {report.iso_details && (
           <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6 mb-6">
             <h2 className="text-xl font-bold text-primary mb-4">ISO 9241-11 Details</h2>
@@ -134,7 +127,6 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* Nielsen Details */}
         {report.nielsen_details && (
           <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6 mb-6">
             <h2 className="text-xl font-bold text-primary mb-4">Nielsen Heuristics Details</h2>
@@ -153,7 +145,6 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* WCAG Details */}
         {report.wcag_details && (
           <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6 mb-6">
             <h2 className="text-xl font-bold text-primary mb-4">WCAG 2.2 Details</h2>
@@ -173,7 +164,6 @@ export default function ReportPage() {
               </div>
             )}
 
-            {/* BS4 check scores — always available */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               {[
                 { label: 'Alt Text', value: report.wcag_details.alt_score },
@@ -190,7 +180,6 @@ export default function ReportPage() {
               ))}
             </div>
 
-            {/* Axe score — only when available */}
             {report.wcag_details.axe_score != null && (
               <div className="mb-6">
                 <div className="p-3 bg-dark-bg border border-blue-700 rounded-lg inline-block">
@@ -203,17 +192,16 @@ export default function ReportPage() {
               </div>
             )}
 
-            {/* POUR scores — only show when axe-core ran (values won't be null) */}
             {(() => {
-              const pour = report.wcag_details.pour_scores ?? {};
-              const validPour = Object.entries(pour).filter(([, v]) => v != null);
+              const pour = report.wcag_details.pour_scores ?? {}
+              const validPour = Object.entries(pour).filter(([, v]) => v != null)
               if (validPour.length === 0) {
                 return (
                   <div className="mt-2 p-3 bg-dark-bg border border-dark-hover rounded text-sm text-text-secondary">
                     POUR principle breakdown requires axe-core.{' '}
                     <span className="text-yellow-300">Run: npm install -g @axe-core/cli</span>
                   </div>
-                );
+                )
               }
               return (
                 <div className="mt-4">
@@ -227,15 +215,14 @@ export default function ReportPage() {
                     ))}
                   </div>
                 </div>
-              );
+              )
             })()}
           </div>
         )}
 
-        {/* Preview Link */}
         <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6">
           <Link
-            href={`/preview/${screenId}`}
+            to={`/preview/${screenId}`}
             className="inline-flex items-center px-4 py-2 bg-primary text-black rounded-lg hover:bg-primary/90 transition-colors font-semibold"
           >
             View Screen Preview
@@ -243,5 +230,5 @@ export default function ReportPage() {
         </div>
       </div>
     </div>
-  );
+  )
 }
