@@ -68,10 +68,11 @@ NIELSEN_PROMPTS = {
         "back out without completing the flow."
     ),
     "button_consistency": (
-        "Buttons use inconsistent visual styling. Make every primary button "
-        "share one exact class string, every secondary button share one "
-        "exact class string, and every danger button share one exact class "
-        "string, per the project's button style rules."
+        "Buttons use inconsistent visual styling. You MUST standardise to EXACTLY these three class strings — no variations allowed:\n\n"
+        "Primary action button: class=\"px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 transition-all\"\n\n"
+        "Secondary button: class=\"px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors\"\n\n"
+        "Danger button: class=\"px-3 py-1.5 rounded-lg text-xs font-medium border border-red-400 text-red-600 hover:bg-red-50 transition-colors\"\n\n"
+        "Every single button on the page must use one of these exact strings. Do not add extra classes, do not modify them."
     ),
     "error_prevention": (
         "Several text-entry inputs lack HTML5 constraint-validation "
