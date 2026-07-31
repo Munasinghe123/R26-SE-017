@@ -2,6 +2,12 @@ from typing import TypedDict, Optional, List, Dict
 
 class GraphState(TypedDict):
     
+    # agent state tracking
+    previous_requirements: Optional[Dict]
+    feedback_history: Optional[List[str]]
+    iteration_count: Optional[int]
+    convergence_score: Optional[float]
+    
     # routing
     mode:str
     
