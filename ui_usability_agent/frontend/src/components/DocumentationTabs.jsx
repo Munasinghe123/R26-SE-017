@@ -115,48 +115,32 @@ export default function DocumentationTabs() {
               </div>
             </div>
 
-            <div>
-              <h3 className="text-xl font-bold text-primary mb-4">Progressive Thresholds</h3>
+              <div>
+              <h3 className="text-xl font-bold text-primary mb-4">Refinement Loop Termination</h3>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-gray-900 text-white">
-                      <th className="border border-gray-700 px-4 py-2 text-left">Iteration</th>
-                      <th className="border border-gray-700 px-4 py-2 text-left">Target Threshold</th>
-                      <th className="border border-gray-700 px-4 py-2 text-left">Action If Below</th>
-                      <th className="border border-gray-700 px-4 py-2 text-left">Stop Condition</th>
+                      <th className="border border-gray-700 px-4 py-2 text-left">Condition</th>
+                      <th className="border border-gray-700 px-4 py-2 text-left">Behavior</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="hover:bg-dark-hover">
-                      <td className="border border-gray-300 px-4 py-3 font-semibold">1</td>
-                      <td className="border border-gray-300 px-4 py-3"><span className="bg-red-100 text-red-800 px-2 py-1 rounded">≥ 65%</span></td>
-                      <td className="border border-gray-300 px-4 py-3">Generate targeted refinement prompt</td>
-                      <td className="border border-gray-300 px-4 py-3">—</td>
+                      <td className="border border-gray-300 px-4 py-3 font-semibold">Composite score ≥ 85%</td>
+                      <td className="border border-gray-300 px-4 py-3">Loop stops immediately; current iteration's HTML and report are saved as final.</td>
                     </tr>
                     <tr className="hover:bg-dark-hover">
-                      <td className="border border-gray-300 px-4 py-3 font-semibold">2</td>
-                      <td className="border border-gray-300 px-4 py-3"><span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">≥ 75%</span></td>
-                      <td className="border border-gray-300 px-4 py-3">Regenerate improved schema + re-evaluate</td>
-                      <td className="border border-gray-300 px-4 py-3">—</td>
+                      <td className="border border-gray-300 px-4 py-3 font-semibold">Composite score &lt; 85%</td>
+                      <td className="border border-gray-300 px-4 py-3">Weakest sub-metric identified; targeted LLM refinement applied; re-evaluated on next iteration.</td>
                     </tr>
                     <tr className="hover:bg-dark-hover">
-                      <td className="border border-gray-300 px-4 py-3 font-semibold">3</td>
-                      <td className="border border-gray-300 px-4 py-3"><span className="bg-green-100 text-green-800 px-2 py-1 rounded">≥ 85%</span></td>
-                      <td className="border border-gray-300 px-4 py-3">Continue refinement</td>
-                      <td className="border border-gray-300 px-4 py-3">Score ≥ 85% OR 5 iterations completed</td>
+                      <td className="border border-gray-300 px-4 py-3 font-semibold">5 iterations reached without passing</td>
+                      <td className="border border-gray-300 px-4 py-3">Loop stops; the best-scoring iteration across all 5 (not necessarily the last) is kept as final.</td>
                     </tr>
                     <tr className="hover:bg-dark-hover">
-                      <td className="border border-gray-300 px-4 py-3 font-semibold">4</td>
-                      <td className="border border-gray-300 px-4 py-3"><span className="bg-green-100 text-green-800 px-2 py-1 rounded">≥ 85%</span></td>
-                      <td className="border border-gray-300 px-4 py-3">Maintain threshold</td>
-                      <td className="border border-gray-300 px-4 py-3">—</td>
-                    </tr>
-                    <tr className="hover:bg-dark-hover">
-                      <td className="border border-gray-300 px-4 py-3 font-semibold">5</td>
-                      <td className="border border-gray-300 px-4 py-3"><span className="bg-green-100 text-green-800 px-2 py-1 rounded">≥ 85%</span></td>
-                      <td className="border border-gray-300 px-4 py-3">Final evaluation</td>
-                      <td className="border border-gray-300 px-4 py-3">End of pipeline</td>
+                      <td className="border border-gray-300 px-4 py-3 font-semibold">Regression detected</td>
+                      <td className="border border-gray-300 px-4 py-3">If a later iteration scores lower than the best iteration seen, the final output rolls back to the best-scoring iteration.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -185,9 +169,12 @@ export default function DocumentationTabs() {
               <div className="bg-dark-bg border-2 border-green-700 rounded-lg p-6">
                 <span className="inline-block bg-green-900 text-green-300 px-3 py-1 rounded-full text-sm font-semibold mb-3">NOVELTY 2</span>
                 <h3 className="text-xl font-bold text-green-400 mb-3">Threshold-driven convergence loop</h3>
-                <p className="text-text-secondary mb-4">An automated iterative controller that progressively raises the pass threshold (65% → 75% → 85%) across up to 5 iterations, generating targeted LLM refinement prompts citing specific rubric violations until convergence is reached.</p>
+                <p className="text-text-secondary mb-4">An automated iterative controller that evaluates each screen against the composite rubric, generates a targeted LLM refinement prompt citing the specific weakest sub-metric (not a generic re-generation), re-evaluates, and rolls back to the best-scoring iteration if a later revision regresses on another standard — continuing until the screen reaches the 85% composite target or 5 iterations are exhausted.</p>
                 <div className="bg-dark-bg p-3 rounded text-sm text-text-secondary border-l-4 border-green-500">
-                  <strong className="text-text-primary">Why existing tools don't cover it:</strong> All reviewed tools operate as one-shot systems. None applies progressive threshold escalation with automated feedback-loop refinement and measurable convergence.
+                  <strong className="text-text-primary">Why existing tools don't cover it:</strong> All reviewed tools operate as one-shot systems. None applies automated, rubric-cited feedback-loop refinement with regression-safe convergence tracking across iterations.
+                </div>
+                <div className="bg-dark-bg p-3 rounded text-sm text-text-secondary border-l-4 border-yellow-500 mt-3">
+                  <strong className="text-text-primary">Design note:</strong> An earlier version used a progressive threshold (65%→75%→85% across iterations 1-5). Empirical testing showed this caused the loop to exit after a single iteration on any screen scoring 65-84, which never reliably reached the 85% validation target. A fixed 85% threshold was adopted for all iterations so convergence-rate and per-iteration-improvement metrics measure actual progress toward the target, not an artifact of a lenient early threshold.
                 </div>
               </div>
 
