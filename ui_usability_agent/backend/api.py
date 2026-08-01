@@ -252,6 +252,11 @@ def refine(req: RefineRequest):
                 for e in result["history"]
             ]
 
+            history_path = os.path.join(reports_dir, f"{screen_req['screen_id']}_history.json")
+            with open(history_path, "w", encoding="utf-8") as f:
+                json.dump(history_summary, f, indent=2, ensure_ascii=False)
+            _log(buf, f"Iteration history saved to {history_path}")
+
         return {
             "screenId": screen_req["screen_id"],
             "html": result["final_html"],
@@ -362,6 +367,18 @@ def reports():
         return {"reports": result}
     except Exception as e:
         from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history")
+def history(screenId: str):
+    try:
+        history_path = os.path.join(BASE, "outputs", "score_reports", f"{screenId}_history.json")
+        if not os.path.exists(history_path):
+            return {"history": []}
+        with open(history_path, "r", encoding="utf-8") as f:
+            return {"history": json.load(f)}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

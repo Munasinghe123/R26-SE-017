@@ -1,4 +1,4 @@
-export default function TraceabilityMatrix({ traceability }) {
+export default function TraceabilityMatrix({ traceability, screenId }) {
   if (!traceability || traceability.total_frs === 0) {
     return <p className="text-text-secondary">No traceability data for this screen.</p>
   }
@@ -8,11 +8,7 @@ export default function TraceabilityMatrix({ traceability }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <span
-          className={`px-3 py-1 rounded-full text-sm font-semibold ${
-            coverage_pct === 100 ? 'bg-green-900 text-green-300' : 'bg-yellow-900 text-yellow-300'
-          }`}
-        >
+        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${coverage_pct === 100 ? 'bg-green-900 text-green-300' : 'bg-yellow-900 text-yellow-300'}`}>
           {coverage_pct}% FR coverage
         </span>
         <span className="text-sm text-text-secondary">
@@ -21,6 +17,13 @@ export default function TraceabilityMatrix({ traceability }) {
         <span className="text-sm text-neutral">
           · {total_interactive_elements - untagged_elements}/{total_interactive_elements} interactive elements tagged
         </span>
+      </div>
+
+      <div className="w-full h-2 bg-dark-bg border border-dark-hover rounded-full overflow-hidden">
+        <div
+          className={`h-full ${coverage_pct === 100 ? 'bg-green-500' : 'bg-yellow-500'}`}
+          style={{ width: `${coverage_pct}%` }}
+        />
       </div>
 
       <div className="overflow-x-auto">
@@ -51,9 +54,19 @@ export default function TraceabilityMatrix({ traceability }) {
                   ) : (
                     <ul className="space-y-1">
                       {row.elements.map((el, i) => (
-                        <li key={i}>
-                          <span className="text-cyan-400 font-mono text-xs">&lt;{el.tag}&gt;</span>{' '}
-                          {el.label}
+                        <li key={i} className="flex items-center gap-2">
+                          <span className="text-cyan-400 font-mono text-xs">&lt;{el.tag}&gt;</span>
+                          <span>{el.label}</span>
+                          {screenId && (
+                            <a
+                              href={`/preview/${screenId}?highlight=${encodeURIComponent(row.fr_id)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-primary hover:underline ml-1"
+                            >
+                              View →
+                            </a>
+                          )}
                         </li>
                       ))}
                     </ul>

@@ -4,6 +4,7 @@ import InputForm from '../components/InputForm'
 import UIOutput from '../components/UIOutput'
 import DocumentationTabs from '../components/DocumentationTabs'
 import RefinementHistory from '../components/RefinementHistory'
+import ConvergenceChart from '../components/ConvergenceChart'
 
 const API_BASE = 'http://127.0.0.1:8001'
 
@@ -541,6 +542,13 @@ export default function Home() {
               )}
             </div>
             <UIOutput generatedUI={generatedUI} />
+          </div>
+        )}
+        
+        {activeStep === 'refine' && refinementResult && (
+          <div className="bg-dark-card p-6 rounded-lg shadow-md mt-6 border border-dark-hover">
+            <h2 className="text-xl font-semibold mb-4 text-primary">Convergence — {refinementResult.screenId}</h2>
+            <ConvergenceChart history={refinementResult.history} />
           </div>
         )}
 
