@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import TraceabilityMatrix from '../components/TraceabilityMatrix'
 import axios from 'axios'
 
 const API_BASE = 'http://127.0.0.1:8001'
@@ -7,6 +8,7 @@ const API_BASE = 'http://127.0.0.1:8001'
 export default function ReportPage() {
   const { screenId } = useParams()
   const [report, setReport] = useState(null)
+  const [traceability, setTraceability] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -23,6 +25,13 @@ export default function ReportPage() {
           throw new Error('Report not found for this screen.')
         }
         setReport(screenReport.report)
+
+        try {
+          const traceRes = await axios.get(`${API_BASE}/api/traceability`, { params: { screenId } })
+          setTraceability(traceRes.data.traceability || null)
+        } catch {
+          setTraceability(null)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load report.')
       } finally {
@@ -219,7 +228,7 @@ export default function ReportPage() {
             })()}
           </div>
         )}
-
+        
         <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6">
           <Link
             to={`/preview/${screenId}`}
@@ -228,6 +237,13 @@ export default function ReportPage() {
             View Screen Preview
           </Link>
         </div>
+
+        {traceability && (
+          <div className="bg-dark-card border border-dark-hover rounded-lg shadow-sm p-6 mt-6">
+            <h2 className="text-xl font-bold text-primary mb-4">Requirements Traceability</h2>
+            <TraceabilityMatrix traceability={traceability} />
+          </div>
+        )}
       </div>
     </div>
   )

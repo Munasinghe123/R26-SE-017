@@ -26,6 +26,7 @@ from generator.refinement_controller import run_refinement_loop
 from input_normalizer import normalize_input
 from screen_planner import plan_screens, screens_to_requirements, save_screen_plan
 from generator.ui_generator import generate_ui
+from generator.traceability import build_traceability_matrix
 from evaluator.composite_scorer import evaluate, save_score_report
 
 app = FastAPI()
@@ -359,6 +360,49 @@ def reports():
             with open(os.path.join(reports_dir, file), "r", encoding="utf-8") as f:
                 result.append({"screenId": sid, "report": json.load(f)})
         return {"reports": result}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/traceability")
+def traceability(screenId: str):
+    try:
+        plan_path = os.path.join(BASE, "outputs", "screen_plan.json")
+        req_path = os.path.join(BASE, "samples", "sample_requirements.json")
+        html_path = os.path.join(BASE, "outputs", "generated_screens", f"{screenId}.html")
+
+        if not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail=f"Screen '{screenId}' not found")
+
+        with open(plan_path, "r", encoding="utf-8") as f:
+            screens = json.load(f)
+
+        target = None
+        if screenId.isdigit():
+            idx = int(screenId) - 1
+            if 0 <= idx < len(screens):
+                target = screens[idx]
+        if not target:
+            target = next((s for s in screens if s.get("screen_id") == screenId), None)
+        if not target:
+            raise HTTPException(status_code=404, detail=f"Screen '{screenId}' not found in the screen plan")
+
+        with open(req_path, "r", encoding="utf-8") as f:
+            raw_requirements = json.load(f)
+
+        normalized = normalize_input(raw_requirements)
+        per_screen = screens_to_requirements([target], normalized)
+        if not per_screen:
+            return {"traceability": {"matrix": [], "coverage_pct": 0.0, "total_frs": 0, "covered_frs": 0, "untagged_elements": 0, "total_interactive_elements": 0}}
+
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        traceability_report = build_traceability_matrix(html, per_screen[0].get("functional_requirements", []))
+        return {"screenId": screenId, "traceability": traceability_report}
+    except HTTPException:
+        raise
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))

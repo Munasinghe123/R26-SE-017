@@ -22,14 +22,14 @@ MAX_ITERATIONS = 5
 WEAK_THRESHOLD = 2   # sub-metric scores at or below this get included in fix
 
 
-def _collect_weak_instructions(report: dict) -> tuple:
+def _collect_weak_instructions(report: dict, stalled_metrics: Optional[set] = None) -> tuple:
     """
-    Scan all sub-metric scores across ISO, Nielsen, and WCAG and collect
-    fix instructions for every metric scoring <= WEAK_THRESHOLD.
-
-    Returns (combined_instructions: str, fixes_list: list)
-    where fixes_list is for logging/history.
+    stalled_metrics: set of (standard, metric) tuples that were targeted in the
+    previous iteration but did not improve. Their instructions get an escalation
+    note appended so the LLM doesn't just retry the same fix verbatim.
     """
+    stalled_metrics = stalled_metrics or set()
+    
     fixes = []
 
     # ISO sub-scores
@@ -37,6 +37,12 @@ def _collect_weak_instructions(report: dict) -> tuple:
     for metric, score in iso_sub.items():
         if score <= WEAK_THRESHOLD:
             instructions = get_refinement_instructions("ISO", metric)
+            if ("ISO", metric) in stalled_metrics:
+                instructions += (
+                    "\nNOTE: This exact fix was requested in the previous iteration and did not "
+                    "raise the score. Try a materially different implementation approach this time "
+                    "rather than repeating the same change."
+                )
             fixes.append({"standard": "ISO", "metric": metric, "score": score, "instructions": instructions})
 
     # Nielsen sub-scores
@@ -44,14 +50,26 @@ def _collect_weak_instructions(report: dict) -> tuple:
     for metric, score in nielsen_sub.items():
         if score <= WEAK_THRESHOLD:
             instructions = get_refinement_instructions("Nielsen", metric)
+            if ("Nielsen", metric) in stalled_metrics:
+                instructions += (
+                    "\nNOTE: This exact fix was requested in the previous iteration and did not "
+                    "raise the score. Try a materially different implementation approach this time "
+                    "rather than repeating the same change."
+                )
             fixes.append({"standard": "Nielsen", "metric": metric, "score": score, "instructions": instructions})
 
     # WCAG — use weakest_pour if WCAG score is low
     if report.get("wcag_score", 100) < 70:
         weakest_pour = report.get("wcag_details", {}).get("weakest_pour", "unavailable")
         instructions = get_refinement_instructions("WCAG", weakest_pour)
+        if ("WCAG", weakest_pour) in stalled_metrics:
+            instructions += (
+                "\nNOTE: This WCAG principle was targeted last iteration without improvement. "
+                "Re-check the specific axe-core rule IDs under this principle and address them "
+                "individually rather than making a generic pass."
+            )
         fixes.append({"standard": "WCAG", "metric": weakest_pour, "score": report["wcag_score"], "instructions": instructions})
-
+        
     if not fixes:
         # nothing obviously weak — fall back to weakest standard
         instructions = get_refinement_instructions(
@@ -98,10 +116,26 @@ def run_refinement_loop(
     history: List[Dict] = []
     best_entry: Optional[Dict] = None
     previous_report: Optional[Dict] = None
+    previously_targeted: set = set()
 
     for iteration in range(1, max_iterations + 1):
         report = evaluate(html, iteration_number=iteration)
         regressions = detect_regression(report, previous_report)
+
+        stalled = set()
+        if previously_targeted:
+            all_sub = {
+                **{("ISO", k): v for k, v in report.get("iso_details", {}).get("sub_scores", {}).items()},
+                **{("Nielsen", k): v for k, v in report.get("nielsen_details", {}).get("sub_scores", {}).items()},
+            }
+            for key in previously_targeted:
+                if all_sub.get(key, 99) <= WEAK_THRESHOLD:
+                    stalled.add(key)
+
+            wcag_details = report.get("wcag_details", {})
+            current_weakest_pour = wcag_details.get("weakest_pour", "unavailable")
+            if ("WCAG", current_weakest_pour) in previously_targeted and report.get("wcag_score", 100) < 70:
+                stalled.add(("WCAG", current_weakest_pour))
 
         entry = {
             "iteration": iteration,
@@ -116,12 +150,12 @@ def run_refinement_loop(
         if best_entry is None or report["total_score"] >= best_entry["report"]["total_score"]:
             best_entry = entry
 
-        # Stop if target reached or iterations exhausted
-        if report["total_score"] >= 85 or iteration == max_iterations:
+        # Stop if this iteration's threshold is reached or iterations exhausted
+        if report["total_score"] >= report["threshold"] or iteration == max_iterations:
             break
 
         # Collect ALL weak sub-metrics and bundle into one fix prompt
-        combined_instructions, fixes_list = _collect_weak_instructions(report)
+        combined_instructions, fixes_list = _collect_weak_instructions(report, stalled)
 
         entry["applied_fix"] = {
             "weakest_standard": report["weakest_standard"],
@@ -129,6 +163,8 @@ def run_refinement_loop(
             "all_fixes": fixes_list,
             "instructions": combined_instructions,
         }
+
+        previously_targeted = {(f["standard"], f["metric"]) for f in fixes_list}
 
         previous_report = report
         html = refine_ui(html, requirements, screen_type, combined_instructions)
@@ -139,7 +175,7 @@ def run_refinement_loop(
     return {
         "final_html": best_entry["html"],
         "final_report": best_entry["report"],
-        "passed": best_entry["report"]["total_score"] >= 85,
+        "passed": best_entry["report"]["total_score"] >= 85,  # final-quality gate; intentionally fixed, not per-iteration
         "iterations": len(history),
         "history": history,
         "regressed": regressed,

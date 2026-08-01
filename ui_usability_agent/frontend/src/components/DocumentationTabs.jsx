@@ -259,6 +259,43 @@ export default function DocumentationTabs() {
             </div>
           </div>
         )}
+        {/* Convergence Tab */}
+        {activeTab === 'convergence' && (
+          <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-primary mb-6">Convergence Behaviour</h2>
+
+            <div className="bg-dark-bg border border-dark-hover rounded-lg p-6">
+              <h3 className="text-lg font-bold text-text-primary mb-3">Loop bounds</h3>
+              <p className="text-text-secondary text-sm">
+                Each screen is refined for at most <span className="text-primary font-semibold">5 iterations</span>.
+                The loop exits early once the composite score meets that iteration's threshold
+                (65 → 75 → 85 → 85 → 85), or once 5 iterations complete — whichever comes first.
+              </p>
+            </div>
+
+            <div className="bg-dark-bg border border-hover rounded-lg p-6">
+              <h3 className="text-lg font-bold text-text-primary mb-3">Best-iteration rollback</h3>
+              <p className="text-text-secondary text-sm mb-3">
+                Every iteration is scored and compared to the best score seen so far. If the final
+                iteration regresses below an earlier iteration's score, the loop rolls back and
+                returns the best-scoring HTML instead of the last-generated one.
+              </p>
+              <p className="text-text-secondary text-sm">
+                Per-standard regressions (ISO / Nielsen / WCAG dropping between iterations) are
+                also tracked and surfaced in the refinement history table.
+              </p>
+            </div>
+
+            <div className="bg-dark-bg border border-dark-hover rounded-lg p-6">
+              <h3 className="text-lg font-bold text-text-primary mb-3">Known limitation</h3>
+              <p className="text-text-secondary text-sm">
+                The controller currently has no memory of previously attempted fixes — if a fix
+                doesn't resolve a metric, the same instruction may be reissued verbatim on the next
+                iteration. See the refinement controller roadmap for planned changes.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
