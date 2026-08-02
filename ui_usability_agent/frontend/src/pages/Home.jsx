@@ -52,6 +52,20 @@ export default function Home() {
         if (reportsData.reports && reportsData.reports.length > 0) {
           setEvaluationReports(reportsData.reports)
         }
+
+        if (screens.length > 0) {
+          const historyRes = await axios.get(`${API_BASE}/api/history`, { params: { screenId: screens[0] } }).catch(() => ({ data: { history: [] } }))
+          if (historyRes.data.history?.length > 0) {
+            setRefinementResult({
+              screenId: screens[0],
+              history: historyRes.data.history,
+              finalReport: historyRes.data.history.find((h) => h.isFinal)?.report,
+              passed: historyRes.data.history.find((h) => h.isFinal)?.report?.total_score >= 85,
+              regressed: false,
+            })
+            setSelectedScreenForRefine(screens[0])
+          }
+        }
       } catch (err) {
         console.warn('[restore] Could not restore state:', err)
       } finally {
