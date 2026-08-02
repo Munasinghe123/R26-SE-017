@@ -26,6 +26,7 @@ from generator.refinement_controller import run_refinement_loop
 from input_normalizer import normalize_input
 from screen_planner import plan_screens, screens_to_requirements, save_screen_plan
 from generator.ui_generator import generate_ui
+from generator.traceability import build_traceability_matrix
 from evaluator.composite_scorer import evaluate, save_score_report
 
 app = FastAPI()
@@ -251,6 +252,11 @@ def refine(req: RefineRequest):
                 for e in result["history"]
             ]
 
+            history_path = os.path.join(reports_dir, f"{screen_req['screen_id']}_history.json")
+            with open(history_path, "w", encoding="utf-8") as f:
+                json.dump(history_summary, f, indent=2, ensure_ascii=False)
+            _log(buf, f"Iteration history saved to {history_path}")
+
         return {
             "screenId": screen_req["screen_id"],
             "html": result["final_html"],
@@ -364,6 +370,61 @@ def reports():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/history")
+def history(screenId: str):
+    try:
+        history_path = os.path.join(BASE, "outputs", "score_reports", f"{screenId}_history.json")
+        if not os.path.exists(history_path):
+            return {"history": []}
+        with open(history_path, "r", encoding="utf-8") as f:
+            return {"history": json.load(f)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/traceability")
+def traceability(screenId: str):
+    try:
+        plan_path = os.path.join(BASE, "outputs", "screen_plan.json")
+        req_path = os.path.join(BASE, "samples", "sample_requirements.json")
+        html_path = os.path.join(BASE, "outputs", "generated_screens", f"{screenId}.html")
+
+        if not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail=f"Screen '{screenId}' not found")
+
+        with open(plan_path, "r", encoding="utf-8") as f:
+            screens = json.load(f)
+
+        target = None
+        if screenId.isdigit():
+            idx = int(screenId) - 1
+            if 0 <= idx < len(screens):
+                target = screens[idx]
+        if not target:
+            target = next((s for s in screens if s.get("screen_id") == screenId), None)
+        if not target:
+            raise HTTPException(status_code=404, detail=f"Screen '{screenId}' not found in the screen plan")
+
+        with open(req_path, "r", encoding="utf-8") as f:
+            raw_requirements = json.load(f)
+
+        normalized = normalize_input(raw_requirements)
+        per_screen = screens_to_requirements([target], normalized)
+        if not per_screen:
+            return {"traceability": {"matrix": [], "coverage_pct": 0.0, "total_frs": 0, "covered_frs": 0, "untagged_elements": 0, "total_interactive_elements": 0}}
+
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        traceability_report = build_traceability_matrix(html, per_screen[0].get("functional_requirements", []))
+        return {"screenId": screenId, "traceability": traceability_report}
+    except HTTPException:
+        raise
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/clear-session")
 def clear_session():
     import shutil
@@ -401,4 +462,4 @@ def plan_status():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api:app", host="0.0.0.0", port=8001, reload=True)

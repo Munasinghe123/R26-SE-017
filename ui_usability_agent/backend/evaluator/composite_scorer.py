@@ -49,21 +49,20 @@ def evaluate(html_string: str, iteration_number: int = 1) -> dict:
     Parameters
     ----------
     html_string      : str  Raw HTML of the generated UI prototype.
-    iteration_number : int  Current refinement iteration (1-5). Used to
-                            select the pass threshold (thresholds increase
-                            with each iteration to enforce progressive quality).
+    iteration_number : int  Current refinement iteration (1-5). Kept for
+                            reporting/logging purposes only — the pass
+                            threshold is now constant across iterations.
 
-    Thresholds by iteration
-    -----------------------
-    Iteration 1 → 65   (baseline; newly generated UI)
-    Iteration 2 → 75   (first refinement cycle)
-    Iteration 3 → 85   (second refinement cycle)
-    Iteration 4 → 85   (third refinement cycle — same threshold)
-    Iteration 5 → 85   (final iteration)
-
-    The threshold for iterations 1 and 2 is intentionally lower to allow
-    the LLM refinement loop to converge without false failures on the first
-    pass.
+    Threshold
+    ---------
+    A flat threshold of 85 is used for every iteration. Progressive
+    thresholds (65/75/85) were tried initially but caused the refinement
+    loop to exit after a single iteration on any UI that scored 65-84,
+    which never actually reached the Section 3.5 validation target (final
+    score >= 85) and produced misleadingly short convergence histories.
+    A flat 85 threshold means the loop only stops when the screen is
+    actually at target, or iterations are exhausted — which is what the
+    convergence-rate and mean-improvement metrics are meant to measure.
 
     Returns
     -------
@@ -77,7 +76,7 @@ def evaluate(html_string: str, iteration_number: int = 1) -> dict:
         wcag_details    dict  full result from compute_wcag_score
         weakest_standard str  'ISO', 'Nielsen', or 'WCAG'
         weakest_metric   str  name of the lowest sub-metric in weakest standard
-        threshold        int  pass threshold for this iteration
+        threshold        int  pass threshold for this iteration (always 85)
         passed           bool total_score >= threshold
         iteration        int  iteration_number
         timestamp        str  ISO 8601 datetime
@@ -110,8 +109,7 @@ def evaluate(html_string: str, iteration_number: int = 1) -> dict:
     else:
         weakest_metric = wcag_result.get('weakest_pour', 'unknown')
 
-    thresholds = {1: 65, 2: 75, 3: 85, 4: 85, 5: 85}
-    threshold = thresholds.get(iteration_number, 85)
+    threshold = 85
     passed = total_score >= threshold
 
     return {
@@ -129,8 +127,6 @@ def evaluate(html_string: str, iteration_number: int = 1) -> dict:
         'iteration':        iteration_number,
         'timestamp':        datetime.now().isoformat(),
     }
-
-
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------

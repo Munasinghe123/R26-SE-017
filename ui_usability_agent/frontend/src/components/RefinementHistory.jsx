@@ -20,8 +20,7 @@ export default function RefinementHistory({ history, finalReport, passed, regres
         )}
         {finalReport && (
           <span className="text-sm text-text-secondary">
-            Final score: <span className="text-cyan-400 font-bold">{finalReport.total_score}</span> / {finalReport.threshold}
-          </span>
+           Final score: <span className="text-cyan-400 font-bold">{finalReport.total_score}</span> / 85 target          </span>
         )}
       </div>
 

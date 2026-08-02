@@ -23,6 +23,31 @@ def get_llm():
     """Create and return a ChatGroq instance"""
     return gen_llm
 
+def _load_prompt_with_addendum(prompt_filename: str, addendum_filename: str, insert_before: str) -> str:
+    """
+    Loads a base prompt file and injects a smaller addendum file just before
+    a given marker string. Keeps large base prompts (generation/refinement)
+    untouched in source, so new mandatory rules can be added/removed without
+    editing or re-measuring the main prompt's token footprint.
+    """
+    prompts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
+
+    with open(os.path.join(prompts_dir, prompt_filename), "r", encoding="utf-8") as f:
+        base = f.read()
+
+    addendum_path = os.path.join(prompts_dir, addendum_filename)
+    if not os.path.exists(addendum_path):
+        return base
+
+    with open(addendum_path, "r", encoding="utf-8") as f:
+        addendum = f.read().strip()
+
+    if insert_before in base:
+        return base.replace(insert_before, addendum + "\n\n" + insert_before, 1)
+
+    # Marker not found — append at the end rather than silently dropping the rule
+    return base + "\n\n" + addendum
+
 def generate_ui(requirements: dict, screen_type: str) -> str:
     """
     Generate HTML UI from software requirements using an LLM.
@@ -34,9 +59,11 @@ def generate_ui(requirements: dict, screen_type: str) -> str:
     Returns:
        The generated HTML as a string.
     """
-    # Read the enhanced prompt template
-    with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "generation_prompt.txt"), "r", encoding="utf-8") as f:
-        prompt_template_string = f.read()
+    prompt_template_string = _load_prompt_with_addendum(
+        "generation_prompt.txt",
+        "traceability_addendum.txt",
+        insert_before="================================================================================\nHTML BOILERPLATE",
+    )
 
     # Create the prompt template
     prompt_template = ChatPromptTemplate.from_template(
@@ -74,12 +101,12 @@ def refine_ui(existing_html: str, requirements: dict, screen_type: str, instruct
     Returns:
         The revised HTML as a string.
     """
-    prompt_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "prompts", "refinement_prompt.txt"
+    prompt_template_string = _load_prompt_with_addendum(
+        "refinement_prompt.txt",
+        "traceability_refinement_addendum.txt",
+        insert_before="================================================================================\nCONTEXT",
     )
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        prompt_template_string = f.read()
-
+    
     prompt_template = ChatPromptTemplate.from_template(
         template=prompt_template_string,
         template_format="jinja2"
