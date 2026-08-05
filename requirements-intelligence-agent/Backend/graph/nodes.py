@@ -7,12 +7,27 @@ from services.refine_requirements import refine_requirements
 from services.meetings_service import get_latest_requirements
 from services.generate_srs_pdf import create_pdf
 from services.read_document import read_document
+from services.speech_enhancement import enhance_speech
+from services.speaker_alignment import align_speakers
 from langgraph.types import interrupt
 
 
+def speech_enhancement_node(state: GraphState):
+    enhanced_audio_path = enhance_speech(state["audio_path"])
+    print("enhanced")
+    return {"audio_path": enhanced_audio_path}
+
 def transcribe_node(state: GraphState):
-    transcript = transcribe_audio(state["audio_path"])
+    transcript_segments = transcribe_audio(state["audio_path"])
     print("transcribed")
+    return {"transcript_segments": transcript_segments}
+
+def speaker_alignment_node(state: GraphState):
+    transcript = align_speakers(
+        state["transcript_segments"],
+        state["speaker_segments"]
+    )
+    print("aligned")
     return {"transcript": transcript}
 
 def document_node(state: GraphState):
@@ -26,9 +41,9 @@ def document_node(state: GraphState):
 
 
 def diarization_node(state: GraphState):
-    diarization = diarize_audio(state["audio_path"])
+    speaker_segments = diarize_audio(state["audio_path"])
     print("diarizeded")
-    return {"diarization": diarization}
+    return {"speaker_segments": speaker_segments}
 
 
 def extraction_node(state: GraphState):
@@ -90,4 +105,6 @@ def await_client_node(state: GraphState):
         "approval_status": decision.get("status"),
         "feedback": decision.get("feedback"),
     }
+
+
 

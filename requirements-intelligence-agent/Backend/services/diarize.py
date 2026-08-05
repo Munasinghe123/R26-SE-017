@@ -18,5 +18,12 @@ def diarize_audio(path):
             "end": turn.end,
             "speaker": speaker
         })
+    
+    print("Diarization Results:", results)
+    
+    for result in results:
+        print(
+            f"[{result['start']:.2f} - {result['end']:.2f}] {result['speaker']}"
+        )
 
     return results
