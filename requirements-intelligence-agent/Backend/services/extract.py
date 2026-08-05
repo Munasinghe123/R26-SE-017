@@ -17,8 +17,7 @@ def build_prompt(transcript: str) -> str:
     return f"""
 You are a senior software requirements analyst.
 
-Your task is to extract and classify software requirements from the given input text and
-find who the end users are.
+Your task is to extract and classify software requirements from the given input text.
 
 
 STRICT DEFINITIONS:

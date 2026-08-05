@@ -3,11 +3,10 @@ import json
 import uuid
 from db.config import get_connection
 
-def save_requirements(requirements):
+def save_requirements(requirements,meeting_id):
     conn = get_connection()
     cursor = conn.cursor()
 
-    meeting_id = str(uuid.uuid4())
 
     cursor.execute(
         "INSERT INTO meetings (id) VALUES (%s)",

@@ -1,18 +1,18 @@
 
-from graph.state import GraphState
-from langgraph.graph import StateGraph, END 
 
 def route_workflow(state):
     
-    if state["mode"] == "extract":
+    if state["mode"] == "audio_extract":
         return "transcribe"
     
     if state["mode"] == "document_extract":
         return "document"
     
-    if state["mode"] == "refine":
-        return "refine"
+def route_after_client(state):
     
-    if state["mode"] == "approved":
+    print("Approval:", state["approval_status"])
+    
+    if state["approval_status"] == "approved":
         return "srs"
-    
+    return "refine"
+

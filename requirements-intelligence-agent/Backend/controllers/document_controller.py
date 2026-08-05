@@ -1,8 +1,8 @@
-from graph.workflow import build_graph
+
 from utils.saveFile import save_file
 from services.meetings_service import save_requirements
 
-graph = build_graph()
+from graph.instance import graph
 
 
 async def handle_document_upload(file):

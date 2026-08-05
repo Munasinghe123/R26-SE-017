@@ -7,9 +7,12 @@ from graph.nodes import (
     refine_node,
     generate_srs_node,
     generate_srs_pdf_node,
-    document_node
+    document_node,
+    await_client_node
 )
 from graph.router import route_workflow
+from graph.router import route_after_client
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 def build_graph():
@@ -23,6 +26,7 @@ def build_graph():
     builder.add_node("refine", refine_node)
     builder.add_node("srs", generate_srs_node)
     builder.add_node("generate_pdf", generate_srs_pdf_node)
+    builder.add_node("await_client", await_client_node)
     
     builder.set_entry_point("router")
     
@@ -35,23 +39,28 @@ def build_graph():
     builder.add_edge("transcribe", "diarize")
     builder.add_edge("diarize", "extract")
     # builder.add_edge("extract", END)
+    builder.add_edge("extract", "await_client")
     
     #document extraction
     builder.add_edge("document", "extract")
     
-    builder.add_edge("extract", END)
+    builder.add_conditional_edges(
+           "await_client",
+           route_after_client
+    )
     
     # refine
-    builder.add_edge("refine", END)
+    builder.add_edge("refine", "await_client")
     
     #srs
     builder.add_edge("srs", "generate_pdf")
     builder.add_edge("generate_pdf", END)
     
-    return builder.compile()
+   
+    checkpointer = InMemorySaver()
+    return builder.compile(checkpointer=checkpointer)
     
-    
-    
+        
     
     
     
