@@ -14,7 +14,8 @@ class GraphState(TypedDict):
     # transcription
     audio_path: Optional[str]
     transcript: Optional[str]
-    diarization: Optional[List[Dict]]
+    transcript_segments: Optional[List[Dict]]
+    speaker_segments: Optional[List[Dict]]
     
     #document
     document_path: Optional[str]

@@ -8,7 +8,9 @@ from graph.nodes import (
     generate_srs_node,
     generate_srs_pdf_node,
     document_node,
-    await_client_node
+    await_client_node,
+    speech_enhancement_node,
+    speaker_alignment_node
 )
 from graph.router import route_workflow
 from graph.router import route_after_client
@@ -19,6 +21,8 @@ def build_graph():
     builder = StateGraph(GraphState)
 
     builder.add_node("router", lambda state: state)
+    builder.add_node("enhance", speech_enhancement_node)
+    builder.add_node("speaker_alignment", speaker_alignment_node)
     builder.add_node("transcribe", transcribe_node)
     builder.add_node("document", document_node)
     builder.add_node("diarize", diarization_node)
@@ -35,9 +39,13 @@ def build_graph():
         route_workflow
     )
     
+    # enhance quality of the audio
+    builder.add_edge("enhance","transcribe")
+    
     #audio extraction
     builder.add_edge("transcribe", "diarize")
-    builder.add_edge("diarize", "extract")
+    builder.add_edge("diarize", "speaker_alignment")
+    builder.add_edge("speaker_alignment", "extract")
     # builder.add_edge("extract", END)
     builder.add_edge("extract", "await_client")
     
