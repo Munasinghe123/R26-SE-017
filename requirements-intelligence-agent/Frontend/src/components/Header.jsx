@@ -58,7 +58,7 @@ function Header() {
             <span className="text-white/80 hover:text-white transition cursor-pointer">Examples</span>
             <span className="text-white/80 hover:text-white transition cursor-pointer">Pricing</span>
 
-            <Link to='/sign-in'>
+            <Link to='/get-started'>
                 <button className="flex items-center gap-3
                     relative px-5 py-2 
                     text-sm font-medium uppercase tracking-[2px]

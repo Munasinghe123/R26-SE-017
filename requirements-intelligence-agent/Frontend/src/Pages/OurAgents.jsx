@@ -12,7 +12,7 @@ import ui from '../Images/OurAgents/ui.png'
 
 gsap.registerPlugin(ScrollTrigger);
 
-function OurAgents({ className }) {
+function OurAgents() {
 
   const wrapRef = useRef(null);
   const listRef = useRef(null);
@@ -70,25 +70,21 @@ function OurAgents({ className }) {
               relative w-full max-w-sm mx-auto
               p-6 rounded-[32px]
               flex flex-col items-center gap-5
-
-              bg-white/[0.06]
               backdrop-blur-2xl
-
               border border-cyan-400/20
               shadow-[0_0_30px_rgba(34,211,238,0.12)]
-
               overflow-hidden
             "
           >
             {/* glow layer */}
-            <div className="
+            {/* <div className="
                   absolute inset-0
                   bg-gradient-to-br
                   from-cyan-400/10
                   via-transparent
                   to-blue-500/10
                   pointer-events-none
-                " />
+                " /> */}
 
             <img
               src={requirements}
@@ -133,7 +129,7 @@ function OurAgents({ className }) {
 
               flex flex-col items-center text-center gap-5
 
-              bg-white/[0.06]
+           
               backdrop-blur-2xl
 
               border border-cyan-400/20
@@ -201,7 +197,7 @@ function OurAgents({ className }) {
 
               flex flex-col items-center text-center gap-5
 
-              bg-white/[0.06]
+             
               backdrop-blur-2xl
 
               border border-cyan-400/20
@@ -264,15 +260,10 @@ function OurAgents({ className }) {
             className="
               relative w-full max-w-sm mx-auto
               p-6 rounded-[32px]
-
               flex flex-col items-center text-center gap-5
-
-              bg-white/[0.06]
               backdrop-blur-2xl
-
               border border-cyan-400/20
               shadow-[0_0_20px_rgba(34,211,238,0.10)]
-
               overflow-hidden
             "
           >

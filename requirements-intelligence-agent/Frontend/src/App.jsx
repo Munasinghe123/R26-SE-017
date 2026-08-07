@@ -5,7 +5,7 @@ import UploadAudio from './Pages/UploadAudio'
 import Header from './components/Header'
 import StarBackground from './components/StartBackGround'
 import RequirementReview from './Pages/client/RequirementReview'
-import SignIn from './Pages/SignIn'
+import GetStarted from './Pages/Get-Started'
 
 
 function App() {
@@ -17,7 +17,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path='/upload-audio' element={<UploadAudio />} />
-        <Route path='/sign-in' element={<SignIn/>}/>
+        <Route path='/get-started' element={<GetStarted/>}/>
 
         <Route path='/requirements-review/:meetingId' element={<RequirementReview/>}/>
 
