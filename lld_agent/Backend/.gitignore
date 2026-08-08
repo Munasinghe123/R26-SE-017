@@ -1,12 +1,131 @@
+# ==========================================
 # Environment & Secrets
+# ==========================================
 .env
 .env.*
 *.env
+!.env.example
 
+# API Keys / Secrets
+secrets.json
+credentials.json
+service-account.json
+*.pem
+*.key
 
+# ==========================================
 # Python
+# ==========================================
 __pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 *.pyo
 *.pyd
+*.so
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ==========================================
+# Testing
+# ==========================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+
+# ==========================================
+# Type Checking & Linting
+# ==========================================
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.dmypy.json
+
+# ==========================================
+# IDE
+# ==========================================
+.vscode/
+.idea/
+*.iml
+
+# ==========================================
+# Jupyter
+# ==========================================
+.ipynb_checkpoints/
+
+# ==========================================
+# Logs
+# ==========================================
+logs/
+*.log
+
+# ==========================================
+# Temporary Files
+# ==========================================
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# ==========================================
+# Operating System
+# ==========================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==========================================
+# Database
+# ==========================================
+*.sqlite3
+*.db
+
+# ==========================================
+# Generated Files
+# ==========================================
+generated/
+exports/
+output/
+results/
+
+# Ignore generated diagrams
+*.png
+*.svg
+*.pdf
+
+# ==========================================
+# LangGraph / AI Cache
+# ==========================================
+.cache/
+vector_store/
+chroma/
+faiss_index/
+rag_cache/
+
+# ==========================================
+# Node (if frontend exists)
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-error.log*
+package-lock.json
+
+# ==========================================
+# Misc
+# ==========================================
+coverage.xml
+*.coverage
