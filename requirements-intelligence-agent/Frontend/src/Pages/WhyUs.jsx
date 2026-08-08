@@ -19,7 +19,7 @@ function WhyUs({ className }) {
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: sectionRef.current,
-          start: 'top 80%',
+          start: 'top 60%',
           toggleActions: 'play reverse play reverse',
         },
       })

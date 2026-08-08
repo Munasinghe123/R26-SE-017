@@ -1,11 +1,11 @@
-from services.generate_srs import generate_srs
+from services.srs.build_srs import build_srs
 from graph.state import GraphState
 from services.tanscribe import transcribe_audio
 from services.extract import extract_requirements
 from services.diarize import diarize_audio
 from services.refine_requirements import refine_requirements
 from services.meetings_service import get_latest_requirements
-from services.generate_srs_pdf import create_pdf
+from services.srs.generate_srs_pdf import create_pdf
 from services.read_document import read_document
 from services.speech_enhancement import enhance_speech
 from services.speaker_alignment import align_speakers
@@ -85,14 +85,14 @@ def refine_node(state: GraphState):
         "requirements": updated
     }
     
-def generate_srs_node(state):
+def build_srs_node(state):
 
     latest = get_latest_requirements(
         state["meeting_id"]
     )
 
-    srs_text = generate_srs(latest)
-    print("srs generated")
+    srs_text = build_srs(latest)
+    print("srs built")
 
     return {
         "srs_text": srs_text
@@ -105,7 +105,7 @@ def generate_srs_pdf_node(state: GraphState):
         state["meeting_id"]
     )
 
-    print("srs pdf");
+    print("srs pdf built");
     return {
         "pdf_path": pdf_path
     }

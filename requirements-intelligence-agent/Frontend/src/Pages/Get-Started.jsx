@@ -114,7 +114,7 @@ export default function GetStarted() {
   return (
     <div className="flex items-center justify-center min-h-screen relative py-10">
       {/* MAIN CARD */}
-      <div className="relative w-[900px] border border-cyan-400/35 max-w-[95%]  lg:mt-20 h-[500px] backdrop-blur-xl rounded-4xl overflow-hidden shadow-2xl">
+      <div className="relative bg-black w-[900px] border border-cyan-200/35 max-w-[95%]  lg:mt-20 h-[500px] backdrop-blur-xl rounded-4xl overflow-hidden shadow-2xl">
         {/* DESKTOP VERSION (SLIDING) */}
         {isDesktop && (
           <>

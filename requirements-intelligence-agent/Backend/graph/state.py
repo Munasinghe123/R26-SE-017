@@ -29,7 +29,7 @@ class GraphState(TypedDict):
     approval_status: Optional[str]
     
     # srs
-    srs_text: Optional[str]
+    srs_text: Optional[Dict]
     pdf_path: Optional[str]
     
     meeting_id: Optional[str]
