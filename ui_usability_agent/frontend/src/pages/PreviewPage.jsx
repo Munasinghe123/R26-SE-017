@@ -42,6 +42,17 @@ export default function PreviewPage() {
   const [report, setReport] = useState(null)
   const [reportLoading, setReportLoading] = useState(false)
 
+  const downloadHtml = () => {
+    if (!html) return
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${screenId}.html`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const loadReport = async () => {
     try {
       setReportLoading(true)
@@ -129,6 +140,13 @@ export default function PreviewPage() {
               Highlighting {highlightFr}
             </span>
           )}
+          <button
+            onClick={downloadHtml}
+            disabled={!html}
+            className="ml-auto text-sm px-3 py-1.5 rounded-md border border-dark-hover text-text-primary hover:border-primary transition disabled:opacity-40"
+          >
+            Download HTML
+          </button>
         </div>
         {error ? (
           <div className="bg-red-900 text-red-200 border border-red-700 p-4 rounded">{error}</div>

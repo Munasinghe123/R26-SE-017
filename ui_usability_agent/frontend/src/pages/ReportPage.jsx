@@ -138,6 +138,11 @@ ${printArea.innerHTML}
           <div>
             <Link to="/" className="text-primary hover:underline mb-2 inline-block">← Back to Home</Link>
             <h1 className="text-3xl font-bold text-primary">Evaluation Report: {screenId}</h1>
+            {history.length > 0 && (
+              <span className="inline-block mt-2 text-xs px-2 py-1 rounded-full bg-cyan-900 text-cyan-300">
+                Final result — {history.find(h => h.isFinal)?.iteration ?? history.length} of {history.length} iteration(s)
+              </span>
+            )}
             <p className="text-text-secondary mt-2">Detailed usability evaluation breakdown</p>
           </div>
           <div className="flex gap-3">
