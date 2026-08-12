@@ -26,8 +26,7 @@ function LandingPage() {
           <div className="space-y-7 mt-14">
             <p className="text-white max-w-md text-base leading-relaxed">
               From conversations to complete software design artifacts. Generate
-              SRS, HLD, LLD, and wireframes without weeks of manual
-              analysis
+              SRS, HLD, LLD, and wireframes without weeks of manual analysis
             </p>
 
             <div className="flex space-x-10 mt-4">
@@ -85,20 +84,30 @@ function LandingPage() {
                     />
                   </svg>
                 </button>
-                <span className="text-white/80"> Watch Demo</span>
+                <span className="text-white"> Watch Demo</span>
               </div>
             </div>
           </div>
           <div className="absolute  bottom-4 flex items-center gap-6">
-            <FaGithub className="text-2xl text-white/40 hover:text-cyan-400 transition-colors cursor-pointer" />
-            <FaLinkedin className="text-2xl text-white/40 hover:text-cyan-400 transition-colors cursor-pointer" />
-            <FaXTwitter className="text-2xl text-white/40 hover:text-cyan-400 transition-colors cursor-pointer" />
+            <FaGithub className="text-2xl text-white/40 hover:text-cyan-400 hover:scale-125 transition-transform duration-300 ease-out  transition-colors cursor-pointer" />
+            <FaLinkedin className="text-2xl text-white/40 hover:text-cyan-400 hover:scale-125 transition-transform duration-300 ease-out  transition-colors cursor-pointer" />
+            <FaXTwitter className="text-2xl text-white/40 hover:text-cyan-400 hover:scale-125 transition-transform duration-300 ease-out  transition-colors cursor-pointer" />
           </div>
         </div>
       </div>
 
-      <div className="overflow-hidden h-[90%] absolute bottom-0 right-30">
-        <img src={roboImage} className="w-full h-full object-contain" />
+      <div className=" h-[90%] absolute bottom-0 right-30">
+        {/* Cyan glow */}
+        <div
+          className="absolute bottom-0 -right-10 translate-y-1/2 w-[500px]  h-[1000px]
+          rounded-full bg-cyan-300/20 blur-[100px] pointer-events-none"
+        />
+
+        <img
+          src={roboImage}
+          className="relative z-10 w-full h-full object-contain"
+          alt="AI robot"
+        />
       </div>
     </div>
   );

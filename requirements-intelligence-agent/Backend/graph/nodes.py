@@ -1,7 +1,9 @@
+import json
+
 from services.srs.build_srs import build_srs
 from graph.state import GraphState
 from services.tanscribe import transcribe_audio
-from services.extract import extract_requirements
+from services.extract.extract import extract_requirements
 from services.diarize import diarize_audio
 from services.refine_requirements import refine_requirements
 from services.meetings_service import get_latest_requirements
@@ -68,7 +70,11 @@ def transcript_cleaning_node(state: GraphState):
 
 def extraction_node(state: GraphState):
     requirements = extract_requirements(state["transcript"])
-    print("extracteded")
+
+    print("\n========== EXTRACTION NODE RESULT ==========")
+    print(json.dumps(requirements, indent=4, ensure_ascii=False))
+    print("============================================")
+
     return {"requirements": requirements}
 
 def refine_node(state: GraphState):
