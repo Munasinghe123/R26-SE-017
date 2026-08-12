@@ -1,16 +1,18 @@
 from langgraph.graph import StateGraph, END
 from graph.state import GraphState
 from graph.nodes import (
+    role_identification_node,
     transcribe_node,
     diarization_node,
     extraction_node,
     refine_node,
-    generate_srs_node,
+    build_srs_node,
     generate_srs_pdf_node,
     document_node,
     await_client_node,
     speech_enhancement_node,
-    speaker_alignment_node
+    speaker_alignment_node,
+    transcript_cleaning_node
 )
 from graph.router import route_workflow
 from graph.router import route_after_client
@@ -26,9 +28,11 @@ def build_graph():
     builder.add_node("transcribe", transcribe_node)
     builder.add_node("document", document_node)
     builder.add_node("diarize", diarization_node)
+    builder.add_node("role_identification", role_identification_node)
+    builder.add_node("transcript_cleaning", transcript_cleaning_node)
     builder.add_node("extract", extraction_node)
     builder.add_node("refine", refine_node)
-    builder.add_node("srs", generate_srs_node)
+    builder.add_node("build_srs", build_srs_node)
     builder.add_node("generate_pdf", generate_srs_pdf_node)
     builder.add_node("await_client", await_client_node)
     
@@ -45,7 +49,9 @@ def build_graph():
     #audio extraction
     builder.add_edge("transcribe", "diarize")
     builder.add_edge("diarize", "speaker_alignment")
-    builder.add_edge("speaker_alignment", "extract")
+    builder.add_edge("speaker_alignment", "role_identification")
+    builder.add_edge("role_identification", "transcript_cleaning")
+    builder.add_edge("transcript_cleaning", "extract")
     # builder.add_edge("extract", END)
     builder.add_edge("extract", "await_client")
     
@@ -61,7 +67,7 @@ def build_graph():
     builder.add_edge("refine", "await_client")
     
     #srs
-    builder.add_edge("srs", "generate_pdf")
+    builder.add_edge("build_srs", "generate_pdf")
     builder.add_edge("generate_pdf", END)
     
    

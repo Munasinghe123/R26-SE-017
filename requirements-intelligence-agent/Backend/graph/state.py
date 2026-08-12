@@ -16,6 +16,7 @@ class GraphState(TypedDict):
     transcript: Optional[str]
     transcript_segments: Optional[List[Dict]]
     speaker_segments: Optional[List[Dict]]
+    speaker_roles: Optional[Dict[str, str]]
     
     #document
     document_path: Optional[str]
@@ -28,7 +29,7 @@ class GraphState(TypedDict):
     approval_status: Optional[str]
     
     # srs
-    srs_text: Optional[str]
+    srs_text: Optional[Dict]
     pdf_path: Optional[str]
     
     meeting_id: Optional[str]

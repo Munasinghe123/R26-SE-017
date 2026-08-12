@@ -94,7 +94,7 @@ function UploadAudio() {
               />
 
               <p className="text-gray-400">
-                {file ? file.name : "Click or drag audio file here"}
+                {file ? file.name : "Click or drag audio and document files here"}
               </p>
             </label>
 
