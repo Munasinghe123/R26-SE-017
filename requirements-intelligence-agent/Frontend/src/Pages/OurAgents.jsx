@@ -1,27 +1,24 @@
-import React from 'react'
+import React from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useRef } from 'react';
-import { useMemo } from 'react';
+import { useRef } from "react";
+import { useMemo } from "react";
 
-import requirements from '../Images/OurAgents/reqs.png'
-import highlevel from '../Images/OurAgents/highlevel.png'
-import lowlevel from '../Images/OurAgents/lowlevel.png'
-import ui from '../Images/OurAgents/ui.png'
+import requirements from "../Images/OurAgents/reqs.png";
+import highlevel from "../Images/OurAgents/highlevel.png";
+import lowlevel from "../Images/OurAgents/lowlevel.png";
+import ui from "../Images/OurAgents/ui.png";
 
 gsap.registerPlugin(ScrollTrigger);
 
-function OurAgents() {
-
+function OurAgents({ className }) {
   const wrapRef = useRef(null);
   const listRef = useRef(null);
   const trackRef = useRef(null);
 
-
   useGSAP(() => {
     const ctx = gsap.context(() => {
-
       gsap.set(trackRef.current, { scaleY: 0, transformOrigin: "top" });
 
       ScrollTrigger.create({
@@ -34,11 +31,10 @@ function OurAgents() {
           gsap.to(trackRef.current, { scaleY: self.progress, ease: "none" });
           wrapRef.current?.style?.setProperty(
             "--about-progress",
-            `${Math.round(self.progress * 100)}%`
+            `${Math.round(self.progress * 100)}%`,
           );
         },
       });
-
 
       gsap.utils.toArray(".tl-item").forEach((el) => {
         const fromX = el.classList.contains("tl-left") ? -40 : 40;
@@ -100,12 +96,14 @@ function OurAgents() {
             />
 
             <div className="relative z-10 text-center space-y-3">
-              <h1 className="
+              <h1
+                className="
                 font-['Orbitron']
                 text-2xl font-bold
                 tracking-[0.15em]
                 text-white
-              ">
+              "
+              >
                 Requirements Intelligence
               </h1>
 
@@ -150,7 +148,6 @@ function OurAgents() {
               "
             />
 
-
             <img
               src={highlevel}
               className="
@@ -184,8 +181,7 @@ function OurAgents() {
             </div>
           </div>
         ),
-      }
-      ,
+      },
       {
         key: "lowlevel",
         offset: "sm",
@@ -314,20 +310,22 @@ function OurAgents() {
         ),
       },
     ],
-    []
+    [],
   );
 
-
   return (
-    <div className='relative scroll-section rounded-t-4xl  z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.08)_0%,transparent_55%),linear-gradient(to_bottom,#102235_0%,#0b1726_22%,#050c15_55%,#000000_100%)] min-h-screen w-full'>
-
-      <h1 className='text-white text-7xl uppercase font-bold w-full text-center pt-10'
-        style={{ fontFamily: 'Orbitron, sans-serif' }}>Our <span className='text-cyan-300'>Agents</span>
+    // <div className='relative  rounded-t-4xl  z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.08)_0%,transparent_55%),linear-gradient(to_bottom,#102235_0%,#0b1726_22%,#050c15_55%,#000000_100%)] min-h-screen w-full'>
+    <div className={ `relative ${className}  rounded-t-4xl  z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.08)_0%,transparent_55%),linear-gradient(to_bottom,#102235_0%,#0b1726_22%,#050c15_55%,#000000_100%)] min-h-screen w-full`}>
+      
+      <h1
+        className="text-white text-7xl uppercase font-bold w-full text-center pt-10"
+        style={{ fontFamily: "Orbitron, sans-serif" }}
+      >
+        Our <span className="text-cyan-300">Agents</span>
       </h1>
 
       <section id="about" className="relative  px-5">
         <div className="container mx-auto w-full pt-6 pb-24">
-
           <div ref={wrapRef} className="relative md:mt-20 mt-10">
             <div className="hidden md:block pointer-events-none absolute left-1/2 -top-10 -bottom-10 -translate-x-1/2">
               <div className="absolute top-0 bottom-0 w-[4px] bg-white/10 rounded-full overflow-hidden">
@@ -338,13 +336,16 @@ function OurAgents() {
               </div>
             </div>
 
-
             {/* stack of rows */}
             <div ref={listRef} className="space-y-0 md:space-y-0 ">
               {items.map((item, i) => {
                 const left = i % 2 === 0;
                 const rowOffset =
-                  item.offset === "lg" ? "md:pt-8" : item.offset === "sm" ? "md:pt-6" : "";
+                  item.offset === "lg"
+                    ? "md:pt-8"
+                    : item.offset === "sm"
+                      ? "md:pt-6"
+                      : "";
 
                 return (
                   <div
@@ -352,10 +353,11 @@ function OurAgents() {
                     className={`grid md:grid-cols-[1fr_auto_1fr] grid-cols-1 md:gap-x-4  ${rowOffset} ${i !== 0 ? "-mt-16" : ""}`}
                   >
                     <div
-                      className={`tl-item max-w-[40rem]  w-full ${left
-                        ? "tl-left md:col-start-1 md:justify-self-end md:mr-2"
-                        : "tl-right md:col-start-3 md:justify-self-start md:ml-2"
-                        }`}
+                      className={`tl-item max-w-[40rem]  w-full ${
+                        left
+                          ? "tl-left md:col-start-1 md:justify-self-end md:mr-2"
+                          : "tl-right md:col-start-3 md:justify-self-start md:ml-2"
+                      }`}
                     >
                       {item.node}
                     </div>
@@ -366,10 +368,8 @@ function OurAgents() {
           </div>
         </div>
       </section>
-
-
     </div>
-  )
+  );
 }
 
-export default OurAgents
+export default OurAgents;
