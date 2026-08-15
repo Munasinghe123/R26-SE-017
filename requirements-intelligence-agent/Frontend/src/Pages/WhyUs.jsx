@@ -62,7 +62,7 @@ function WhyUs({ className }) {
   return (
     <div
       ref={sectionRef}
-      className={`scroll-section relative z-10 h-screen bg-black w-full overflow-hidden ${className || ''}`}
+      className={`rounded-b-4xl   relative z-10 h-screen bg-black w-full overflow-hidden ${className || ''}`}
     >
       <div className='flex items-center justify-center w-full'>
         <h1
