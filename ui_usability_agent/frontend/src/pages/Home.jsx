@@ -185,7 +185,6 @@ export default function Home() {
 
       setEvaluationReports(data.reports || [])
       setLogs(formatLogs(data.logs))
-      loadReports()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Evaluation failed.')
     } finally {
@@ -237,6 +236,17 @@ export default function Home() {
       setError('Failed to clear session.')
     }
   };
+
+  const downloadHtml = (screenId, html) => {
+    if (!html) return
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${screenId}.html`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   if (restoring) {
     return (
@@ -551,6 +561,12 @@ export default function Home() {
                     onClick={() => window.open(`/reports/${refinementResult.screenId}`, '_blank')}
                   >
                     Open full report
+                  </button>
+                  <button
+                    className="text-sm text-primary hover:text-primary-light transition"
+                    onClick={() => downloadHtml(refinementResult.screenId, generatedUI)}
+                  >
+                    Download HTML
                   </button>
                 </div>
               )}
