@@ -172,6 +172,9 @@ def run_refinement_loop(
     last_entry = history[-1]
     regressed = best_entry is not last_entry
 
+    for entry in history:
+        entry["is_final"] = entry is best_entry
+
     return {
         "final_html": best_entry["html"],
         "final_report": best_entry["report"],

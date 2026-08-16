@@ -248,6 +248,7 @@ def refine(req: RefineRequest):
                     "report": e["report"],
                     "appliedFix": e["applied_fix"],
                     "regressions": e["regressions"],
+                    "isFinal": e.get("is_final", False),
                 }
                 for e in result["history"]
             ]
