@@ -53,7 +53,7 @@ export default function StarBackground() {
         left: 0,
         height: '100vh',
         width: '100vw',
-        zIndex: 0,
+        zIndex: -1,
         pointerEvents: 'none',
         background: '#05050f'
       }}

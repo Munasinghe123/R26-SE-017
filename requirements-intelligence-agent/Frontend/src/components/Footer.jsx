@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 
 function Footer() {
   return (
-    <footer className="relative w-full text-gray-400">
+    <footer className="relative w-full text-gray-400 border-t rounded-t-4xl  border-white/30">
       {/* Main footer */}
       <div className="w-full px-20 lg:px-30 py-10 flex flex-col lg:flex-row items-center justify-between gap-8">
         {/* Brand */}

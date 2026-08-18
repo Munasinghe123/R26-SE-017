@@ -1,7 +1,7 @@
 
 
 from fastapi import APIRouter, UploadFile, File, Form,Query
-from services.meetings_service import get_latest_requirements
+# from services.meetings_service import get_latest_requirements
 from controllers.refine_controller import refine_endpoint
 from pydantic import BaseModel
 from typing import Dict, Any

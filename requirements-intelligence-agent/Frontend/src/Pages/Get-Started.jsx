@@ -11,12 +11,14 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import toast from "react-hot-toast";
-// import { useDispatch }  from 'react-redux';
-// import { loginSuccess } from '../../redux/userSlice';
+import { useDispatch }  from 'react-redux';
+import { loginSuccess } from '../Redux/UserSlice';
 import { useNavigate } from "react-router-dom";
+import { decideRoute } from "../components/DecideRoute";
+
 
 export default function GetStarted() {
-  // const dispatch = useDispatch();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
   const [isLogin, setIsLogin] = useState(true);
@@ -41,7 +43,6 @@ export default function GetStarted() {
     try {
       if (
         name.trim() === "" ||
-        userName.trim() === "" ||
         email.trim() === "" ||
         password.trim() === ""
       ) {
@@ -49,17 +50,15 @@ export default function GetStarted() {
         return;
       }
 
-      console.log("registering", { name, userName, email, password });
+      console.log("registering", { name, email, password });
 
-      const response = await axios.post("http://localhost:7000/api/register", {
+      const response = await axios.post("http://127.0.0.1:8000/register", {
         name,
-        username: userName,
         email,
         password,
       });
 
       setName("");
-      setUserName("");
       setEmail("");
       setPassword("");
 
@@ -81,27 +80,22 @@ export default function GetStarted() {
       }
 
       const response = await axios.post(
-        "http://localhost:7000/api/login",
+        "http://127.0.0.1:8000/login",
         {
           email,
           password,
         },
         { withCredentials: true },
       );
+      console.log("Login response:", response.data);
 
       setEmail("");
       setPassword("");
 
       //adding the values to redux store
-      // dispatch(loginSuccess({user:response.data.user}));
+      dispatch(loginSuccess(response.data));
 
-      if (response.data.user.role === "admin") {
-        navigate("/admin");
-      } else if (response.data.user.role === "restaurantOwner") {
-        navigate("/restaurant-owner");
-      } else {
-        navigate("/user");
-      }
+      navigate(decideRoute(response.data.user));
 
       console.log("Login successful:", response.data);
       toast.success("Successfully logged in!");
@@ -114,7 +108,7 @@ export default function GetStarted() {
   return (
     <div className="flex items-center justify-center min-h-screen relative py-10">
       {/* MAIN CARD */}
-      <div className="relative bg-black w-[900px] border border-cyan-200/35 max-w-[95%]  lg:mt-20 h-[500px] backdrop-blur-xl rounded-4xl overflow-hidden shadow-2xl">
+      <div className="relative bg-black w-[900px] max-w-[95%]  lg:mt-20 h-[500px] backdrop-blur-xl rounded-4xl overflow-hidden shadow-[0_0_40px_rgba(34,211,238,0.35)]">
         {/* DESKTOP VERSION (SLIDING) */}
         {isDesktop && (
           <>
@@ -172,14 +166,6 @@ export default function GetStarted() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       icon={SquareUserRound}
-                    />
-
-                    <FloatingInput
-                      label="User Name"
-                      type="text"
-                      icon={SquareUserRound}
-                      value={userName}
-                      onChange={(e) => setUserName(e.target.value)}
                     />
 
                     <FloatingInput
