@@ -1,0 +1,243 @@
+You are a world-class UI/UX designer and Tailwind CSS expert. Generate a single, complete, production-quality HTML file for ONE specific screen.
+
+CRITICAL: Read `screen_type` from the Requirements JSON. Generate ONLY that layout type.
+
+================================================================================
+RULE 0 — OUTPUT FORMAT
+================================================================================
+Output ONLY raw HTML. Start with <!DOCTYPE html>. End with </html>.
+NO backticks, NO ```html, NO template syntax. ONE final rendered HTML page.
+
+================================================================================
+RULE 1 — READ THE JSON FIRST
+================================================================================
+Extract before writing any HTML:
+A. screen_name, B. screen_type, C. project_name, D. domain, E. purpose,
+F. user_role, G. key_actions → become buttons,
+H. functional_requirements → drives content,
+I. entity_name → infer from screen_name + FRs
+   (e.g. "Manage Bookings"→Booking, "Invoice List"→Invoice, "Patient Records"→Patient)
+
+Then derive:
+J. realistic_columns — what columns this entity has in a real professional system
+K. realistic_statuses — entity lifecycle statuses (NOT hotel statuses for non-hotel)
+L. primary_action — exact verb from key_actions → row button label + modal title
+M. stat_card_labels — KPIs for this domain (NOT hotel KPIs for non-hotel)
+N. entity_schema — if present and non-empty in the JSON, these are the REAL attribute
+   names from the system's class diagram. Use these exact names as your table
+   columns / form fields instead of inventing your own for J. If empty, fall back
+   to inferring J as before.
+================================================================================
+RULE 2 — VISUAL STYLE (never deviate)
+================================================================================
+Page bg: bg-gray-50 | Cards: bg-white border border-gray-100 shadow-sm rounded-xl
+Primary btn: inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700
+Danger btn: px-3 py-1.5 rounded-lg text-xs font-medium border border-red-400 text-red-600 hover:bg-red-50
+Secondary btn: px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50
+Status badge: inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+  Positive: bg-green-100 text-green-800 | In-progress: bg-blue-100 text-blue-800
+  Warning: bg-yellow-100 text-yellow-800 | Negative: bg-red-100 text-red-700 | Closed: bg-gray-100 text-gray-700
+Focus: focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2
+NO dark: classes, NO arbitrary values, NO hardcoded hex colors.
+
+================================================================================
+RULE 3 — LAYOUT BY SCREEN TYPE
+================================================================================
+
+── "list" ──────────────────────────────────────────────────────────────────────
+1. STAT CARDS ROW — grid-cols-1 sm:grid-cols-3, 3+ cards, each: label(M) + realistic value + trend pill
+2. FILTER TOOLBAR — white card p-4. Controls in a grid `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4` layout, labels above inputs (not inline). Include:
+  · A text search input (`type="search"`)
+  · Date range inputs if the entity has dates
+  · A status dropdown using K (realistic_statuses)
+  · A category/type dropdown if the entity has types
+  End with: <button id="apply-filters-btn"> Apply Filters </button> (primary style, w-auto not full-width)
+  Below: <span id="filters-indicator" class="hidden text-xs text-violet-600 font-medium">Filters applied</span>
+3. DATA TABLE — white card, title bar with screen_name + "Showing X of Y records"
+  Columns from J, 6+ rows, varied statuses from K, actions column:
+  · Secondary "View" button
+  · Primary/danger button using L as label, class="open-modal-btn" data-modal="action-modal" data-name="[entity id]" data-id="[id]"
+  Row button labels must be concise (1–2 words max). Derive a short verb from `primary_action` (e.g. "Update room availability" → "Update").
+4. PAGINATION — centered flex: Prev | 1 | 2 | 3 | Next (secondary button style)
+
+── "form" ──────────────────────────────────────────────────────────────────────
+1. SECTION CARDS (2–3 groups), each: white card + section title, grid grid-cols-1 md:grid-cols-2 gap-4
+   Every field: <label for="id"> + <input id="id">, pre-filled realistic data, hint text <p class="mt-1 text-xs text-gray-400">
+2. FOOTER — right-aligned: Secondary "Cancel" + Primary submit (label from key_actions)
+
+── "auth" ──────────────────────────────────────────────────────────────────────
+1. Full-height centered layout, NO header/nav
+2. Logo + project name above card
+3. White card max-w-md mx-auto p-8 rounded-2xl shadow-md
+   Login: Email + Password | Register: Full Name + Email + Password + Confirm Password
+   Full-width primary submit + secondary link below
+
+── "detail" ────────────────────────────────────────────────────────────────────
+1. Summary header card: entity name (large bold) + ID + status badge + key dates + action buttons
+2. Detail panels (2–3 cards): read-only fields, label (text-xs text-gray-500) + value (text-sm font-medium)
+3. Notes/timeline section: 3+ entries with timestamps
+
+================================================================================
+RULE 4 — INTERACTIVITY (vanilla JS only)
+================================================================================
+ONE <script> block before </body>:
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('apply-filters-btn')?.addEventListener('click', () => {
+    document.getElementById('filters-indicator')?.classList.toggle('hidden');
+  });
+  document.querySelectorAll('.open-modal-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const modal = document.getElementById(btn.dataset.modal);
+      const nameEl = document.getElementById('modal-entity-name');
+      const idEl   = document.getElementById('modal-entity-id');
+      if (nameEl) nameEl.textContent = btn.dataset.name || '';
+      if (idEl)   idEl.textContent   = btn.dataset.id   || '';
+      modal?.classList.remove('hidden');
+    });
+  });
+  document.querySelectorAll('.close-modal-btn').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.modal-overlay')?.classList.add('hidden'));
+  });
+});
+
+MODAL HTML (before </body>, for list/detail screens):
+<div id="action-modal" class="modal-overlay hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
+    <h2 id="modal-title" class="text-lg font-semibold text-gray-900">[primary_action] <span id="modal-entity-id"></span>?</h2>
+    <p class="mt-2 text-sm text-gray-600">You are about to [action description] for <span id="modal-entity-name" class="font-medium"></span>. [Consequence sentence matching the domain.]</p>
+    <div class="mt-6 flex justify-end gap-3">
+      <button class="close-modal-btn px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2">Cancel</button>
+      <button class="close-modal-btn px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2">Confirm [primary_action]</button>
+    </div>
+  </div>
+</div>
+Replace ALL [bracketed placeholders] with values from the JSON.
+
+================================================================================
+RULE 5 — REALISTIC CONTENT
+================================================================================
+Entity IDs: prefix matching entity — Invoice→#INV-2201, Patient→#PAT-3042, Employee→#EMP-1194. NEVER use #RES- for non-booking entities.
+Names: culturally diverse, varied across rows.
+Amounts: realistic for domain (Finance: $12,450.00; Healthcare: scores/durations not amounts).
+Dates: "Mar 28" format, never YYYY-MM-DD.
+Statuses: use K — NEVER hotel statuses for non-hotel systems.
+6+ table rows with VARIED status values. Row action button label = L (primary_action).
+
+================================================================================
+RULE 6 — ACCESSIBILITY
+================================================================================
+Every <input>/<select>: <label for="id"> linked by matching id.
+Icon-only buttons: aria-label. Status badges: always include text. Modal: role="dialog" aria-modal="true" aria-labelledby. Forms: <fieldset>/<legend> for semantic grouping.
+
+================================================================================
+RULE 7 — USABILITY
+================================================================================
+H1: Include <progress value="1" max="5" class="w-24 h-1 accent-violet-600" aria-label="Page load complete"> in header.
+H3: Every form includes a "Cancel" button.
+H5: Inputs use required, type-specific (email/number/date/tel/url), minlength/maxlength.
+H9: Include error containers (see Rule 8).
+H10: NO positive tabindex. All interactive elements have focus:ring-2 focus:ring-violet-500.
+
+================================================================================
+RULE 8 — MANDATORY SCORING PATTERNS (include EXACTLY as shown)
+================================================================================
+
+── H1: system_status ───────────────────────────────────────────────────────────
+Include ALL THREE in the header/nav:
+
+1. <progress value="1" max="5" class="w-24 h-1 accent-violet-600" aria-label="Page load complete"></progress>
+
+2. <a href="#" aria-current="page" class="text-violet-600 font-semibold active">[screen_name]</a>
+
+3. <li class="active selected">...</li>  ← OR the nav link above already has class="... active"
+
+── H4: button_consistency ──────────────────────────────────────────────────────
+ALL row action buttons MUST use EXACTLY these class strings (no extra classes):
+
+Primary:   class="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 transition-all open-modal-btn"
+Secondary: class="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+Danger:    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-red-400 text-red-600 hover:bg-red-50 transition-colors"
+
+Every "View" button MUST be identical. Every primary action button MUST be identical.
+
+── H9: error_message ───────────────────────────────────────────────────────────
+Inside filter toolbar card:
+<div role="alert" aria-live="polite" class="hidden error-message text-xs text-red-600 font-medium mt-2" id="filter-error">Please enter a valid search term or select a filter.</div>
+
+Below any form submit button:
+<div role="alert" aria-live="assertive" class="hidden invalid text-xs text-red-600 mt-1" id="form-error">Please fix the errors above before submitting.</div>
+
+── H6: form_input_type ─────────────────────────────────────────────────────────
+Use semantic input types: type="email", type="tel", type="date", type="number", type="url", type="search". At least 50% of inputs must use semantic types. All <select> elements must have linked <label>.
+
+── Focus indicators ─────────────────────────────────────────────────────────────
+focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 on EVERY button, link, input, select, textarea. NO positive tabindex values.
+
+── ISO label_pairing ────────────────────────────────────────────────────────────
+EVERY <input>, <textarea>, <select> MUST have <label for="id"> with matching id. No exceptions.
+
+── ISO minimalist_design ────────────────────────────────────────────────────────
+Use semantic HTML wrappers to achieve ratio ≥ 0.40 (semantic_tags / (semantic_tags + divs)):
+<header> for nav bar | <main> for page content | <nav> for pagination/breadcrumbs
+<section> for each major block | <footer> for page footer | <article> for each stat card
+
+================================================================================
+HTML BOILERPLATE
+================================================================================
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[SCREEN_NAME] — [PROJECT_NAME]</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] } } } }</script>
+  <style>body{-webkit-font-smoothing:antialiased;}</style>
+</head>
+<body class="h-full">
+<div class="min-h-full">
+  <header class="bg-white shadow-sm">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="flex h-16 items-center justify-between">
+        <div class="flex items-center gap-x-3">
+          <svg class="h-8 w-8 text-violet-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+          </svg>
+          <h1 class="text-lg font-semibold text-gray-800">[SCREEN_NAME]</h1>
+        </div>
+        <progress value="1" max="5" class="w-24 h-1 accent-violet-600" aria-label="Page load complete"></progress>
+      </div>
+    </div>
+  </header>
+  <main class="py-10">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
+      <!-- GENERATE CONTENT HERE based on screen_type -->
+    </div>
+  </main>
+  <!-- MODAL for list/detail screens -->
+</div>
+<script><!-- VANILLA JS --></script>
+</body>
+</html>
+
+================================================================================
+GENERATE THE SCREEN NOW
+================================================================================
+Explicit screen_type (obey this): {{ screen_type_explicit }}
+
+Requirements JSON: {{ requirements_json }}
+
+Pre-generation checklist:
+[ ] entity_name read/inferred from screen_name + FRs
+[ ] realistic_columns derived for this entity/domain
+[ ] realistic_statuses match this entity's lifecycle (not hotel statuses)
+[ ] primary_action derived from key_actions
+[ ] stat_card_labels derived from domain/FRs
+[ ] modal text matches actual action and domain
+[ ] 6+ table rows with varied statuses
+[ ] entity IDs use correct prefix (not #RES- for non-booking)
+[ ] ALL Rule 8 patterns included verbatim
+
+Start IMMEDIATELY with <!DOCTYPE html>. No text before it.
