@@ -23,7 +23,10 @@ J. realistic_columns — what columns this entity has in a real professional sys
 K. realistic_statuses — entity lifecycle statuses (NOT hotel statuses for non-hotel)
 L. primary_action — exact verb from key_actions → row button label + modal title
 M. stat_card_labels — KPIs for this domain (NOT hotel KPIs for non-hotel)
-
+N. entity_schema — if present and non-empty in the JSON, these are the REAL attribute
+   names from the system's class diagram. Use these exact names as your table
+   columns / form fields instead of inventing your own for J. If empty, fall back
+   to inferring J as before.
 ================================================================================
 RULE 2 — VISUAL STYLE (never deviate)
 ================================================================================

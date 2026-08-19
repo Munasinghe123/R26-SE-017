@@ -145,7 +145,41 @@ def plan_screens(system_input: Dict) -> List[Dict]:
                 return []
 
     return []
+def _match_entity_schema(screen: Dict, class_diagram: Dict) -> List[str]:
+    """
+    Matches a planned screen to the most likely class in the LLD class
+    diagram (by simple name overlap), and returns just its attribute list.
+    Deliberately minimal — no fuzzy libs, no relationships/methods passed
+    through, to keep the generation prompt's signal-to-noise ratio high.
+    """
+    classes = (class_diagram or {}).get("classes", [])
+    if not classes:
+        return []
 
+    screen_text = (
+        (screen.get("screen_name") or "") + " " + (screen.get("screen_id") or "")
+    ).lower()
+
+    best_match = None
+    best_score = 0
+    for cls in classes:
+        cls_name = (cls.get("name") or "").lower()
+        if not cls_name:
+            continue
+        score = 0
+        if cls_name in screen_text:
+            score += 2
+        if cls_name.rstrip("s") in screen_text:
+            score += 2
+        if screen_text and any(word in cls_name for word in screen_text.split()):
+            score += 1
+        if score > best_score:
+            best_score = score
+            best_match = cls
+
+    if best_match and best_score > 0:
+        return best_match.get("attributes", [])
+    return []
 def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> List[Dict]:
     """
     Converts the screen plan into a list of per-screen requirement dicts.
@@ -153,13 +187,15 @@ def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> Lis
     """
     per_screen_reqs = []
 
-    # These are high-level NFRs that are almost always relevant to the UI
     globally_relevant_nfr_types = ["Accessibility", "Responsiveness", "Dark Mode", "Usability"]
     all_nfrs = base_requirements.get("non_functional_requirements", [])
     relevant_nfrs = [
         nfr for nfr in all_nfrs
         if nfr.get("type") in globally_relevant_nfr_types
     ]
+
+    design_artifacts = base_requirements.get("design_artifacts", {}) or {}
+    class_diagram = design_artifacts.get("class_diagram", {}) or {}
 
     for screen in screens:
         relevant_fr_ids = screen.get("relevant_frs", [])
@@ -168,6 +204,8 @@ def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> Lis
         screen_specific_frs = [
             fr for fr in all_frs if fr.get("id") in relevant_fr_ids
         ] if relevant_fr_ids else []
+
+        entity_schema = _match_entity_schema(screen, class_diagram)
 
         screen_req = {
             "project_name": base_requirements.get("project_name", "System"),
@@ -179,6 +217,12 @@ def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> Lis
             "key_actions": screen.get("key_actions", []),
             "functional_requirements": screen_specific_frs,
             "non_functional_requirements": relevant_nfrs,
+            "entity_schema": entity_schema,
+            "design_artifacts_available": {
+                "class_diagram": bool(class_diagram),
+                "er_diagram": bool(design_artifacts.get("er_diagram")),
+                "sequence_diagram": bool(design_artifacts.get("sequence_diagram")),
+            },
         }
         per_screen_reqs.append(screen_req)
 
