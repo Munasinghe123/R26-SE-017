@@ -3,15 +3,16 @@ import os
 import re
 from typing import List, Dict
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
+from langchain_openrouter import ChatOpenRouter
 # from langchain_ollama import ChatOllama  # Commented out for Groq
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 # Load environment variables and validate API key
 load_dotenv()
-if not os.getenv("GROQ_API_KEY"):
-    raise ValueError("GROQ_API_KEY not found in .env file. Please add it.")
+if not os.getenv("OPENROUTER_API_KEY"):
+    raise ValueError("OPENROUTER_API_KEY not found in .env file. Please add it.")
+
 
 SCREEN_PLANNER_PROMPT = """You are a senior software architect. 
 Given a system description and its requirements, your job is to identify ALL the screens/pages that need to be built for this system.
@@ -36,6 +37,8 @@ System description and requirements:
 def _clean_llm_output(raw_output: str) -> str:
     """Remove markdown code blocks and other common LLM artifacts."""
     raw_output = raw_output.strip()
+    # Strip Qwen3-style reasoning blocks before JSON extraction
+    raw_output = re.sub(r'<think>.*?</think>', '', raw_output, flags=re.DOTALL).strip()
     if raw_output.startswith("```json"):
         raw_output = raw_output[7:]
     if raw_output.startswith("```"):
@@ -43,9 +46,14 @@ def _clean_llm_output(raw_output: str) -> str:
     if raw_output.endswith("```"):
         raw_output = raw_output[:-3]
     cleaned = raw_output.strip()
-    start = cleaned.find("[")
+
+    # Only match a real JSON-array-of-objects start, not any stray '['.
+    match = re.search(r'\[\s*\{', cleaned)
+    if not match:
+        return cleaned
+    start = match.start()
     end = cleaned.rfind("]")
-    if start != -1 and end != -1 and end > start:
+    if end > start:
         return cleaned[start: end + 1]
     return cleaned
 
@@ -93,10 +101,10 @@ def _recover_truncated_json(raw: str) -> str:
     return raw                      # nothing salvageable — return original
 
 # For planning (bumped to 3000 tokens — a full screen plan needs ~1500-2000)
-fast_llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0.2,
-    max_tokens=3000,
+fast_llm = ChatOpenRouter(
+    model="qwen/qwen3-coder",  # OpenRouter slug for Qwen3-Coder
+    temperature=0.2,            # Low temperature is great for reliable UI structure & code
+    max_tokens=1800,           # Retained your token limit
 )
 
 def plan_screens(system_input: Dict) -> List[Dict]:
@@ -133,6 +141,17 @@ def plan_screens(system_input: Dict) -> List[Dict]:
                 print(f"[screen_planner] Truncation recovery succeeded — "
                       f"salvaged {len(screens)} screen(s).")
 
+            # Dedup screens the LLM may have repeated (case-insensitive screen_name match)
+            seen_names = set()
+            deduped = []
+            for s in screens:
+                key = (s.get("screen_name") or "").strip().lower()
+                if key and key in seen_names:
+                    continue
+                seen_names.add(key)
+                deduped.append(s)
+            screens = deduped
+
             # Sort by priority: High first, then Medium, then Low
             priority_order = {"High": 0, "Medium": 1, "Low": 2}
             screens.sort(key=lambda s: priority_order.get(s.get("priority", "Low"), 2))
@@ -143,6 +162,13 @@ def plan_screens(system_input: Dict) -> List[Dict]:
             if attempt == 2:
                 print("[screen_planner] Error: Failed to get valid JSON from LLM after 3 attempts.")
                 return []
+
+        except Exception as e:
+        # THIS is the new part — catches Groq/API/network errors too
+            print(f"[screen_planner] Warning: Attempt {attempt + 1} failed with non-JSON error: {type(e).__name__}: {e}")
+        if attempt == 2:
+            print("[screen_planner] Error: all attempts failed.")
+            return []
 
     return []
 def _match_entity_schema(screen: Dict, class_diagram: Dict) -> List[str]:
@@ -180,6 +206,34 @@ def _match_entity_schema(screen: Dict, class_diagram: Dict) -> List[str]:
     if best_match and best_score > 0:
         return best_match.get("attributes", [])
     return []
+
+
+def _coerce_functional_requirements(items) -> List[Dict]:
+    """Normalize FRs so downstream code can always treat them as dicts."""
+    normalized = []
+    for i, item in enumerate(items or [], 1):
+        if isinstance(item, dict):
+            fr_id = item.get("id") or item.get("fr_id") or f"FR{i}"
+            desc = item.get("description") or item.get("text") or str(item)
+            normalized.append({"id": str(fr_id), "description": str(desc), **item})
+        else:
+            normalized.append({"id": f"FR{i}", "description": str(item)})
+    return normalized
+
+
+def _coerce_non_functional_requirements(items) -> List[Dict]:
+    """Normalize NFRs so filtering by type never crashes on string inputs."""
+    normalized = []
+    for item in items or []:
+        if isinstance(item, dict):
+            nfr_type = item.get("type") or item.get("category") or "General"
+            desc = item.get("description") or item.get("text") or str(item)
+            normalized.append({"type": str(nfr_type), "description": str(desc), **item})
+        else:
+            normalized.append({"type": "General", "description": str(item)})
+    return normalized
+
+
 def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> List[Dict]:
     """
     Converts the screen plan into a list of per-screen requirement dicts.
@@ -188,21 +242,27 @@ def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> Lis
     per_screen_reqs = []
 
     globally_relevant_nfr_types = ["Accessibility", "Responsiveness", "Dark Mode", "Usability"]
-    all_nfrs = base_requirements.get("non_functional_requirements", [])
+    all_nfrs = _coerce_non_functional_requirements(base_requirements.get("non_functional_requirements", []))
     relevant_nfrs = [
         nfr for nfr in all_nfrs
         if nfr.get("type") in globally_relevant_nfr_types
     ]
+    if not relevant_nfrs:
+        relevant_nfrs = all_nfrs
 
     design_artifacts = base_requirements.get("design_artifacts", {}) or {}
     class_diagram = design_artifacts.get("class_diagram", {}) or {}
 
     for screen in screens:
         relevant_fr_ids = screen.get("relevant_frs", [])
-        all_frs = base_requirements.get("functional_requirements", [])
+        all_frs = _coerce_functional_requirements(base_requirements.get("functional_requirements", []))
+
+        relevant_fr_ids_lower = {str(x).strip().lower() for x in (relevant_fr_ids or []) if str(x).strip()}
 
         screen_specific_frs = [
-            fr for fr in all_frs if fr.get("id") in relevant_fr_ids
+            fr for fr in all_frs
+            if str(fr.get("id", "")).strip().lower() in relevant_fr_ids_lower
+            or str(fr.get("description", "")).strip().lower() in relevant_fr_ids_lower
         ] if relevant_fr_ids else []
 
         entity_schema = _match_entity_schema(screen, class_diagram)

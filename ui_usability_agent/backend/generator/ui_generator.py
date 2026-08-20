@@ -1,26 +1,40 @@
-# Sends prompt to Ollama, gets HTML back
+# Sends prompt to OpenRouter, gets HTML back
 import os
 import json
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
-# from langchain_ollama import ChatOllama  # Commented out for Groq
+from langchain_openrouter import ChatOpenRouter
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-#load secret key from .env file
+# Load secret key from .env file
 load_dotenv()
-if not os.getenv("GROQ_API_KEY"):
-    raise ValueError("GROQ_API_KEY not found in .env file. Please add it.")
 
-# For HTML generation (quality matters)
-gen_llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.4,
-    max_tokens=4000,
+# FIX: Validate OpenRouter API key instead of Groq
+if not os.getenv("OPENROUTER_API_KEY"):
+    raise ValueError("OPENROUTER_API_KEY not found in .env file. Please add it.")
+
+# For HTML generation (quality matters) using Qwen3-Coder via OpenRouter
+gen_llm = ChatOpenRouter(
+    model="qwen/qwen3-coder",  # OpenRouter slug for Qwen3-Coder
+    temperature=0.2,           # Low temperature ensures reliable UI syntax and structures
+    max_tokens=1800,           
 )
 
+def _extract_html(raw: str) -> str:
+    """Strip any preamble/reasoning text the LLM emits before/after the HTML."""
+    raw = raw.strip()
+    start = raw.find("<!DOCTYPE html>")
+    if start == -1:
+        start = raw.find("<html")
+    if start != -1:
+        raw = raw[start:]
+    end = raw.rfind("</html>")
+    if end != -1:
+        raw = raw[: end + len("</html>")]
+    return raw.strip()
+
 def get_llm():
-    """Create and return a ChatGroq instance"""
+    """Create and return a ChatOpenRouter instance"""
     return gen_llm
 
 def _load_prompt_with_addendum(prompt_filename: str, addendum_filename: str, insert_before: str) -> str:
@@ -84,7 +98,8 @@ def generate_ui(requirements: dict, screen_type: str) -> str:
         "screen_type_explicit": screen_type
     })
 
-    return generated_html
+    return _extract_html(generated_html)
+
 def refine_ui(existing_html: str, requirements: dict, screen_type: str, instructions: str) -> str:
     """
     Revise an already-generated HTML screen to fix one targeted usability/
@@ -124,5 +139,5 @@ def refine_ui(existing_html: str, requirements: dict, screen_type: str, instruct
         "screen_type_explicit": screen_type,
     })
 
-    return revised_html
-    
+    # FIX: Cleaned up a dead second return statement below this block
+    return _extract_html(revised_html)
