@@ -89,5 +89,243 @@
       "flow": "Search for booking by name or confirmation number -> Verify details -> Mark guest as checked-in."
     }
   ],
-  "design_artifacts": {}
+  "design_artifacts": {
+    "class_diagram": {
+      "classes": [
+        {
+          "name": "Guest",
+          "attributes": [
+            "guestId",
+            "fullName",
+            "email",
+            "phone",
+            "passwordHash"
+          ],
+          "methods": [
+            "register()",
+            "login()",
+            "cancelBooking(bookingId)"
+          ]
+        },
+        {
+          "name": "Room",
+          "attributes": [
+            "roomId",
+            "roomType",
+            "pricePerNight",
+            "capacity",
+            "availability",
+            "amenities"
+          ],
+          "methods": [
+            "updateAvailability(status)",
+            "updatePricing(price)"
+          ]
+        },
+        {
+          "name": "Booking",
+          "attributes": [
+            "bookingId",
+            "guestId",
+            "roomId",
+            "checkInDate",
+            "checkOutDate",
+            "totalPrice",
+            "status"
+          ],
+          "methods": [
+            "calculateTotalPrice()",
+            "updateStatus(newStatus)"
+          ]
+        },
+        {
+          "name": "StaffMember",
+          "attributes": [
+            "staffId",
+            "fullName",
+            "email",
+            "role"
+          ],
+          "methods": [
+            "viewDashboard()",
+            "manageBooking(bookingId)",
+            "manageRoomInventory(roomId)"
+          ]
+        }
+      ],
+      "relationships": [
+        {
+          "source": "Guest",
+          "target": "Booking",
+          "type": "association",
+          "cardinality": "1..*"
+        },
+        {
+          "source": "Room",
+          "target": "Booking",
+          "type": "association",
+          "cardinality": "1..*"
+        },
+        {
+          "source": "StaffMember",
+          "target": "Booking",
+          "type": "dependency",
+          "cardinality": ""
+        }
+      ]
+    },
+    "er_diagram": {
+      "entities": [
+        {
+          "name": "Guest",
+          "attributes": [
+            {
+              "name": "guest_id",
+              "type": "UUID",
+              "key": "PK"
+            },
+            {
+              "name": "full_name",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR",
+              "key": "UNIQUE"
+            },
+            {
+              "name": "phone",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "password_hash",
+              "type": "VARCHAR"
+            }
+          ]
+        },
+        {
+          "name": "Room",
+          "attributes": [
+            {
+              "name": "room_id",
+              "type": "UUID",
+              "key": "PK"
+            },
+            {
+              "name": "room_type",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "price_per_night",
+              "type": "DECIMAL"
+            },
+            {
+              "name": "capacity",
+              "type": "INT"
+            },
+            {
+              "name": "availability",
+              "type": "BOOLEAN"
+            }
+          ]
+        },
+        {
+          "name": "Booking",
+          "attributes": [
+            {
+              "name": "booking_id",
+              "type": "UUID",
+              "key": "PK"
+            },
+            {
+              "name": "guest_id",
+              "type": "UUID",
+              "key": "FK -> Guest.guest_id"
+            },
+            {
+              "name": "room_id",
+              "type": "UUID",
+              "key": "FK -> Room.room_id"
+            },
+            {
+              "name": "check_in_date",
+              "type": "DATE"
+            },
+            {
+              "name": "check_out_date",
+              "type": "DATE"
+            },
+            {
+              "name": "total_price",
+              "type": "DECIMAL"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR"
+            }
+          ]
+        }
+      ],
+      "relationships": [
+        {
+          "from": "Guest",
+          "to": "Booking",
+          "cardinality": "1:N"
+        },
+        {
+          "from": "Room",
+          "to": "Booking",
+          "cardinality": "1:N"
+        }
+      ]
+    },
+    "sequence_diagram": {
+      "scenario": "Create Booking",
+      "actors": [
+        "Guest",
+        "FrontendUI",
+        "OrderController",
+        "Booking",
+        "PaymentGateway",
+        "DatabaseRepository"
+      ],
+      "messages": [
+        {
+          "from": "Guest",
+          "to": "FrontendUI",
+          "action": "selectRoomAndDates()"
+        },
+        {
+          "from": "FrontendUI",
+          "to": "OrderController",
+          "action": "submitCheckout(guestId, roomId, dates)"
+        },
+        {
+          "from": "OrderController",
+          "to": "Booking",
+          "action": "calculateTotalPrice()"
+        },
+        {
+          "from": "OrderController",
+          "to": "PaymentGateway",
+          "action": "chargePayment(amount)"
+        },
+        {
+          "from": "PaymentGateway",
+          "to": "OrderController",
+          "action": "paymentConfirmed()"
+        },
+        {
+          "from": "OrderController",
+          "to": "DatabaseRepository",
+          "action": "saveBooking(booking)"
+        },
+        {
+          "from": "DatabaseRepository",
+          "to": "FrontendUI",
+          "action": "bookingConfirmation()"
+        }
+      ]
+    }
+  }
 }

@@ -79,24 +79,12 @@ export default function PreviewPage() {
   useEffect(() => {
     if (!screenId) return
 
-    const loadPreview = async () => {
-      try {
-        setLoading(true)
-        setError('')
-        const response = await axios.get(`${API_BASE}/api/outputs`, { params: { screenId } })
-        let rawHtml = response.data.html || ''
-        if (highlightFr && rawHtml) {
-          rawHtml = rawHtml.includes('</body>')
-            ? rawHtml.replace('</body>', `${highlightScript(highlightFr)}</body>`)
-            : rawHtml + highlightScript(highlightFr)
-        }
-        setHtml(rawHtml)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load preview.')
-      } finally {
-        setLoading(false)
-      }
-    }
+   if (rawHtml) {
+  const targetFr = highlightFr || "";
+  rawHtml = rawHtml.includes('</body>')
+    ? rawHtml.replace('</body>', `${highlightScript(targetFr)}</body>`)
+    : rawHtml + highlightScript(targetFr);
+}
 
     loadScreens()
     loadPreview()
@@ -161,7 +149,18 @@ export default function PreviewPage() {
                   className="w-full h-[70vh]"
                   srcDoc={html}
                   sandbox="allow-scripts allow-same-origin"
+                  // MINIMAL FIX: Block clicks from escaping the window frame
+                  onLoad={(e) => {
+                    e.target.contentWindow.document.addEventListener('click', (evt) => {
+                      const el = evt.target.closest('a, button');
+                      if (el) {
+                        evt.preventDefault();
+                        evt.stopPropagation();
+                      }
+                    }, true);
+                  }}
                 />
+
               ) : (
                 <p className="text-text-secondary p-4">No HTML available for this screen.</p>
               )}

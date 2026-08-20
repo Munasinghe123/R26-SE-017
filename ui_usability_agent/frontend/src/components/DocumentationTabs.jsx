@@ -253,10 +253,12 @@ export default function DocumentationTabs() {
 
             <div className="bg-dark-bg border border-dark-hover rounded-lg p-6">
               <h3 className="text-lg font-bold text-text-primary mb-3">Loop bounds</h3>
-              <p className="text-text-secondary text-sm">
+                 <p className="text-text-secondary text-sm">
                 Each screen is refined for at most <span className="text-primary font-semibold">5 iterations</span>.
-                The loop exits early once the composite score meets that iteration's threshold
-                (65 → 75 → 85 → 85 → 85), or once 5 iterations complete — whichever comes first.
+                The loop exits early once the composite score reaches the fixed
+                <span className="text-primary font-semibold"> 85 threshold</span>, or once 5 iterations complete —
+                whichever comes first. An earlier progressive threshold (65 → 75 → 85) was tried and abandoned
+                after empirical testing showed it caused premature convergence.
               </p>
             </div>
 
@@ -276,9 +278,9 @@ export default function DocumentationTabs() {
             <div className="bg-dark-bg border border-dark-hover rounded-lg p-6">
               <h3 className="text-lg font-bold text-text-primary mb-3">Known limitation</h3>
               <p className="text-text-secondary text-sm">
-                The controller currently has no memory of previously attempted fixes — if a fix
-                doesn't resolve a metric, the same instruction may be reissued verbatim on the next
-                iteration. See the refinement controller roadmap for planned changes.
+                Stalled fixes are detected across iterations: if a targeted sub-metric doesn't improve,
+                the next fix prompt for that same metric includes an escalation note instructing the LLM
+                to try a materially different implementation rather than repeating the same change.
               </p>
             </div>
           </div>
