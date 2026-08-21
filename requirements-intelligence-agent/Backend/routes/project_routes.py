@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from uuid import UUID
 
 from services.project_service import create_project_service
+from services.project_service import get_user_projects_service
 
 project_routes = APIRouter()
 
@@ -22,3 +23,9 @@ async def create_project(
         data.creatorId,
         data
     )
+    
+@project_routes.get("/projects/user/{user_id}")
+async def get_user_projects(
+    user_id: UUID
+):
+    return await get_user_projects_service(user_id)

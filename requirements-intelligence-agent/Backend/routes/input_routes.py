@@ -10,5 +10,7 @@ router = APIRouter()
 #     return await handle_audio_upload(file)
 
 @router.post('/extract-requirements')
-async def extract_requirements(file: UploadFile = File(...)):
-    return await process_source(file)
+async def extract_requirements(file: UploadFile = File(...),project_id: str = Form(...)):
+    
+    print("PROJECT ID RECEIVED:", project_id)
+    return await process_source(file,project_id)

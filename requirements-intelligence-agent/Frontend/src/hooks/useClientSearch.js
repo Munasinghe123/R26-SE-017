@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import axios from "axios";
+import api from '../api/api'
 
 export default function useClientSearch() {
   const timerRef = useRef(null);
@@ -42,8 +42,8 @@ export default function useClientSearch() {
       abortRef.current = controller;
 
       try {
-        const response = await axios.get(
-          "http://127.0.0.1:8000/users/search",
+        const response = await api.get(
+          "/users/search",
           {
             params: {
               q: query,

@@ -50,9 +50,9 @@ def build_graph():
     builder.add_edge("transcribe", "diarize")
     builder.add_edge("diarize", "speaker_alignment")
     builder.add_edge("speaker_alignment", "role_identification")
+    # debugging
     builder.add_edge("role_identification", "transcript_cleaning")
     builder.add_edge("transcript_cleaning", "extract")
-    # builder.add_edge("extract", END)
     builder.add_edge("extract", "await_client")
     
     #document extraction

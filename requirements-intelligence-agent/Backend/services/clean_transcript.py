@@ -1,16 +1,6 @@
 import json
-import os
-from dotenv import load_dotenv
-from langchain_groq import ChatGroq
+from services.llm.llm import llm
 
-load_dotenv()
-
-
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0
-)
 
 def build_prompt(
     transcript: str,
@@ -72,7 +62,20 @@ def clean_transcript(transcript:str , speaker_roles:dict) -> str:
         transcript,
         speaker_roles
     )
+    
+    print("\n========== CLEANING LLM INPUT ==========")
+    print("Transcript length:", len(transcript))
+    print("Speaker roles:", speaker_roles)
+    print("Prompt length:", len(prompt))
+    print("========================================")
 
     response = llm.invoke(prompt)
+    
+    print("\n========== CLEANING LLM RESPONSE ==========")
+    print("Response type:", type(response))
+    print("Response content repr:", repr(response.content))
+    print("Content length:", len(response.content))
+    print("Full response:", response)
+    print("===========================================")
 
     return response.content.strip()

@@ -1,7 +1,7 @@
 import json
-import os
-from dotenv import load_dotenv
-from langchain_groq import ChatGroq
+
+from services.llm.llm import llm
+
 from .extract_guidelines import (
     PURPOSE_GUIDELINES,
     SCOPE_GUIDELINES,
@@ -19,16 +19,6 @@ from .extract_guidelines import (
 )
 import re
 
-
-
-load_dotenv()
-
-
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0
-)
 
 
 def build_prompt(transcript: str) -> str:

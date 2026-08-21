@@ -7,6 +7,7 @@ import {
 import "@livekit/components-styles";
 
 import { useEffect, useState } from "react";
+import api from '../api/api'
 
 export default function TestMeeting() {
   const [connection, setConnection] = useState(null);
@@ -15,8 +16,8 @@ export default function TestMeeting() {
   useEffect(() => {
     async function getToken() {
       try {
-        const response = await fetch(
-          "http://127.0.0.1:8000/test/livekit-token"
+        const response = await api.post(
+          "/test/livekit-token"
         );
 
         if (!response.ok) {

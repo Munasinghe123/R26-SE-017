@@ -9,12 +9,12 @@ import {
   MoveRight,
   MoveLeft,
 } from "lucide-react";
-import axios from "axios";
 import toast from "react-hot-toast";
 import { useDispatch }  from 'react-redux';
 import { loginSuccess } from '../Redux/UserSlice';
 import { useNavigate } from "react-router-dom";
 import { decideRoute } from "../components/DecideRoute";
+import api from '../api/api'
 
 
 export default function GetStarted() {
@@ -52,7 +52,7 @@ export default function GetStarted() {
 
       console.log("registering", { name, email, password });
 
-      const response = await axios.post("http://127.0.0.1:8000/register", {
+      const response = await api.post("/register", {
         name,
         email,
         password,
@@ -79,8 +79,8 @@ export default function GetStarted() {
         return;
       }
 
-      const response = await axios.post(
-        "http://127.0.0.1:8000/login",
+      const response = await api.post(
+        "/login",
         {
           email,
           password,

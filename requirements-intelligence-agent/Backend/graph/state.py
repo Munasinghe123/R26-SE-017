@@ -33,5 +33,5 @@ class GraphState(TypedDict):
     pdf_path: Optional[str]
     
     meeting_id: Optional[str]
-    
+    project_id:Optional[str]
     
