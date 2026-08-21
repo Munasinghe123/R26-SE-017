@@ -6,7 +6,7 @@ from services.tanscribe import transcribe_audio
 from services.extract.extract import extract_requirements
 from services.diarize import diarize_audio
 from services.refine_requirements import refine_requirements
-from services.meetings_service import get_latest_requirements
+# from services.meetings_service import get_latest_requirements
 from services.srs.generate_srs_pdf import create_pdf
 from services.read_document import read_document
 from services.speech_enhancement import enhance_speech
@@ -91,18 +91,18 @@ def refine_node(state: GraphState):
         "requirements": updated
     }
     
-def build_srs_node(state):
+# def build_srs_node(state):
 
-    latest = get_latest_requirements(
-        state["meeting_id"]
-    )
+#     latest = get_latest_requirements(
+#         state["meeting_id"]
+#     )
 
-    srs_text = build_srs(latest)
-    print("srs built")
+#     srs_text = build_srs(latest)
+#     print("srs built")
 
-    return {
-        "srs_text": srs_text
-    }
+#     return {
+#         "srs_text": srs_text
+#     }
     
 def generate_srs_pdf_node(state: GraphState):
 

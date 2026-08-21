@@ -6,7 +6,7 @@ from graph.nodes import (
     diarization_node,
     extraction_node,
     refine_node,
-    build_srs_node,
+    # build_srs_node,
     generate_srs_pdf_node,
     document_node,
     await_client_node,
@@ -32,7 +32,7 @@ def build_graph():
     builder.add_node("transcript_cleaning", transcript_cleaning_node)
     builder.add_node("extract", extraction_node)
     builder.add_node("refine", refine_node)
-    builder.add_node("build_srs", build_srs_node)
+    # builder.add_node("build_srs", build_srs_node)
     builder.add_node("generate_pdf", generate_srs_pdf_node)
     builder.add_node("await_client", await_client_node)
     
@@ -50,9 +50,9 @@ def build_graph():
     builder.add_edge("transcribe", "diarize")
     builder.add_edge("diarize", "speaker_alignment")
     builder.add_edge("speaker_alignment", "role_identification")
+    # debugging
     builder.add_edge("role_identification", "transcript_cleaning")
     builder.add_edge("transcript_cleaning", "extract")
-    # builder.add_edge("extract", END)
     builder.add_edge("extract", "await_client")
     
     #document extraction
@@ -67,7 +67,7 @@ def build_graph():
     builder.add_edge("refine", "await_client")
     
     #srs
-    builder.add_edge("build_srs", "generate_pdf")
+    # builder.add_edge("build_srs", "generate_pdf")
     builder.add_edge("generate_pdf", END)
     
    

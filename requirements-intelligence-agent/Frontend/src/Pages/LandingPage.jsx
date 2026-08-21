@@ -1,11 +1,22 @@
 import React from "react";
-import { FileText, Network, Boxes, LayoutTemplate } from "lucide-react";
+import {
+  FileText,
+  Network,
+  Boxes,
+  LayoutTemplate,
+  UserRound,
+} from "lucide-react";
 import roboImage from "../Images/hero.png";
 import { useNavigate } from "react-router-dom";
 import { FaGithub, FaLinkedin, FaXTwitter } from "react-icons/fa6";
+import { useSelector } from "react-redux";
+import { decideRoute } from "../components/DecideRoute";
 
 function LandingPage() {
   const navigate = useNavigate();
+
+  const isAuthenticated = useSelector((state) => state.user.isAuthenticated);
+  const user = useSelector((state) => state.user.userInfo);
 
   return (
     <div className="hero relative h-screen w-full grid grid-cols-2 bg-transparent z-0  xl:pl-30">
@@ -30,51 +41,101 @@ function LandingPage() {
             </p>
 
             <div className="flex space-x-10 mt-4">
-              <button
-                onClick={() => navigate("/select-mode")}
-                className="relative w-[200px] h-[40px] transition-transform active:scale-95 cursor-pointer"
-                style={{
-                  animation: "subtlePulse 2s infinite ease-in-out",
-                }}
-              >
-                <style>{`
+              {isAuthenticated ? (
+                 <button
+                  onClick={() => navigate(decideRoute(user))}
+                  className="relative w-[200px] h-[40px] transition-transform active:scale-95 cursor-pointer"
+                  style={{
+                    animation: "subtlePulse 2s infinite ease-in-out",
+                  }}
+                >
+                  <style>{`
             @keyframes subtlePulse {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.03); }
             }
         `}</style>
 
-                <svg
-                  className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
-                  viewBox="0 0 275 44"
-                  preserveAspectRatio="none"
+                  <svg
+                    className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
+                    viewBox="0 0 275 44"
+                    preserveAspectRatio="none"
+                  >
+                    <defs>
+                      <linearGradient
+                        id="buttonGradient"
+                        x1="0%"
+                        y1="0%"
+                        x2="100%"
+                        y2="0%"
+                      >
+                        <stop offset="0%" stopColor="#FFFFFF" />
+                        <stop offset="20%" stopColor="#B8F6FF" />
+                        <stop offset="50%" stopColor="#2DDCFF" />
+                        <stop offset="80%" stopColor="#139DAF" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M273.034 0.5H48.5337C33.2003 14.8333 2.03368 43.5 0.0336752 43.5H231.034L273.034 0.5Z"
+                      fill="url(#buttonGradient)"
+                      stroke="url(#buttonGradient)"
+                    />
+                  </svg>
+
+                  <span className="relative z-10 flex h-full items-center justify-center gap-2 uppercase font-semibold text-black">
+                    <UserRound size={17} strokeWidth={2.5} />
+                    Dashboard
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => navigate("/get-started")}
+                  className="relative w-[200px] h-[40px] transition-transform active:scale-95 cursor-pointer"
+                  style={{
+                    animation: "subtlePulse 2s infinite ease-in-out",
+                  }}
                 >
-                  <defs>
-                    <linearGradient
-                      id="buttonGradient"
-                      x1="0%"
-                      y1="0%"
-                      x2="100%"
-                      y2="0%"
-                    >
-                      <stop offset="0%" stopColor="#FFFFFF" />
-                      <stop offset="20%" stopColor="#B8F6FF" />
-                      <stop offset="50%" stopColor="#2DDCFF" />
-                      <stop offset="80%" stopColor="#139DAF" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M273.034 0.5H48.5337C33.2003 14.8333 2.03368 43.5 0.0336752 43.5H231.034L273.034 0.5Z"
-                    fill="url(#buttonGradient)"
-                    stroke="url(#buttonGradient)"
-                  />
-                </svg>
+                  <style>{`
+            @keyframes subtlePulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+            }
+        `}</style>
 
-                <span className="relative z-10 flex h-full items-center justify-center uppercase font-semibold text-black">
-                  Start Designing
-                </span>
-              </button>
+                  <svg
+                    className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
+                    viewBox="0 0 275 44"
+                    preserveAspectRatio="none"
+                  >
+                    <defs>
+                      <linearGradient
+                        id="buttonGradient"
+                        x1="0%"
+                        y1="0%"
+                        x2="100%"
+                        y2="0%"
+                      >
+                        <stop offset="0%" stopColor="#FFFFFF" />
+                        <stop offset="20%" stopColor="#B8F6FF" />
+                        <stop offset="50%" stopColor="#2DDCFF" />
+                        <stop offset="80%" stopColor="#139DAF" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M273.034 0.5H48.5337C33.2003 14.8333 2.03368 43.5 0.0336752 43.5H231.034L273.034 0.5Z"
+                      fill="url(#buttonGradient)"
+                      stroke="url(#buttonGradient)"
+                    />
+                  </svg>
 
+                  <span className="relative z-10 flex h-full items-center justify-center gap-2 uppercase font-semibold text-black">
+                    <UserRound size={17} strokeWidth={2.5} />
+                    Get Started
+                  </span>
+                </button>
+              )}
+
+                
               <div className="flex items-center space-x-3">
                 <button className="play-btn">
                   <svg viewBox="0 0 448 512" width="16">

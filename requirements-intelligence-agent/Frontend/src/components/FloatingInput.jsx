@@ -9,11 +9,6 @@ const FloatingInput = ({
 }) => {
   return (
     <div className="relative w-full">
-      {/* Icon */}
-      {Icon && (
-        <Icon className="absolute left-3 top-3 text-white w-5 h-5 pointer-events-none" />
-      )}
-
       {/* Input */}
       <input
         type={type}
@@ -26,6 +21,11 @@ const FloatingInput = ({
           focus:outline-none focus:ring-1 focus:ring-cyan-400
         "
       />
+
+      {/* Icon */}
+      {Icon && (
+        <Icon className="absolute left-3 top-3.5 text-white peer-focus:text-cyan-400 w-5 h-5 pointer-events-none" />
+      )}
 
       {/* Floating Label */}
       <label

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
-import axios from "axios"
+import api from '../../api/api'
 
 export default function RequirementReview() {
     const { meetingId } = useParams()
@@ -13,7 +13,7 @@ export default function RequirementReview() {
     const fetchRequirements = async () => {
         try {
             console.log("use effect fired")
-            const res = await axios.get(`http://127.0.0.1:8000/requirements/${meetingId}`)
+            const res = await api.get(`http://127.0.0.1:8000/requirements/${meetingId}`)
             setRequirements(res.data.requirements)
             console.log("returned reqs", res.data.requirements)
         } catch (err) {
@@ -37,7 +37,7 @@ export default function RequirementReview() {
         setLoading(true)
 
         try {
-            const res = await axios.post("http://127.0.0.1:8000/refine-reqs", {
+            const res = await api.post("/refine-reqs", {
 
                 feedback: feedback,
                 requirements: requirements,
@@ -60,8 +60,8 @@ export default function RequirementReview() {
         try {
             setLoading(true)
 
-            const res = await axios.post(
-                "http://127.0.0.1:8000/approve-reqs",
+            const res = await api.post(
+                "/approve-reqs",
                 {
                     meeting_id: meetingId
                 }

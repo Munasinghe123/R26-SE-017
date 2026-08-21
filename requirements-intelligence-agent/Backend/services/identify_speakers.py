@@ -1,16 +1,5 @@
 import json
-import os
-from dotenv import load_dotenv
-from langchain_groq import ChatGroq
-
-load_dotenv()
-
-
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0
-)
+from services.llm.llm import llm
 
 
 def build_prompt(transcript: str) -> str:
@@ -32,6 +21,15 @@ def build_prompt(transcript: str) -> str:
                 - explains current problems
                 - answers questions
                 - requests features
+                
+                The value for each speaker must be exactly one of:
+                   
+                    - CLIENT
+                    - BUSINESS_ANALYST
+                    
+                    Determine which role belongs to each speaker based only on the transcript.
+
+                    Do not use any assumed relationship between speaker number and role.
 
                 Return ONLY valid JSON with EXACTLY these keys:
 
@@ -50,9 +48,9 @@ def build_prompt(transcript: str) -> str:
 def identify_speakers(transcript: str) -> dict:
 
     prompt = build_prompt(transcript)
-
+    
     response = llm.invoke(prompt)
-
+    
     content = response.content.strip()
 
     content = content.replace("```json", "")

@@ -1,16 +1,6 @@
 import json
-import os
-from dotenv import load_dotenv
-from langchain_groq import ChatGroq
+from services.llm.llm import llm
 
-load_dotenv()
-
-
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0
-)
 
 def extract_json(content: str):
     start = content.find("{")
