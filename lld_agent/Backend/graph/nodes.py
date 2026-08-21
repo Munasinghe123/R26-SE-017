@@ -1,19 +1,13 @@
 import json
-import os
-import re
-import time
-from groq import Groq
-from dotenv import load_dotenv
 
 from utils.jsonCleaner import clean_json_response
 from utils.irMapper import convert_to_ir
 from Services.validationService import ValidationService
 from graph.state import UMLGraphState
-from config.config import GENERATION_MODEL_1
+from config.config import GENERATION_MODEL_1, GENERATION_PROVIDER
+from llm.factory import get_llm_provider
 
-# Initialize environment and Groq client
-load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+llm_provider = get_llm_provider(GENERATION_PROVIDER)
 
 # ====================================
 # HELPER FUNCTIONS
@@ -127,50 +121,22 @@ def _build_validation_guidance(expert_guidance: str, errors: list) -> str:
     return f"\nFix these validation issues:\n{body}\n"
 
 
-def _extract_retry_delay(error: Exception, attempt: int) -> float:
-    message = str(error)
-    match = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", message, flags=re.IGNORECASE)
-    if match:
-        return max(float(match.group(1)) + 0.5, 1.0)
-
-    status_code = getattr(error, "status_code", None)
-    if status_code == 429:
-        return min(2 ** attempt, 12)
-
-    return 0.0
-
-
-def _create_completion_with_retry(prompt: str, max_attempts: int = 3):
-    last_error = None
-
-    for attempt in range(max_attempts):
-        try:
-            return client.chat.completions.create(
-                model=GENERATION_MODEL_1,
-                temperature=0,
-                max_completion_tokens=3500,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You extract UML class, sequence, and ER structures.",
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-            )
-        except Exception as exc:
-            last_error = exc
-            is_rate_limited = getattr(exc, "status_code", None) == 429 or exc.__class__.__name__ == "RateLimitError"
-            if not is_rate_limited or attempt == max_attempts - 1:
-                raise
-
-            delay = _extract_retry_delay(exc, attempt)
-            if delay > 0:
-                time.sleep(delay)
-
-    raise last_error
+def _create_completion_with_retry(prompt: str):
+    return llm_provider.complete(
+        model=GENERATION_MODEL_1,
+        temperature=0,
+        max_tokens=3500,
+        messages=[
+            {
+                "role": "system",
+                "content": "You extract UML class, sequence, and ER structures.",
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+    )
 
 
 # ====================================
@@ -182,7 +148,7 @@ def generate_node(state: UMLGraphState) -> dict:
   prompt = _build_prompt(state["requirements"], state["extra_rules"])
   response = _create_completion_with_retry(prompt)
   return {
-    "llm_response": response.choices[0].message.content,
+    "llm_response": response.content,
     "iterations_used": state["iterations_used"] + 1,
   }
 

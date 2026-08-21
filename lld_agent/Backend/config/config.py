@@ -4,10 +4,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+USE_CANDIDATE_PIPELINE = _env_bool("USE_CANDIDATE_PIPELINE")
+GENERATION_PROVIDER = os.getenv("GENERATION_PROVIDER", os.getenv("LLM_PROVIDER", "groq"))
 GENERATION_MODEL_1 = "llama-3.3-70b-versatile"
+EXPERT_PROVIDER = os.getenv("EXPERT_PROVIDER", "groq")
 EXPERT_MODEL = "llama-3.3-70b-versatile"
+
+CANDIDATE_1_PROVIDER = os.getenv("CANDIDATE_1_PROVIDER", GENERATION_PROVIDER)
+CANDIDATE_1_MODEL = os.getenv("CANDIDATE_1_MODEL", GENERATION_MODEL_1)
+CANDIDATE_1_TEMPERATURE = float(os.getenv("CANDIDATE_1_TEMPERATURE", "0"))
+CANDIDATE_1_MAX_TOKENS = int(os.getenv("CANDIDATE_1_MAX_TOKENS", "3500"))
 
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "3"))
 

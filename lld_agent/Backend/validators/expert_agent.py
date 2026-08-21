@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from groq import Groq
-from config.config import GROQ_API_KEY, EXPERT_MODEL
+from config.config import EXPERT_MODEL, EXPERT_PROVIDER
+from llm.factory import get_llm_provider
 from schemas.ir_schema import IntermediateRepresentation
 from schemas.api_models import (
     ValidationError,
@@ -77,7 +77,7 @@ class ExpertAgent:
         overdesign_detector: OverDesignDetector,
         naming_enforcer: NamingEnforcer,
     ) -> None:
-        self.client = Groq(api_key=GROQ_API_KEY)
+        self.llm_provider = get_llm_provider(EXPERT_PROVIDER)
         self.consistency_engine = consistency_engine
         self.overdesign_detector = overdesign_detector
         self.naming_enforcer = naming_enforcer
@@ -152,9 +152,10 @@ Validation Errors:
 {error_text}
 """
 
-        response = self.client.chat.completions.create(
+        response = self.llm_provider.complete(
             model=EXPERT_MODEL,
             temperature=0,
+            max_tokens=800,
             messages=[
                 {
                     "role": "system",
@@ -167,7 +168,7 @@ Validation Errors:
             ]
         )
 
-        guidance = response.choices[0].message.content
+        guidance = response.content
 
         # limit guidance size
         return guidance[:800]
