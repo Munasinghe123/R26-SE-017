@@ -6,7 +6,7 @@ load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-GENERATION_MODEL = "qwen/qwen3-32b"
+GENERATION_MODEL_1 = "llama-3.3-70b-versatile"
 EXPERT_MODEL = "llama-3.3-70b-versatile"
 
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "3"))
@@ -34,5 +34,3 @@ MAX_RETRY_GUIDANCE_CHARS = int(os.getenv("MAX_RETRY_GUIDANCE_CHARS", "150"))
 MAX_RETRY_REQUIREMENT_DESCRIPTION_CHARS = int(
     os.getenv("MAX_RETRY_REQUIREMENT_DESCRIPTION_CHARS", "120")
 )
-
-
