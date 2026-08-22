@@ -360,7 +360,7 @@ def reports():
             return {"reports": []}
         result = []
         for file in os.listdir(reports_dir):
-            if not file.endswith(".json"):
+            if not file.endswith("_score_report.json"):  
                 continue
             sid = file.replace("_score_report.json", "")
             with open(os.path.join(reports_dir, file), "r", encoding="utf-8") as f:

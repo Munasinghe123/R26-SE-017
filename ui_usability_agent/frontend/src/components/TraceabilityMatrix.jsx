@@ -63,8 +63,9 @@ export default function TraceabilityMatrix({ traceability, screenId }) {
                               target="_blank"
                               rel="noreferrer"
                               className="text-xs text-primary hover:underline ml-1"
+                              title="Opens the screen preview and scrolls to this element"
                             >
-                              View →
+                              Highlight in preview →
                             </a>
                           )}
                         </li>
