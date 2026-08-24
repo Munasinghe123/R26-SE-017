@@ -26,8 +26,8 @@ async def handle_audio_upload(file, project_id):
         )
 
         draft = await save_srs_draft(project_id, result["requirements"])
-        print(draft)
-
+        # print(draft)
+        print("MEETING ID:", meeting_id)
         return {"meeting_id": meeting_id}
     
     finally:

@@ -1,11 +1,12 @@
 import React from "react";
-import { Plus, User, Settings,LogOut } from "lucide-react";
+import { Plus, User, Settings, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { logout } from "../../Redux/UserSlice";
 import logo from "../../Images/logo.png";
 import CreateProjectModal from "./Modals/CreateProjectModal";
 import { useState } from "react";
+import { setCurrentProject } from "../../Redux/ProjectSlice";
 
 export default function ProjectSidebar({
   projects,
@@ -16,12 +17,12 @@ export default function ProjectSidebar({
   const [showAccountMenu, setShowAccountMenu] = useState(false);
 
   const navigate = useNavigate();
-
-  const handleProjectClick = (projectId) => {
-    navigate(`/project-dashboard/${projectId}`);
-  };
-
   const dispatch = useDispatch();
+
+  const handleProjectClick = (project) => {
+    dispatch(setCurrentProject(project));
+    navigate(`/project-dashboard/${project.id}`);
+  };
 
   const handleLogout = () => {
     dispatch(logout());
@@ -54,7 +55,7 @@ export default function ProjectSidebar({
                 <button
                   key={project.id}
                   type="button"
-                  onClick={() => handleProjectClick(project.id)}
+                  onClick={() => handleProjectClick(project)}
                   className={`
                     w-full rounded-lg px-3 py-3
                     text-left text-sm
