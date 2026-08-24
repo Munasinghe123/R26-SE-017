@@ -9,7 +9,7 @@ async def refine_endpoint(req):
         config={"configurable": {"thread_id": req.meetingId}}
     )
 
-    save_refined_version(req.meetingId, result["requirements"], req.feedback)
+    # save_refined_version(req.meetingId, result["requirements"], req.feedback)
 
     return {
         "requirements": result["requirements"],

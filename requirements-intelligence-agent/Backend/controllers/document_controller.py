@@ -22,6 +22,7 @@ async def handle_document_upload(file, project_id):
     
     await save_srs_draft(project_id,result["requirements"])
 
+    print("meeting id", meeting_id)
     return {
         "meeting_id": meeting_id
     }

@@ -12,10 +12,16 @@ from graph.nodes import (
     await_client_node,
     speech_enhancement_node,
     speaker_alignment_node,
-    transcript_cleaning_node
+    transcript_cleaning_node,
+    client_view_node,
+    process_client_review_node,
+    analyze_client_changes_node,
+    evaluate_change_impact_node,
+    generate_targeted_questions_node,
+    await_client_questions_node,
+    apply_client_answers_node
 )
 from graph.router import route_workflow
-from graph.router import route_after_client
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -31,10 +37,21 @@ def build_graph():
     builder.add_node("role_identification", role_identification_node)
     builder.add_node("transcript_cleaning", transcript_cleaning_node)
     builder.add_node("extract", extraction_node)
+    builder.add_node("client_view", client_view_node)
+    builder.add_node("await_client", await_client_node)
+    builder.add_node(
+            "process_client_review",
+            process_client_review_node
+        )
+    builder.add_node("analyze_client_changes",analyze_client_changes_node)
+    builder.add_node("evaluate_change_impact",evaluate_change_impact_node)
+    builder.add_node("generate_targeted_questions",generate_targeted_questions_node)
+    builder.add_node("await_client_questions", await_client_questions_node)
+    builder.add_node( "apply_client_answers", apply_client_answers_node)
     builder.add_node("refine", refine_node)
     # builder.add_node("build_srs", build_srs_node)
     builder.add_node("generate_pdf", generate_srs_pdf_node)
-    builder.add_node("await_client", await_client_node)
+   
     
     builder.set_entry_point("router")
     
@@ -50,18 +67,23 @@ def build_graph():
     builder.add_edge("transcribe", "diarize")
     builder.add_edge("diarize", "speaker_alignment")
     builder.add_edge("speaker_alignment", "role_identification")
-    # debugging
     builder.add_edge("role_identification", "transcript_cleaning")
     builder.add_edge("transcript_cleaning", "extract")
-    builder.add_edge("extract", "await_client")
+    
     
     #document extraction
     builder.add_edge("document", "extract")
     
-    builder.add_conditional_edges(
-           "await_client",
-           route_after_client
-    )
+    
+    # common
+    builder.add_edge("extract", "client_view")
+    builder.add_edge("client_view", "await_client")
+    builder.add_edge("await_client","process_client_review")
+    builder.add_edge( "process_client_review","analyze_client_changes")
+    builder.add_edge( "analyze_client_changes", "evaluate_change_impact")
+    builder.add_edge( "evaluate_change_impact", "generate_targeted_questions")
+    builder.add_edge( "generate_targeted_questions", "await_client_questions")
+    builder.add_edge("await_client_questions","apply_client_answers")
     
     # refine
     builder.add_edge("refine", "await_client")

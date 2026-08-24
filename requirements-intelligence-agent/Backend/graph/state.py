@@ -25,6 +25,16 @@ class GraphState(TypedDict):
     requirements: Optional[Dict]
     feedback: Optional[str]
     
+    client_decision: Optional[Dict]
+    client_view: Optional[Dict]
+    client_review: Optional[List[Dict]]
+    change_set: Optional[Dict]
+    change_analysis: Optional[Dict]
+    change_impacts: Optional[Dict]
+    clarification_questions: Optional[Dict]
+    client_answers: Optional[List[Dict]]
+    answer_resolutions: Optional[Dict]
+    
     # approval
     approval_status: Optional[str]
     

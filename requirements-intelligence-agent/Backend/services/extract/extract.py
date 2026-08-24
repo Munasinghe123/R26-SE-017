@@ -170,11 +170,16 @@ def extract_requirements(transcript: str):
 
     print("Groq extraction response received.")
 
+    print("Response metadata:")
+    print(response.response_metadata)
+
+    print("Content length:", len(response.content))
+
     content = response.content.strip()
 
-    print("\n========== RAW EXTRACTION RESPONSE ==========")
-    print(content)
-    print("=============================================")
+    # print("\n========== RAW EXTRACTION RESPONSE ==========")
+    # print(content)
+    # print("=============================================")
 
     try:
         data = parse_json_response(content)
