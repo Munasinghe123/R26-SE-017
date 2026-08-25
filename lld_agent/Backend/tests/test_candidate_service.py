@@ -77,6 +77,66 @@ class CandidateServiceTests(unittest.TestCase):
         self.assertEqual(config.temperature, 0.3)
         self.assertEqual(config.max_tokens, 2222)
 
+    def test_candidate_2_config_is_loaded_from_config(self):
+        with patch("Services.candidateService.app_config.CANDIDATE_2_PROVIDER", "fake-provider-2"), \
+             patch("Services.candidateService.app_config.CANDIDATE_2_MODEL", "fake-model-2"), \
+             patch("Services.candidateService.app_config.CANDIDATE_2_TEMPERATURE", 0.3), \
+             patch("Services.candidateService.app_config.CANDIDATE_2_MAX_TOKENS", 2222):
+            config = CandidateService.get_candidate_2_config()
+
+        self.assertEqual(config.candidate_id, "candidate_2")
+        self.assertEqual(config.provider, "fake-provider-2")
+        self.assertEqual(config.model, "fake-model-2")
+        self.assertEqual(config.temperature, 0.3)
+        self.assertEqual(config.max_tokens, 2222)
+
+    def test_candidate_2_defaults_match_candidate_1_model_when_not_overridden(self):
+        with patch("Services.candidateService.app_config.CANDIDATE_1_PROVIDER", "shared-provider"), \
+             patch("Services.candidateService.app_config.CANDIDATE_1_MODEL", "shared-model"), \
+             patch("Services.candidateService.app_config.CANDIDATE_1_TEMPERATURE", 0.1), \
+             patch("Services.candidateService.app_config.CANDIDATE_1_MAX_TOKENS", 1234), \
+             patch("Services.candidateService.app_config.CANDIDATE_2_PROVIDER", "shared-provider"), \
+             patch("Services.candidateService.app_config.CANDIDATE_2_MODEL", "shared-model"), \
+             patch("Services.candidateService.app_config.CANDIDATE_2_TEMPERATURE", 0.1), \
+             patch("Services.candidateService.app_config.CANDIDATE_2_MAX_TOKENS", 1234):
+            config = CandidateService.get_candidate_2_config()
+
+        self.assertEqual(config.candidate_id, "candidate_2")
+        self.assertEqual(config.provider, "shared-provider")
+        self.assertEqual(config.model, "shared-model")
+        self.assertEqual(config.temperature, 0.1)
+        self.assertEqual(config.max_tokens, 1234)
+
+    def test_candidate_3_config_is_loaded_from_config(self):
+        with patch("Services.candidateService.app_config.CANDIDATE_3_PROVIDER", "fake-provider-3"), \
+             patch("Services.candidateService.app_config.CANDIDATE_3_MODEL", "fake-model-3"), \
+             patch("Services.candidateService.app_config.CANDIDATE_3_TEMPERATURE", 0.2), \
+             patch("Services.candidateService.app_config.CANDIDATE_3_MAX_TOKENS", 3333):
+            config = CandidateService.get_candidate_3_config()
+
+        self.assertEqual(config.candidate_id, "candidate_3")
+        self.assertEqual(config.provider, "fake-provider-3")
+        self.assertEqual(config.model, "fake-model-3")
+        self.assertEqual(config.temperature, 0.2)
+        self.assertEqual(config.max_tokens, 3333)
+
+    def test_candidate_3_defaults_match_candidate_1_model_when_not_overridden(self):
+        with patch("Services.candidateService.app_config.CANDIDATE_1_PROVIDER", "shared-provider"), \
+             patch("Services.candidateService.app_config.CANDIDATE_1_MODEL", "shared-model"), \
+             patch("Services.candidateService.app_config.CANDIDATE_1_TEMPERATURE", 0.1), \
+             patch("Services.candidateService.app_config.CANDIDATE_1_MAX_TOKENS", 1234), \
+             patch("Services.candidateService.app_config.CANDIDATE_3_PROVIDER", "shared-provider"), \
+             patch("Services.candidateService.app_config.CANDIDATE_3_MODEL", "shared-model"), \
+             patch("Services.candidateService.app_config.CANDIDATE_3_TEMPERATURE", 0.1), \
+             patch("Services.candidateService.app_config.CANDIDATE_3_MAX_TOKENS", 1234):
+            config = CandidateService.get_candidate_3_config()
+
+        self.assertEqual(config.candidate_id, "candidate_3")
+        self.assertEqual(config.provider, "shared-provider")
+        self.assertEqual(config.model, "shared-model")
+        self.assertEqual(config.temperature, 0.1)
+        self.assertEqual(config.max_tokens, 1234)
+
     def test_provider_factory_receives_candidate_1_provider(self):
         fake_provider = FakeProvider()
         with patch("Services.candidateService.get_llm_provider", return_value=fake_provider) as factory:

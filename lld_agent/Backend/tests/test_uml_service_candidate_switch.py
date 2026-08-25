@@ -11,6 +11,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 from graph.candidate import CandidateState
+from graph.candidate import CandidateConfig
 from Services.umlService import UMLService
 
 
@@ -133,6 +134,8 @@ class UMLServiceCandidateSwitchTests(unittest.TestCase):
             "files",
             "plantuml",
             "iterations_used",
+            "candidate_outputs",
+            "selected_candidate_id",
         })
 
     def test_candidate_output_is_passed_through_existing_plantuml_generation(self):
@@ -192,13 +195,35 @@ class UMLServiceCandidateSwitchTests(unittest.TestCase):
 
     def test_candidate_pipeline_mode_does_not_invoke_old_langgraph(self):
         with _mock_png_rendering(), \
+             patch("Services.umlService.CandidateService.get_candidate_1_config", return_value=CandidateConfig("candidate_1", "fake", "fake-model-1")), \
+             patch("Services.umlService.CandidateService.get_candidate_2_config", return_value=CandidateConfig("candidate_2", "fake", "fake-model-2")), \
+             patch("Services.umlService.CandidateService.get_candidate_3_config", return_value=CandidateConfig("candidate_3", "fake", "fake-model-3")), \
              patch("Services.umlService.CandidateService.run_candidate_internal", return_value=candidate_state()) as run_candidate, \
              patch("Services.umlService.build_uml_graph") as build_graph:
             result = UMLService._generate_uml_candidate("requirements", ["REQ-001"])
 
         self.assertEqual(result["structured_data"], FINAL_IR)
-        run_candidate.assert_called_once()
+        self.assertEqual(len(result["candidate_outputs"]), 3)
+        self.assertEqual(result["selected_candidate_id"], "candidate_1")
+        self.assertEqual(run_candidate.call_count, 3)
         build_graph.assert_not_called()
+
+    def test_candidate_pipeline_includes_candidate_2_and_3_outputs(self):
+        outputs = [
+            candidate_state(),
+            CandidateState(candidate_id="candidate_2", provider="fake", model="fake-model-2", status="valid", final_ir=FINAL_IR),
+            CandidateState(candidate_id="candidate_3", provider="fake", model="fake-model-3", status="valid", final_ir=FINAL_IR),
+        ]
+
+        with _mock_png_rendering(), \
+               patch("Services.umlService.CandidateService.get_candidate_1_config", return_value=CandidateConfig("candidate_1", "fake", "fake-model")), \
+             patch("Services.umlService.CandidateService.get_candidate_2_config", return_value=CandidateConfig("candidate_2", "fake", "fake-model-2")), \
+             patch("Services.umlService.CandidateService.get_candidate_3_config", return_value=CandidateConfig("candidate_3", "fake", "fake-model-3")), \
+             patch("Services.umlService.CandidateService.run_candidate_internal", side_effect=outputs):
+            result = UMLService._generate_uml_candidate("requirements", ["REQ-001"])
+
+        self.assertEqual([item["candidate_id"] for item in result["candidate_outputs"]], ["candidate_1", "candidate_2", "candidate_3"])
+        self.assertEqual([item["model"] for item in result["candidate_outputs"]], ["fake-model", "fake-model-2", "fake-model-3"])
 
     def test_legacy_mode_does_not_invoke_candidate_service(self):
         fake_graph = SimpleNamespace(
@@ -251,7 +276,7 @@ class UMLServiceCandidateSwitchTests(unittest.TestCase):
             result = UMLService._generate_uml_candidate("requirements", ["REQ-001"])
 
         self.assertFalse(result["validation"]["passed"])
-        run_candidate.assert_called_once()
+        self.assertEqual(run_candidate.call_count, 3)
 
 
 def _mock_png_rendering():

@@ -14,12 +14,48 @@ class CandidateService:
 
     @staticmethod
     def get_candidate_1_config() -> CandidateConfig:
-        return CandidateConfig(
+        return CandidateService._build_candidate_config(
             candidate_id="candidate_1",
             provider=app_config.CANDIDATE_1_PROVIDER,
             model=app_config.CANDIDATE_1_MODEL,
             temperature=app_config.CANDIDATE_1_TEMPERATURE,
             max_tokens=app_config.CANDIDATE_1_MAX_TOKENS,
+        )
+
+    @staticmethod
+    def get_candidate_2_config() -> CandidateConfig:
+        return CandidateService._build_candidate_config(
+            candidate_id="candidate_2",
+            provider=app_config.CANDIDATE_2_PROVIDER,
+            model=app_config.CANDIDATE_2_MODEL,
+            temperature=app_config.CANDIDATE_2_TEMPERATURE,
+            max_tokens=app_config.CANDIDATE_2_MAX_TOKENS,
+        )
+
+    @staticmethod
+    def get_candidate_3_config() -> CandidateConfig:
+        return CandidateService._build_candidate_config(
+            candidate_id="candidate_3",
+            provider=app_config.CANDIDATE_3_PROVIDER,
+            model=app_config.CANDIDATE_3_MODEL,
+            temperature=app_config.CANDIDATE_3_TEMPERATURE,
+            max_tokens=app_config.CANDIDATE_3_MAX_TOKENS,
+        )
+
+    @staticmethod
+    def _build_candidate_config(
+        candidate_id: str,
+        provider: str,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> CandidateConfig:
+        return CandidateConfig(
+            candidate_id=candidate_id,
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
     @staticmethod

@@ -107,19 +107,43 @@ class UMLService:
 
     @staticmethod
     def _generate_uml_candidate(requirements: str, requirement_ids: list[str] | None = None):
-        candidate = CandidateService.run_candidate_internal(
-            requirements=requirements,
-            requirement_ids=requirement_ids or [],
-        )
+        candidate_configs = [
+            CandidateService.get_candidate_1_config(),
+            CandidateService.get_candidate_2_config(),
+            # CandidateService.get_candidate_3_config(),
+        ]
+        print(candidate_configs)
+        candidate_outputs: list[dict] = []
+        primary_candidate = None
 
-        if candidate.status == "failed" or not candidate.final_ir:
-            raise ValueError(_candidate_failure_message(candidate))
+        for candidate_config in candidate_configs:
+            candidate = CandidateService.run_candidate_internal(
+                requirements=requirements,
+                requirement_ids=requirement_ids or [],
+                candidate_config=candidate_config,
+            )
+            print(candidate)
+            candidate_outputs.append(_serialize_candidate_output(candidate))
+            if primary_candidate is None:
+                primary_candidate = candidate
 
-        return UMLService._build_rendered_response(
-            parsed_json=candidate.final_ir,
-            validation_report=_aggregate_candidate_validation(candidate),
+            result = UMLService._build_rendered_response(
+                        parsed_json=candidate.final_ir,
+                        validation_report=_aggregate_candidate_validation(candidate),
+                        iterations_used=1,
+                    )
+
+        #if primary_candidate is None or primary_candidate.status == "failed" or not primary_candidate.final_ir:
+            #raise ValueError(_candidate_failure_message(primary_candidate))
+
+        result = UMLService._build_rendered_response(
+            parsed_json=primary_candidate.final_ir,
+            validation_report=_aggregate_candidate_validation(primary_candidate),
             iterations_used=1,
         )
+        result["candidate_outputs"] = candidate_outputs
+        result["selected_candidate_id"] = primary_candidate.candidate_id
+        return result
 
     @staticmethod
     def _build_rendered_response(parsed_json: dict, validation_report: dict | None, iterations_used: int):
@@ -270,4 +294,29 @@ def _aggregate_candidate_validation(candidate) -> dict:
         "overdesign_flags": [],
         "naming_violations": [],
         "naming_violations_fixed": 0,
+    }
+
+
+def _serialize_candidate_output(candidate) -> dict:
+    return {
+        "candidate_id": candidate.candidate_id,
+        "provider": candidate.provider,
+        "model": candidate.model,
+        "status": candidate.status,
+        "final_ir": candidate.final_ir,
+        "validation": {
+            "class": candidate.class_validation,
+            "er": candidate.er_validation,
+            "sequence": candidate.sequence_validation,
+            "aggregate": _aggregate_candidate_validation(candidate),
+        },
+        "errors": {
+            "provider": candidate.provider_errors,
+            "parse": candidate.parse_errors,
+        },
+        "metrics": {
+            "total_tokens": candidate.metrics.total_tokens,
+            "total_latency_ms": candidate.metrics.total_latency_ms,
+            "model_call_count": candidate.metrics.model_call_count,
+        },
     }
