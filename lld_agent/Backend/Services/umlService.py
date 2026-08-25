@@ -9,7 +9,8 @@ from utils.irGenerator import (
   generate_sequence_plantuml,
   generate_er_plantuml
 )
-from config.config import MAX_ITERATIONS
+from config.config import MAX_ITERATIONS, USE_CANDIDATE_PIPELINE
+from Services.candidateService import CandidateService
 
 # Import the newly created LangGraph orchestrator
 from graph.graph import build_uml_graph
@@ -44,7 +45,26 @@ def encode_plantuml(plantuml_str):
 class UMLService:
 
     @staticmethod
+    def generate_candidate_internal(requirements: str, requirement_ids: list[str] | None = None):
+        return CandidateService.run_candidate_internal(
+            requirements=requirements,
+            requirement_ids=requirement_ids or [],
+        )
+
+    @staticmethod
     def generate_uml(requirements: str, requirement_ids: list[str] | None = None):
+        if USE_CANDIDATE_PIPELINE:
+            return UMLService._generate_uml_candidate(
+                requirements=requirements,
+                requirement_ids=requirement_ids or [],
+            )
+        return UMLService._generate_uml_legacy(
+            requirements=requirements,
+            requirement_ids=requirement_ids or [],
+        )
+
+    @staticmethod
+    def _generate_uml_legacy(requirements: str, requirement_ids: list[str] | None = None):
         
         # ====================================
         # 1. INITIALIZE & RUN LANGGRAPH
@@ -79,10 +99,33 @@ class UMLService:
         if not parsed_json:
             raise ValueError("Failed to successfully parse or validate LLM output as JSON within iteration limits.")
 
+        return UMLService._build_rendered_response(
+            parsed_json=parsed_json,
+            validation_report=validation_report,
+            iterations_used=iterations_used,
+        )
+
+    @staticmethod
+    def _generate_uml_candidate(requirements: str, requirement_ids: list[str] | None = None):
+        candidate = CandidateService.run_candidate_internal(
+            requirements=requirements,
+            requirement_ids=requirement_ids or [],
+        )
+
+        if candidate.status == "failed" or not candidate.final_ir:
+            raise ValueError(_candidate_failure_message(candidate))
+
+        return UMLService._build_rendered_response(
+            parsed_json=candidate.final_ir,
+            validation_report=_aggregate_candidate_validation(candidate),
+            iterations_used=1,
+        )
+
+    @staticmethod
+    def _build_rendered_response(parsed_json: dict, validation_report: dict | None, iterations_used: int):
         # ====================================
         # 2. GENERATE PLANTUML SYNTAX
         # ====================================
-
         class_plantuml = generate_class_plantuml(parsed_json.get("class_diagram", {}))
         sequence_diagrams = parsed_json.get("sequence_diagrams", [])
 
@@ -170,3 +213,61 @@ class UMLService:
             },
             "iterations_used": iterations_used,
         }
+
+
+def _candidate_failure_message(candidate) -> str:
+    if candidate.provider_errors:
+        stage = candidate.provider_errors[0].get("stage", "unknown")
+        return f"Candidate generation failed during {stage} provider execution."
+    if candidate.parse_errors:
+        stage = candidate.parse_errors[0].get("stage", "unknown")
+        return f"Candidate generation failed because {stage} output could not be parsed."
+    return "Candidate generation failed before a complete UML IR was available."
+
+
+def _aggregate_candidate_validation(candidate) -> dict:
+    stage_validations = {
+        "class": candidate.class_validation,
+        "er": candidate.er_validation,
+        "sequence": candidate.sequence_validation,
+    }
+
+    errors = []
+    total_checks = 0
+    passed_checks = 0
+
+    for stage, validation in stage_validations.items():
+        validation = validation or {}
+        total_checks += int(validation.get("total_checks", 0) or 0)
+        passed_checks += int(validation.get("passed_checks", 0) or 0)
+
+        for error in validation.get("errors", []) or []:
+            errors.append({
+                **error,
+                "stage": stage,
+            })
+
+        for warning in validation.get("warnings", []) or []:
+            errors.append({
+                **warning,
+                "stage": stage,
+                "severity": "low",
+            })
+
+    passed = candidate.status == "valid" and not any(
+        error.get("severity") in ("critical", "high", "medium")
+        for error in errors
+    )
+    consistency_score = round((passed_checks / total_checks * 100), 2) if total_checks else 0.0
+
+    return {
+        "passed": passed,
+        "consistency_score": consistency_score,
+        "total_checks": total_checks,
+        "passed_checks": passed_checks,
+        "errors": errors,
+        "traceability_matrix": [],
+        "overdesign_flags": [],
+        "naming_violations": [],
+        "naming_violations_fixed": 0,
+    }
