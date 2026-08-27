@@ -164,11 +164,11 @@ def extract_requirements(transcript: str):
 
     prompt = build_prompt(transcript)
 
-    print("Calling Groq for extraction...")
+    print("Calling open router for extraction...")
 
     response = llm.invoke(prompt)
 
-    print("Groq extraction response received.")
+    print("open router extraction response received.")
 
     print("Response metadata:")
     print(response.response_metadata)

@@ -53,7 +53,6 @@ def parse_json_response(content: str):
 
     content = content.strip()
 
-    # Remove markdown JSON fences
     content = re.sub(
         r"```json\s*",
         "",
@@ -67,7 +66,6 @@ def parse_json_response(content: str):
         content
     )
 
-    # Find JSON object
     start = content.find("{")
     end = content.rfind("}")
 
@@ -85,8 +83,8 @@ def parse_json_response(content: str):
 
 def validate_client_view(data, requirements):
     """
-    Ensure that the LLM returned exactly one item
-    for every requirement we supplied.
+    Ensure that the LLM returned exactly one client-view
+    item for every requirement supplied to it.
     """
 
     if not isinstance(data, dict):
@@ -111,7 +109,10 @@ def validate_client_view(data, requirements):
         for item in items
     ]
 
+    # ---------------------------------------------------------
     # Check for missing IDs
+    # ---------------------------------------------------------
+
     missing_ids = expected_ids - set(returned_ids)
 
     if missing_ids:
@@ -120,7 +121,10 @@ def validate_client_view(data, requirements):
             f"{sorted(missing_ids)}"
         )
 
+    # ---------------------------------------------------------
     # Check for unexpected IDs
+    # ---------------------------------------------------------
+
     unexpected_ids = set(returned_ids) - expected_ids
 
     if unexpected_ids:
@@ -129,13 +133,19 @@ def validate_client_view(data, requirements):
             f"{sorted(unexpected_ids)}"
         )
 
+    # ---------------------------------------------------------
     # Check for duplicates
+    # ---------------------------------------------------------
+
     if len(returned_ids) != len(set(returned_ids)):
         raise ValueError(
             "Duplicate requirement IDs in client view."
         )
 
+    # ---------------------------------------------------------
     # Validate item structure
+    # ---------------------------------------------------------
+
     for item in items:
 
         if not isinstance(item, dict):
@@ -205,7 +215,11 @@ def build_client_view(requirements):
         f"requirements for one LLM call..."
     )
 
-    # Only send the information the LLM actually needs.
+    # ---------------------------------------------------------
+    # Only send the information the LLM needs.
+    # The original requirement ID is preserved.
+    # ---------------------------------------------------------
+
     requirements_for_llm = [
         {
             "id": requirement["id"],
@@ -226,17 +240,28 @@ REQUIREMENTS:
 )}
 """
 
-    print("\n========== CALLING LLM FOR CLIENT VIEW ==========")
+    print(
+        "\n========== CALLING LLM FOR CLIENT VIEW =========="
+    )
 
     response = llm.invoke(prompt)
 
     content = response.content.strip()
 
-    print("\n========== RAW CLIENT VIEW RESPONSE ==========")
-    print(content)
-    print("===============================================")
+    print(
+        "\n========== RAW CLIENT VIEW RESPONSE =========="
+    )
 
-    # Parse JSON
+    print(content)
+
+    print(
+        "==============================================="
+    )
+
+    # ---------------------------------------------------------
+    # Parse LLM response
+    # ---------------------------------------------------------
+
     try:
 
         data = parse_json_response(content)
@@ -251,14 +276,20 @@ REQUIREMENTS:
             "Client view JSON parsing: FAILED"
         )
 
-        print("Error:", e)
+        print(
+            "Error:",
+            e
+        )
 
         raise ValueError(
             "LLM returned invalid JSON "
             "for client view."
         )
 
-    # Validate structure
+    # ---------------------------------------------------------
+    # Validate LLM response
+    # ---------------------------------------------------------
+
     print(
         "\n========== VALIDATING CLIENT VIEW =========="
     )
@@ -272,18 +303,22 @@ REQUIREMENTS:
         "Client view validation: SUCCESS"
     )
 
-    # Convert LLM output into the application's
-    # client_view structure.
+    # ---------------------------------------------------------
+    # Build application client_view
+    #
+    # IMPORTANT:
+    # There is NO item-* ID anymore.
+    #
+    # The requirement ID itself is used everywhere.
+    # ---------------------------------------------------------
+
     items = []
 
     for item in data["items"]:
 
         items.append({
-            "id": f"item-{len(items) + 1}",
-            "text": item["text"].strip(),
-            "source_ids": [
-                item["requirement_id"]
-            ]
+            "id": item["requirement_id"],
+            "text": item["text"].strip()
         })
 
     client_view = {

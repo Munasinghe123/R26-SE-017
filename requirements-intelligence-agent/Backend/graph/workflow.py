@@ -5,7 +5,6 @@ from graph.nodes import (
     transcribe_node,
     diarization_node,
     extraction_node,
-    refine_node,
     # build_srs_node,
     generate_srs_pdf_node,
     document_node,
@@ -16,10 +15,10 @@ from graph.nodes import (
     client_view_node,
     process_client_review_node,
     analyze_client_changes_node,
-    evaluate_change_impact_node,
+    partition_client_changes_node,
     generate_targeted_questions_node,
     await_client_questions_node,
-    apply_client_answers_node
+    apply_client_answers_node,
 )
 from graph.router import route_workflow
 from langgraph.checkpoint.memory import InMemorySaver
@@ -44,11 +43,10 @@ def build_graph():
             process_client_review_node
         )
     builder.add_node("analyze_client_changes",analyze_client_changes_node)
-    builder.add_node("evaluate_change_impact",evaluate_change_impact_node)
+    builder.add_node("partition_client_changes",partition_client_changes_node)
     builder.add_node("generate_targeted_questions",generate_targeted_questions_node)
     builder.add_node("await_client_questions", await_client_questions_node)
     builder.add_node( "apply_client_answers", apply_client_answers_node)
-    builder.add_node("refine", refine_node)
     # builder.add_node("build_srs", build_srs_node)
     builder.add_node("generate_pdf", generate_srs_pdf_node)
    
@@ -80,13 +78,11 @@ def build_graph():
     builder.add_edge("client_view", "await_client")
     builder.add_edge("await_client","process_client_review")
     builder.add_edge( "process_client_review","analyze_client_changes")
-    builder.add_edge( "analyze_client_changes", "evaluate_change_impact")
-    builder.add_edge( "evaluate_change_impact", "generate_targeted_questions")
+    builder.add_edge( "analyze_client_changes", "partition_client_changes" )
+    builder.add_edge(  "partition_client_changes", "generate_targeted_questions")
     builder.add_edge( "generate_targeted_questions", "await_client_questions")
     builder.add_edge("await_client_questions","apply_client_answers")
-    
-    # refine
-    builder.add_edge("refine", "await_client")
+    builder.add_edge("apply_client_answers",END)
     
     #srs
     # builder.add_edge("build_srs", "generate_pdf")

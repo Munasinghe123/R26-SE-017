@@ -13,7 +13,7 @@ meeting_routes = APIRouter(
 
 class ClientRequirementReview(BaseModel):
     id: str
-    action: Literal["keep", "edit", "delete"]
+    action: Literal["keep", "edit", "delete","add"]
     text: Optional[str] = None
 
 
@@ -21,12 +21,12 @@ class ClientReviewRequest(BaseModel):
     items: list[ClientRequirementReview]
 
 
-@meeting_routes.get("/{meeting_id}/review")
-async def get_meeting_review(meeting_id: str):
+@meeting_routes.get("/{thread_id}/review")
+async def get_meeting_review(thread_id: str):
 
     config = {
         "configurable": {
-            "thread_id": meeting_id
+            "thread_id": thread_id
         }
     }
 
@@ -39,21 +39,21 @@ async def get_meeting_review(meeting_id: str):
         )
 
     return {
-        "meeting_id": meeting_id,
+        "thread_id": thread_id,
         "project_id": snapshot.values.get("project_id"),
         "client_view": snapshot.values.get("client_view"),
     }
 
 
-@meeting_routes.post("/{meeting_id}/review")
+@meeting_routes.post("/{thread_id}/review")
 async def submit_meeting_review(
-    meeting_id: str,
+    thread_id: str,
     review: ClientReviewRequest
 ):
 
     config = {
         "configurable": {
-            "thread_id": meeting_id
+            "thread_id": thread_id
         }
     }
 
@@ -79,6 +79,6 @@ async def submit_meeting_review(
     )
 
     return {
-        "meeting_id": meeting_id,
+        "thread_id": thread_id,
         "status": "submitted"
     }

@@ -349,7 +349,7 @@ Return exactly this JSON structure:
         "functional": [
             {
                 "id": "FR-1",
-                "description": "The system shall ..."
+                "description": "The system shall ...",
                 "source_evidence": [
                   {
                     "speaker": "Client or Business Analyst",
@@ -361,7 +361,7 @@ Return exactly this JSON structure:
         "non_functional": [
             {
                 "id": "NFR-1",
-                "description": "The system shall ..."
+                "description": "The system shall ...",
                 "source_evidence": [
                   {
                     "speaker": "Client or Business Analyst",
