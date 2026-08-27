@@ -19,6 +19,11 @@ from graph.nodes import (
     generate_targeted_questions_node,
     await_client_questions_node,
     apply_client_answers_node,
+    collect_new_requirements_node,
+    classify_new_requirements_node,
+    validate_new_requirement_format_node,
+    normalize_new_requirements_node,
+    reconcile_requirements_node,
 )
 from graph.router import route_workflow
 from langgraph.checkpoint.memory import InMemorySaver
@@ -48,6 +53,11 @@ def build_graph():
     builder.add_node("await_client_questions", await_client_questions_node)
     builder.add_node( "apply_client_answers", apply_client_answers_node)
     # builder.add_node("build_srs", build_srs_node)
+    builder.add_node("collect_new_requirements",collect_new_requirements_node)
+    builder.add_node(   "classify_new_requirements",   classify_new_requirements_node )
+    builder.add_node(  "validate_new_requirement_format",  validate_new_requirement_format_node )
+    builder.add_node(  "normalize_new_requirements",  normalize_new_requirements_node )
+    builder.add_node("reconcile_requirements",reconcile_requirements_node)
     builder.add_node("generate_pdf", generate_srs_pdf_node)
    
     
@@ -82,11 +92,15 @@ def build_graph():
     builder.add_edge(  "partition_client_changes", "generate_targeted_questions")
     builder.add_edge( "generate_targeted_questions", "await_client_questions")
     builder.add_edge("await_client_questions","apply_client_answers")
-    builder.add_edge("apply_client_answers",END)
-    
+    builder.add_edge(   "apply_client_answers",   "collect_new_requirements" )
+    builder.add_edge(  "collect_new_requirements",  "classify_new_requirements" )
+    builder.add_edge(  "classify_new_requirements", "validate_new_requirement_format" )
+    builder.add_edge( "validate_new_requirement_format", "normalize_new_requirements" )
+    builder.add_edge("normalize_new_requirements", "reconcile_requirements" )
+    builder.add_edge("reconcile_requirements", END)
     #srs
     # builder.add_edge("build_srs", "generate_pdf")
-    builder.add_edge("generate_pdf", END)
+    # builder.add_edge("generate_pdf", END)
     
    
     checkpointer = InMemorySaver()

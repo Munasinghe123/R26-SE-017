@@ -36,6 +36,13 @@ class GraphState(TypedDict):
     accepted_changes: dict
     clarification_changes: dict
     
+    new_requirements: Optional[List[Dict]]
+    classified_new_requirements: Optional[List[Dict]]
+    requirements_to_rewrite: Optional[List[Dict]]
+    normalized_new_requirements: Optional[List[Dict]]
+    
+    final_requirements: Optional[Dict]
+    
     # approval
     review_status: Optional[str]
     

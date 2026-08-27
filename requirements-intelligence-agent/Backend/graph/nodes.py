@@ -20,6 +20,11 @@ from services.HITL.analyze_client_changes import analyze_client_changes
 from services.HITL.generate_targeted_questions import generate_targeted_questions
 from services.HITL.partition_client_changes import (partition_client_changes)
 from services.HITL.generate_requirements_from_answers import generate_requirements_from_answers
+from services.HITL.collect_new_requirements import ( collect_new_requirements)
+from services.HITL.classify_new_requirements import ( classify_new_requirements)
+from services.HITL.validate_requirement_format import ( find_requirements_to_rewrite)
+from services.HITL.normalize_requirements import (normalize_requirements)
+from services.HITL.reconcile_requirements import (reconcile_requirements)
 
 
 def speech_enhancement_node(state: GraphState):
@@ -293,7 +298,178 @@ def apply_client_answers_node(state: GraphState):
         "answer_requirements": answer_requirements
     }
 
+def collect_new_requirements_node(
+    state: GraphState
+):
 
+    print(
+        "\n========== COLLECTING NEW REQUIREMENTS =========="
+    )
+
+    new_requirements = collect_new_requirements(
+        state["accepted_changes"],
+        state["answer_requirements"]
+    )
+
+    print(
+        json.dumps(
+            new_requirements,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "new_requirements": new_requirements
+    }
+
+
+def classify_new_requirements_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== CLASSIFYING NEW REQUIREMENTS =========="
+    )
+
+    classified = classify_new_requirements(
+        state["new_requirements"]
+    )
+
+    print(
+        "\n========== CLASSIFIED NEW REQUIREMENTS =========="
+    )
+
+    print(
+        json.dumps(
+            classified,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "classified_new_requirements": classified
+    }
+
+
+def validate_new_requirement_format_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== CHECKING REQUIREMENT FORMAT =========="
+    )
+
+    requirements_to_rewrite = (
+        find_requirements_to_rewrite(
+            state["classified_new_requirements"]
+        )
+    )
+
+    print(
+        "\n========== REQUIREMENTS TO REWRITE =========="
+    )
+
+    print(
+        json.dumps(
+            requirements_to_rewrite,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "requirements_to_rewrite":
+            requirements_to_rewrite
+    }
+
+
+def normalize_new_requirements_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== NORMALIZING REQUIREMENTS =========="
+    )
+
+    rewritten = normalize_requirements(
+        state["requirements_to_rewrite"]
+    )
+
+    # ---------------------------------------------------------
+    # Combine already-valid requirements with rewritten ones
+    # ---------------------------------------------------------
+
+    rewritten_ids = {
+        requirement["id"]
+        for requirement in rewritten
+    }
+
+    final_requirements = []
+
+    for requirement in state[
+        "classified_new_requirements"
+    ]:
+
+        requirement_id = requirement["id"]
+
+        if requirement_id in rewritten_ids:
+
+            rewritten_requirement = next(
+                item
+                for item in rewritten
+                if item["id"] == requirement_id
+            )
+
+            final_requirements.append(
+                rewritten_requirement
+            )
+
+        else:
+
+            final_requirements.append(
+                requirement
+            )
+
+    print(
+        "\n========== NORMALIZED NEW REQUIREMENTS =========="
+    )
+
+    print(
+        json.dumps(
+            final_requirements,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "normalized_new_requirements":
+            final_requirements
+    }
+ 
+def reconcile_requirements_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== RECONCILIATION NODE =========="
+    )
+
+    final_requirements = reconcile_requirements(
+        original_requirements=state["requirements"],
+        accepted_changes=state["accepted_changes"],
+        answer_requirements=state["answer_requirements"],
+        normalized_new_requirements=state[
+            "normalized_new_requirements"
+        ]
+    )
+
+    return {
+        "final_requirements": final_requirements
+    }
+    
     
 def generate_srs_pdf_node(state: GraphState):
 

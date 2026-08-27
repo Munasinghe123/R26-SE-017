@@ -40,43 +40,30 @@ IMPORTANT:
 9. If the client answer introduces or confirms new business behavior,
    generate exactly ONE requirement for that answer.
 
-10. Preserve the requirement ID provided with the answer.
+10. Do not generate requirement IDs.
 
-11. Existing requirements keep their original ID:
-    - FR-1
-    - FR-8
-    - FR-20
-    - NFR-1
-    etc.
+11. Do not classify requirements as functional or non-functional.
 
-12. Newly added requirements keep their temporary ID:
-    - new-1
-    - new-2
-    etc.
+12. Do not merge answers.
 
-13. Never convert a temporary ID into an FR or NFR ID.
+13. Do not split answers.
 
-14. Never create a new ID.
+14. Every generated requirement must contain the question_id of the
+    clarification answer it belongs to.
 
-15. Never use "new_id".
+15. Do not include requirement_id in the generated output.
 
-16. Do not classify requirements as FR or NFR.
+16. Do not include questions, explanations, reasoning, or analysis.
 
-17. Do not merge answers.
-
-18. Do not split answers.
-
-19. Do not include questions, explanations, reasoning, or analysis.
-
-20. Return ONLY valid JSON.
+17. Return ONLY valid JSON.
 
 OUTPUT FORMAT:
 
 {
     "requirements": [
         {
-            "id": "new-1",
-            "text": "Customers receive WhatsApp notifications when their appointments are cancelled or rescheduled."
+            "question_id": "Q-1",
+            "text": "Staff can create appointments on behalf of customers."
         }
     ]
 }
@@ -125,45 +112,57 @@ def validate_generated_requirements(
             "Generated requirements must be a JSON object."
         )
 
-    requirements = data.get("requirements")
+    requirements = data.get(
+        "requirements"
+    )
 
     if not isinstance(requirements, list):
         raise ValueError(
             "Response must contain a 'requirements' list."
         )
 
-    expected_ids = {
-        answer["requirement_id"]
+    # ---------------------------------------------------------
+    # Expected question IDs
+    # ---------------------------------------------------------
+
+    expected_question_ids = {
+        answer["question_id"]
         for answer in client_answers
     }
 
-    returned_ids = [
-        requirement.get("id")
+    returned_question_ids = [
+        requirement.get("question_id")
         for requirement in requirements
     ]
 
     # ---------------------------------------------------------
-    # Returned IDs must belong to the client answers.
-    # But not every answer needs to produce a requirement.
+    # Returned question IDs must belong to client answers.
+    # Not every answer needs to produce a requirement.
     # ---------------------------------------------------------
 
-    unexpected_ids = (
-        set(returned_ids) - expected_ids
+    unexpected_question_ids = (
+        set(returned_question_ids)
+        - expected_question_ids
     )
 
-    if unexpected_ids:
+    if unexpected_question_ids:
         raise ValueError(
-            f"Unexpected generated requirement IDs: "
-            f"{sorted(unexpected_ids)}"
+            f"Unexpected question IDs generated: "
+            f"{sorted(unexpected_question_ids)}"
         )
 
     # ---------------------------------------------------------
-    # Check duplicates
+    # Check duplicate question IDs
+    #
+    # One answer -> at most one requirement.
     # ---------------------------------------------------------
 
-    if len(returned_ids) != len(set(returned_ids)):
+    if len(returned_question_ids) != len(
+        set(returned_question_ids)
+    ):
         raise ValueError(
-            "Duplicate requirement IDs generated."
+            "Multiple requirements generated "
+            "for the same client answer."
         )
 
     # ---------------------------------------------------------
@@ -177,24 +176,30 @@ def validate_generated_requirements(
                 "Each generated requirement must be an object."
             )
 
-        requirement_id = requirement.get("id")
-        text = requirement.get("text")
+        question_id = requirement.get(
+            "question_id"
+        )
 
-        if not isinstance(requirement_id, str):
+        text = requirement.get(
+            "text"
+        )
+
+        if not isinstance(question_id, str):
             raise ValueError(
-                "Generated requirement 'id' must be a string."
+                "Generated requirement 'question_id' "
+                "must be a string."
             )
 
         if not isinstance(text, str):
             raise ValueError(
                 f"Generated requirement text must be a string "
-                f"for {requirement_id}."
+                f"for {question_id}."
             )
 
         if not text.strip():
             raise ValueError(
                 f"Generated requirement text cannot be empty "
-                f"for {requirement_id}."
+                f"for {question_id}."
             )
 
     return True
@@ -252,6 +257,10 @@ def generate_requirements_from_answers(
             "answer": answer["answer"]
         })
 
+    # ---------------------------------------------------------
+    # Build prompt
+    # ---------------------------------------------------------
+
     prompt = f"""
 {GENERATE_REQUIREMENTS_PROMPT}
 
@@ -276,7 +285,9 @@ CLIENT ANSWERS:
         "\n========== CALLING LLM FOR ANSWER → REQUIREMENTS =========="
     )
 
-    response = llm.invoke(prompt)
+    response = llm.invoke(
+        prompt
+    )
 
     content = response.content.strip()
 
@@ -318,10 +329,10 @@ CLIENT ANSWERS:
         raise ValueError(
             "LLM returned invalid JSON "
             "for answer-generated requirements."
-        )
+        ) from e
 
     # ---------------------------------------------------------
-    # Validate
+    # Validate LLM output
     # ---------------------------------------------------------
 
     print(
@@ -337,13 +348,62 @@ CLIENT ANSWERS:
         "Generated requirements validation: SUCCESS"
     )
 
+    # ---------------------------------------------------------
+    # Build requirement ID lookup
+    #
+    # IMPORTANT:
+    # The ID comes from our application data,
+    # NOT from the LLM.
+    # ---------------------------------------------------------
+
+    answer_id_map = {
+        answer["question_id"]:
+            answer["requirement_id"]
+        for answer in client_answers
+    }
+
+    # ---------------------------------------------------------
+    # Attach original requirement IDs
+    # ---------------------------------------------------------
+
+    final_requirements = []
+
+    for requirement in data["requirements"]:
+
+        question_id = requirement[
+            "question_id"
+        ]
+
+        requirement_id = answer_id_map.get(
+            question_id
+        )
+
+        if requirement_id is None:
+            raise ValueError(
+                f"No requirement ID found for "
+                f"question {question_id}."
+            )
+
+        final_requirements.append({
+            "id": requirement_id,
+            "text": requirement["text"]
+        })
+
+    # ---------------------------------------------------------
+    # Final result
+    # ---------------------------------------------------------
+
+    final_data = {
+        "requirements": final_requirements
+    }
+
     print(
         "\n========== ANSWER-GENERATED REQUIREMENTS =========="
     )
 
     print(
         json.dumps(
-            data,
+            final_data,
             indent=4,
             ensure_ascii=False
         )
@@ -353,4 +413,4 @@ CLIENT ANSWERS:
         "======================================================"
     )
 
-    return data
+    return final_data
