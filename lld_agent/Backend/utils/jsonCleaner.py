@@ -12,23 +12,24 @@ def clean_json_response(content):
     
     cleaned = cleaned.strip()
 
-    # Extract the first complete JSON object in case of extra logs/noise
-    start_index = cleaned.find("{")
-    end_index = cleaned.rfind("}")
-
-    if start_index != -1 and end_index != -1 and end_index > start_index:
-        cleaned = cleaned[start_index:end_index + 1]
-
     # Remove common log prefixes if they leaked into content
     cleaned = re.sub(r"^\s*(INFO|ERROR|WARN|DEBUG):.*$", "", cleaned, flags=re.MULTILINE)
 
+    decoder = json.JSONDecoder()
+
+    # Try to decode the first complete JSON value even if the model appended extra text.
+    for match in re.finditer(r"[\[{]", cleaned):
+        start_index = match.start()
+        try:
+            parsed, _ = decoder.raw_decode(cleaned[start_index:])
+            if isinstance(parsed, (dict, list)):
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    return parsed[0]
+                return parsed
+        except json.JSONDecodeError:
+            continue
+
     try:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-
-        if start != -1 and end != -1:
-            cleaned = cleaned[start:end + 1]
-
         parsed = json.loads(cleaned, strict=False)
 
         if isinstance(parsed, list) and len(parsed) > 0:

@@ -17,6 +17,7 @@ class ValidationService:
         consistency = ConsistencyEngine()
         naming = NamingEnforcer()
         overdesign = OverDesignDetector()
+        
         expert_agent = ExpertAgent(
             consistency_engine=consistency,
             overdesign_detector=overdesign,
@@ -27,7 +28,7 @@ class ValidationService:
             report, errors, expert_guidance = expert_agent.validate(
                 ir,
                 requirement_ids=requirement_ids,
-                include_guidance=True,
+                include_guidance=False, 
             )
 
             return {

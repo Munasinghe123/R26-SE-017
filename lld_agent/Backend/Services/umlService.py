@@ -1,53 +1,35 @@
-from groq import Groq
-from dotenv import load_dotenv
 import os
 from datetime import datetime
 import zlib
-import json
 import base64
+import requests
 
-from utils.jsonCleaner import clean_json_response
 from utils.irGenerator import (
   generate_class_plantuml,
   generate_sequence_plantuml,
   generate_er_plantuml
 )
-import requests
-from Services.validationService import ValidationService
-from utils.irMapper import convert_to_ir
-from config.config import MAX_ITERATIONS
+from config.config import MAX_ITERATIONS, USE_CANDIDATE_PIPELINE
+from Services.candidateService import CandidateService
+
+# Import the newly created LangGraph orchestrator
+from graph.graph import build_uml_graph
 
 
-# LOAD ENV
-load_dotenv()
-
-
-# GROQ CLIENT
-client = Groq(
-    api_key=os.getenv("GROQ_API_KEY")
-)
-
-
+# ====================================
 # PLANTUML ENCODER
+# ====================================
 def encode_plantuml(plantuml_str):
-
-    # ====================================
     # RAW DEFLATE - NO ZLIB HEADER
-    # ====================================
-
     compress_obj = zlib.compressobj(
         zlib.Z_BEST_COMPRESSION,
         zlib.DEFLATED,
         -15
     )
-
     compressed = compress_obj.compress(plantuml_str.encode("utf-8"))
     compressed += compress_obj.flush()
 
-    # ====================================
     # PLANTUML CUSTOM BASE64 ALPHABET
-    # ====================================
-
     plantuml_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_"
     standard_alphabet  = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
@@ -60,277 +42,129 @@ def encode_plantuml(plantuml_str):
     return result
 
 
-
-# UML SERVICE
-
 class UMLService:
 
     @staticmethod
+    def generate_candidate_internal(requirements: str, requirement_ids: list[str] | None = None):
+        return CandidateService.run_candidate_internal(
+            requirements=requirements,
+            requirement_ids=requirement_ids or [],
+        )
+
+    @staticmethod
     def generate_uml(requirements: str, requirement_ids: list[str] | None = None):
-
-        def build_prompt(extra_rules=""):
-
-            return f"""
-Analyze the requirements and generate a complete UML Intermediate Representation.
-
-STRICT RULES:
-- Return ONLY valid minified JSON
-- Root JSON type MUST be object
-- Do NOT use <think>
-- Do NOT explain reasoning
-- Skip internal analysis
-- Output JSON immediately
-- NEVER return arrays at top level
-- NEVER wrap JSON inside []
-- Do NOT include markdown
-- Do NOT include explanations
-- Do NOT include comments
-- Do NOT include thinking text
-- Do NOT include ```json
-- Output must start with {{
-- Output must end with }}
-- All keys and strings must use double quotes
-- Never truncate JSON
-- If unsure use empty arrays
-{extra_rules}
-
-JSON Schema:
-
-{{
-  "class_diagram": {{
-    "classes": [
-      {{
-        "name": "string",
-        "attributes": ["string"],
-        "methods": ["string"]
-      }}
-    ],
-    "relationships": [
-      {{
-        "source": "string",
-        "target": "string",
-        "type": "association",
-        "cardinality": "1..*"
-      }}
-    ]
-  }},
-
-  "sequence_diagrams": [
-    {{
-      "name": "string",
-      "description": "string",
-      "participants": ["string"],
-      "messages": [
-        {{
-          "from": "string",
-          "to": "string",
-          "message": "string"
-        }}
-      ]
-    }}
-  ],
-
-  "er_diagram": {{
-    "entities": [
-      {{
-        "name": "string",
-        "attributes": ["string"],
-        "primary_key": "string"
-      }}
-    ],
-    "relationships": [
-      {{
-        "source": "string",
-        "target": "string",
-        "type": "one-to-many"
-      }}
-    ]
-  }}
-}}
-
-Requirements:
-{requirements}
-
-{f'''
-VALIDATION FIX INSTRUCTIONS:
-
-{extra_rules}
-
-IMPORTANT:
-Apply these fixes while STILL returning ONLY valid JSON.
-''' if extra_rules else ""}
-"""
-
-        def request_llm(extra_rules=""):
-
-            prompt = build_prompt(extra_rules)
-
-            # ====================================
-            # LLM CALL
-            # ====================================
-
-            response = client.chat.completions.create(
-                model="qwen/qwen3-32b",
-                temperature=0,
-                max_completion_tokens=3500,
-                #response_format={"type": "json_object"},
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You extract UML class, sequence, and ER structures."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+        if USE_CANDIDATE_PIPELINE:
+            return UMLService._generate_uml_candidate(
+                requirements=requirements,
+                requirement_ids=requirement_ids or [],
             )
+        return UMLService._generate_uml_legacy(
+            requirements=requirements,
+            requirement_ids=requirement_ids or [],
+        )
 
-            return response.choices[0].message.content
-
-        def build_validation_guidance(expert_guidance, errors):
-            if expert_guidance:
-                body = expert_guidance.strip()
-            else:
-                lines = []
-                for err in errors or []:
-                    message = err.get("message", "").strip()
-                    if message:
-                        lines.append(f"- {message}")
-                body = "\n".join(lines)
-
-            if not body:
-                return ""
-
-            return f"\nFix these validation issues:\n{body}\n"
-
+    @staticmethod
+    def _generate_uml_legacy(requirements: str, requirement_ids: list[str] | None = None):
+        
         # ====================================
-        # CLEAN + PARSE JSON (WITH RETRY)
-        # VALIDATION + EXPERT RETRY LOOP
+        # 1. INITIALIZE & RUN LANGGRAPH
         # ====================================
+        
+        # Build and compile the graph
+        graph_app = build_uml_graph()
+        
+        # Set up the initial memory state for the agents
+        initial_state = {
+            "requirements": requirements,
+            "requirement_ids": requirement_ids or [],
+            "extra_rules": "",
+            "llm_response": "",
+            "parsed_json": None,
+            "validation_result": None,
+            "iterations_used": 0,
+            "max_iterations": max(MAX_ITERATIONS, 1),
+            "is_successful": False
+        }
+        
+        # Execute the LangGraph workflow
+        final_state = graph_app.invoke(initial_state)
 
-        validation_guidance = ""
-        parsed_json = None
-        validation_report = None
-        iterations_used = 0
+        # Retrieve outputs from the final state
+        parsed_json = final_state.get("parsed_json") or {}
+        validation_result = final_state.get("validation_result") or {}
+        validation_report = validation_result.get("report")
+        iterations_used = final_state.get("iterations_used", 1)
 
-        max_iterations = max(MAX_ITERATIONS, 1)
+        # Catch edge cases where the limit was hit without success
+        if not parsed_json:
+            raise ValueError("Failed to successfully parse or validate LLM output as JSON within iteration limits.")
 
-        for iteration in range(max_iterations):
-            parsed_json = None
-            parse_retry_rules = ""
+        return UMLService._build_rendered_response(
+            parsed_json=parsed_json,
+            validation_report=validation_report,
+            iterations_used=iterations_used,
+        )
 
-            for attempt in range(2):
-                content = request_llm(validation_guidance + parse_retry_rules)
-                print("=== RAW LLM OUTPUT ===")
-                print(content)
-                try:
-                    parsed_json = clean_json_response(content)
-                    break
-                except json.JSONDecodeError as e:
+    @staticmethod
+    def _generate_uml_candidate(requirements: str, requirement_ids: list[str] | None = None):
+        candidate_configs = [
+            CandidateService.get_candidate_1_config(),
+            CandidateService.get_candidate_2_config(),
+            # CandidateService.get_candidate_3_config(),
+        ]
+        print(candidate_configs)
+        candidate_outputs: list[dict] = []
+        primary_candidate = None
 
-                    print("JSON PARSE FAILED")
-                    print(e)
-                    
-                    parse_retry_rules = (
-                        "\nCRITICAL JSON FIX RULES:"
-                        "\n- Return ONLY ONE JSON object"
-                        "\n- NEVER wrap output in []"
-                        "\n- Ensure all strings are closed"
-                        "\n- Do not truncate output"
-                        "\n- Do not split er_diagram"
-                        "\n- Output must start with {"
-                        "\n- Output must end with }"
-                        "\n- Use empty arrays or objects if unsure"
+        for candidate_config in candidate_configs:
+            candidate = CandidateService.run_candidate_internal(
+                requirements=requirements,
+                requirement_ids=requirement_ids or [],
+                candidate_config=candidate_config,
+            )
+            print(candidate)
+            candidate_outputs.append(_serialize_candidate_output(candidate))
+            if primary_candidate is None:
+                primary_candidate = candidate
+
+            result = UMLService._build_rendered_response(
+                        parsed_json=candidate.final_ir,
+                        validation_report=_aggregate_candidate_validation(candidate),
+                        iterations_used=1,
                     )
 
-            if parsed_json is None:
-                raise ValueError("Failed to parse LLM output as JSON")
+        #if primary_candidate is None or primary_candidate.status == "failed" or not primary_candidate.final_ir:
+            #raise ValueError(_candidate_failure_message(primary_candidate))
 
-            validation_result = None
-            try:
-                ir = convert_to_ir(parsed_json)
-                validation_result = ValidationService.validate(
-                    ir,
-                    requirement_ids=requirement_ids,
-                )
-            except Exception as exc:
-                validation_result = {
-                    "report": {
-                        "passed": False,
-                        "consistency_score": 0.0,
-                        "total_checks": 0,
-                        "passed_checks": 0,
-                        "errors": [
-                            {
-                                "rule_id": "VALIDATION-ERROR",
-                                "severity": "high",
-                                "message": str(exc),
-                                "suggestion": "Review the IR mapping and validation inputs.",
-                                "educational_feedback": "",
-                            }
-                        ],
-                        "traceability_matrix": [],
-                        "overdesign_flags": [],
-                        "naming_violations": [],
-                        "naming_violations_fixed": 0,
-                    },
-                    "errors": [],
-                    "expert_guidance": "",
-                }
-
-            validation_report = validation_result.get("report")
-            errors = validation_result.get("errors", [])
-            expert_guidance = validation_result.get("expert_guidance", "")
-
-            has_critical = any(
-                err.get("severity") == "critical"
-                for err in errors
-            )
-            if not has_critical:
-                iterations_used = iteration + 1
-                break
-
-            validation_guidance = build_validation_guidance(
-                expert_guidance,
-                errors,
-            )
-
-        if iterations_used == 0:
-            iterations_used = max_iterations
-
-        # ====================================
-        # GENERATE PLANTUML
-        # ====================================
-
-        class_plantuml = generate_class_plantuml(
-            parsed_json.get("class_diagram", {})
+        result = UMLService._build_rendered_response(
+            parsed_json=primary_candidate.final_ir,
+            validation_report=_aggregate_candidate_validation(primary_candidate),
+            iterations_used=1,
         )
+        result["candidate_outputs"] = candidate_outputs
+        result["selected_candidate_id"] = primary_candidate.candidate_id
+        return result
+
+    @staticmethod
+    def _build_rendered_response(parsed_json: dict, validation_report: dict | None, iterations_used: int):
+        # ====================================
+        # 2. GENERATE PLANTUML SYNTAX
+        # ====================================
+        class_plantuml = generate_class_plantuml(parsed_json.get("class_diagram", {}))
         sequence_diagrams = parsed_json.get("sequence_diagrams", [])
 
         generated_sequences = []
-
         for seq in sequence_diagrams:
-
             sequence_plantuml = generate_sequence_plantuml(seq)
-
             generated_sequences.append({
                 "name": seq.get("name", "sequence"),
                 "plantuml": sequence_plantuml
             })
-        er_plantuml = generate_er_plantuml(
-            parsed_json.get("er_diagram", {})
-        )
-
-        #print("=== Class PlantUML ===")
-        #print(class_plantuml)
-        #print("=== Sequence PlantUML ===")
-        #print(sequence_plantuml)
-        #print("=== ER PlantUML ===")
-        #print(er_plantuml)
+            
+        er_plantuml = generate_er_plantuml(parsed_json.get("er_diagram", {}))
 
         # ====================================
-        # ENCODE + RENDER PLANTUML
+        # 3. ENCODE + RENDER PNGs
         # ====================================
 
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -340,15 +174,11 @@ Apply these fixes while STILL returning ONLY valid JSON.
         os.makedirs(output_dir, exist_ok=True)
 
         def render_png(plantuml_code, file_name):
-
             encoded = encode_plantuml(plantuml_code)
-
             plantuml_response = requests.get(
                 f"https://www.plantuml.com/plantuml/png/{encoded}",
                 timeout=30
             )
-
-            print("=== PlantUML Server Status ===", plantuml_response.status_code)
 
             if plantuml_response.status_code != 200:
                 raise Exception("PlantUML server error")
@@ -364,33 +194,27 @@ Apply these fixes while STILL returning ONLY valid JSON.
             class_plantuml,
             f"class_{timestamp}.png"
         )
+        
         sequence_outputs = []
-
         for index, sequence_data in enumerate(generated_sequences):
-
-            safe_name = (
-                sequence_data["name"]
-                .replace(" ", "_")
-                .lower()
-            )
-
+            safe_name = sequence_data["name"].replace(" ", "_").lower()
             png_base64, file_path = render_png(
                 sequence_data["plantuml"],
                 f"{safe_name}_{timestamp}_{index}.png"
             )
-
             sequence_outputs.append({
                 "name": sequence_data["name"],
                 "png": png_base64,
                 "file": file_path
             })
+            
         er_png, er_path = render_png(
             er_plantuml,
             f"er_{timestamp}.png"
         )
 
         # ====================================
-        # FINAL RESPONSE
+        # 4. FINAL RESPONSE
         # ====================================
 
         return {
@@ -403,10 +227,7 @@ Apply these fixes while STILL returning ONLY valid JSON.
             },
             "files": {
                 "class": class_path,
-                "sequence": [
-                    item["file"]
-                    for item in sequence_outputs
-                ],
+                "sequence": [item["file"] for item in sequence_outputs],
                 "er": er_path
             },
             "plantuml": {
@@ -416,3 +237,86 @@ Apply these fixes while STILL returning ONLY valid JSON.
             },
             "iterations_used": iterations_used,
         }
+
+
+def _candidate_failure_message(candidate) -> str:
+    if candidate.provider_errors:
+        stage = candidate.provider_errors[0].get("stage", "unknown")
+        return f"Candidate generation failed during {stage} provider execution."
+    if candidate.parse_errors:
+        stage = candidate.parse_errors[0].get("stage", "unknown")
+        return f"Candidate generation failed because {stage} output could not be parsed."
+    return "Candidate generation failed before a complete UML IR was available."
+
+
+def _aggregate_candidate_validation(candidate) -> dict:
+    stage_validations = {
+        "class": candidate.class_validation,
+        "er": candidate.er_validation,
+        "sequence": candidate.sequence_validation,
+    }
+
+    errors = []
+    total_checks = 0
+    passed_checks = 0
+
+    for stage, validation in stage_validations.items():
+        validation = validation or {}
+        total_checks += int(validation.get("total_checks", 0) or 0)
+        passed_checks += int(validation.get("passed_checks", 0) or 0)
+
+        for error in validation.get("errors", []) or []:
+            errors.append({
+                **error,
+                "stage": stage,
+            })
+
+        for warning in validation.get("warnings", []) or []:
+            errors.append({
+                **warning,
+                "stage": stage,
+                "severity": "low",
+            })
+
+    passed = candidate.status == "valid" and not any(
+        error.get("severity") in ("critical", "high", "medium")
+        for error in errors
+    )
+    consistency_score = round((passed_checks / total_checks * 100), 2) if total_checks else 0.0
+
+    return {
+        "passed": passed,
+        "consistency_score": consistency_score,
+        "total_checks": total_checks,
+        "passed_checks": passed_checks,
+        "errors": errors,
+        "traceability_matrix": [],
+        "overdesign_flags": [],
+        "naming_violations": [],
+        "naming_violations_fixed": 0,
+    }
+
+
+def _serialize_candidate_output(candidate) -> dict:
+    return {
+        "candidate_id": candidate.candidate_id,
+        "provider": candidate.provider,
+        "model": candidate.model,
+        "status": candidate.status,
+        "final_ir": candidate.final_ir,
+        "validation": {
+            "class": candidate.class_validation,
+            "er": candidate.er_validation,
+            "sequence": candidate.sequence_validation,
+            "aggregate": _aggregate_candidate_validation(candidate),
+        },
+        "errors": {
+            "provider": candidate.provider_errors,
+            "parse": candidate.parse_errors,
+        },
+        "metrics": {
+            "total_tokens": candidate.metrics.total_tokens,
+            "total_latency_ms": candidate.metrics.total_latency_ms,
+            "model_call_count": candidate.metrics.model_call_count,
+        },
+    }
