@@ -30,18 +30,26 @@ class GraphState(TypedDict):
     client_review: Optional[List[Dict]]
     change_set: Optional[Dict]
     change_analysis: Optional[Dict]
-    change_impacts: Optional[Dict]
     clarification_questions: Optional[Dict]
     client_answers: Optional[List[Dict]]
-    answer_resolutions: Optional[Dict]
+    answer_requirements: Optional[Dict]
+    accepted_changes: dict
+    clarification_changes: dict
+    
+    new_requirements: Optional[List[Dict]]
+    classified_new_requirements: Optional[List[Dict]]
+    requirements_to_rewrite: Optional[List[Dict]]
+    normalized_new_requirements: Optional[List[Dict]]
+    
+    final_requirements: Optional[Dict]
     
     # approval
-    approval_status: Optional[str]
+    review_status: Optional[str]
     
     # srs
     srs_text: Optional[Dict]
     pdf_path: Optional[str]
     
-    meeting_id: Optional[str]
+    thread_id: Optional[str]
     project_id:Optional[str]
     

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 approve_routes = APIRouter()
 
 class ApproveRequest(BaseModel):
-    meeting_id: str
+    thread_id: str
     
 @approve_routes.post("/approve-reqs")
 async def approve_requirements(req: ApproveRequest):

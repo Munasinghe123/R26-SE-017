@@ -7,53 +7,66 @@ def process_client_review(client_view, client_review):
         "added": []
     }
 
-    submitted_ids = set()
+    # ---------------------------------------------------------
+    # Flatten client view
+    # Existing requirements are indexed by their original ID.
+    # Example: FR-8 -> client-view item
+    # ---------------------------------------------------------
 
-    # Flatten client view items
     original_items = {}
 
     for section in client_view.get("sections", []):
         for item in section.get("items", []):
             original_items[item["id"]] = item
 
+    # ---------------------------------------------------------
+    # Process client review
+    # ---------------------------------------------------------
+
     for review in client_review:
 
-        item_id = review["id"]
+        review_id = review["id"]
         action = review["action"]
 
-        submitted_ids.add(item_id)
+        original_item = original_items.get(review_id)
 
-        original_item = original_items.get(item_id)
+        # -----------------------------------------------------
+        # Existing requirement
+        # -----------------------------------------------------
 
-        # Existing client-view item
         if original_item:
 
             if action == "keep":
+
                 changes["kept"].append({
-                    "id": item_id
+                    "id": review_id
                 })
 
             elif action == "edit":
+
                 changes["edited"].append({
-                    "id": item_id,
+                    "id": review_id,
                     "original_text": original_item["text"],
-                    "new_text": review.get("text"),
-                    "source_ids": original_item.get("source_ids", [])
+                    "new_text": review.get("text")
                 })
 
             elif action == "delete":
+
                 changes["deleted"].append({
-                    "id": item_id,
-                    "original_text": original_item["text"],
-                    "source_ids": original_item.get("source_ids", [])
+                    "id": review_id,
+                    "original_text": original_item["text"]
                 })
 
-        # Client-added item
+        # -----------------------------------------------------
+        # New client requirement
+        # -----------------------------------------------------
+
         else:
 
-            if action == "edit" and review.get("text"):
+            if action == "add" and review.get("text"):
+
                 changes["added"].append({
-                    "id": item_id,
+                    "id": review_id,
                     "text": review["text"]
                 })
 

@@ -20,15 +20,15 @@ class ClientAnswersRequest(BaseModel):
     answers: list[ClientQuestionAnswer]
     
 
-@qa_routes.post("/{meeting_id}/questions/answers")
+@qa_routes.post("/{thread_id}/questions/answers")
 async def submit_question_answers(
-    meeting_id: str,
+    thread_id: str,
     request: ClientAnswersRequest
 ):
 
     config = {
         "configurable": {
-            "thread_id": meeting_id
+            "thread_id": thread_id
         }
     }
 
@@ -53,6 +53,6 @@ async def submit_question_answers(
     )
 
     return {
-        "meeting_id": meeting_id,
+        "thread_id": thread_id,
         "status": "answers_submitted"
     }

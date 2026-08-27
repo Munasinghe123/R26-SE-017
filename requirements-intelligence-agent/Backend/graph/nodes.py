@@ -17,9 +17,14 @@ from langgraph.types import interrupt
 from services.HITL.client_view import build_client_view
 from services.HITL.process_client_review import process_client_review
 from services.HITL.analyze_client_changes import analyze_client_changes
-from services.HITL.evaluate_change_impact import evaluate_change_impact
 from services.HITL.generate_targeted_questions import generate_targeted_questions
-from services.HITL.provide_resolutions import provide_resolutions
+from services.HITL.partition_client_changes import (partition_client_changes)
+from services.HITL.generate_requirements_from_answers import generate_requirements_from_answers
+from services.HITL.collect_new_requirements import ( collect_new_requirements)
+from services.HITL.classify_new_requirements import ( classify_new_requirements)
+from services.HITL.validate_requirement_format import ( find_requirements_to_rewrite)
+from services.HITL.normalize_requirements import (normalize_requirements)
+from services.HITL.reconcile_requirements import (reconcile_requirements)
 
 
 def speech_enhancement_node(state: GraphState):
@@ -78,9 +83,9 @@ def transcript_cleaning_node(state: GraphState):
 def extraction_node(state: GraphState):
     requirements = extract_requirements(state["transcript"])
 
-    print("\n========== EXTRACTION NODE RESULT ==========")
-    print(json.dumps(requirements, indent=4, ensure_ascii=False))
-    print("============================================")
+    # print("\n========== EXTRACTION NODE RESULT ==========")
+    # print(json.dumps(requirements, indent=4, ensure_ascii=False))
+    # print("============================================")
 
     return {"requirements": requirements}
 
@@ -90,13 +95,13 @@ def client_view_node(state: GraphState):
         state["requirements"]
     )
 
-    print("\n========== CLIENT VIEW ==========")
-    print(json.dumps(
-        client_view,
-        indent=4,
-        ensure_ascii=False
-    ))
-    print("=================================")
+    # print("\n========== CLIENT VIEW ==========")
+    # print(json.dumps(
+    #     client_view,
+    #     indent=4,
+    #     ensure_ascii=False
+    # ))
+    # print("=================================")
 
     return {
         "client_view": client_view
@@ -109,19 +114,17 @@ def await_client_node(state: GraphState):
     decision = interrupt({
         "client_view": state["client_view"],
         "project_id": state["project_id"],
-        "meeting_id": state["meeting_id"]
+        "thread_id": state["thread_id"]
     })
 
     print("Client review received:")
     print(decision)
 
     return {
-        "approval_status": decision.get("status"),
+        "review_status": decision.get("status"),
         "client_review": decision.get("items")
     }
-    
-
-    
+       
 def process_client_review_node(state: GraphState):
 
     changes = process_client_review(
@@ -149,64 +152,85 @@ def analyze_client_changes_node(state: GraphState):
     )
 
     print("\n========== CHANGE ANALYSIS ==========")
-    print(json.dumps(
-        analysis,
-        indent=4,
-        ensure_ascii=False
-    ))
-    print("=====================================")
+
+    print(
+        json.dumps(
+            analysis,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    print(
+        "====================================="
+    )
 
     return {
         "change_analysis": analysis
-    }  
-
-def refine_node(state: GraphState):
-    
-    print("Feedback:", state["feedback"])
-    
-    updated = refine_requirements(
-        state["requirements"],
-        state["feedback"]
-    )
-    print("refined")
-    print(updated)
-    return {
-        "requirements": updated
     }
-    
-def evaluate_change_impact_node(state: GraphState):
 
-    impacts = evaluate_change_impact(
-        state["requirements"],
+def partition_client_changes_node(
+    state: GraphState
+):
+
+    result = partition_client_changes(
         state["change_set"],
         state["change_analysis"]
     )
 
-    print("\n========== CHANGE IMPACTS ==========")
-    print(json.dumps(
-        impacts,
-        indent=4,
-        ensure_ascii=False
-    ))
-    print("====================================")
+    print(
+        "\n========== ACCEPTED CHANGES =========="
+    )
+
+    print(
+        json.dumps(
+            result["accepted_changes"],
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    print(
+        "\n========== CLARIFICATION CHANGES =========="
+    )
+
+    print(
+        json.dumps(
+            result["clarification_changes"],
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    print(
+        "==========================================="
+    )
 
     return {
-        "change_impacts": impacts
+        "accepted_changes": result[
+            "accepted_changes"
+        ],
+        "clarification_changes": result[
+            "clarification_changes"
+        ]
     }
     
 def generate_targeted_questions_node(state: GraphState):
 
     questions = generate_targeted_questions(
-        state["change_analysis"],
-        state["change_impacts"]
+        state["clarification_changes"]
     )
 
     print("\n========== TARGETED QUESTIONS ==========")
-    print(json.dumps(
-        questions,
-        indent=4,
-        ensure_ascii=False
-    ))
+
+    print(
+        json.dumps(
+            questions,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
     print("========================================")
 
     return {
@@ -215,19 +239,28 @@ def generate_targeted_questions_node(state: GraphState):
     
 def await_client_questions_node(state: GraphState):
 
-    print("\n========== WAITING FOR CLIENT ANSWERS ==========")
+    print(
+        "\n========== WAITING FOR CLIENT ANSWERS =========="
+    )
 
-    answers = interrupt({
-        "meeting_id": state["meeting_id"],
+    response = interrupt({
+        "thread_id": state["thread_id"],
         "questions": state["clarification_questions"]
     })
 
-    print("\n========== CLIENT ANSWERS RECEIVED ==========")
-    print(json.dumps(
-        answers,
-        indent=4,
-        ensure_ascii=False
-    ))
+    print(
+        "\n========== CLIENT ANSWERS RECEIVED =========="
+    )
+
+    print(
+        json.dumps(
+            response,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    answers = response.get("answers", [])
 
     return {
         "client_answers": answers
@@ -235,43 +268,214 @@ def await_client_questions_node(state: GraphState):
 
 def apply_client_answers_node(state: GraphState):
 
-    print("\n========== APPLYING CLIENT ANSWERS ==========")
-
-    resolutions = provide_resolutions(
-        state["clarification_questions"],
-        state["client_answers"],
-        state["change_impacts"]
+    print(
+        "\n========== CONVERTING CLIENT ANSWERS INTO REQUIREMENTS =========="
     )
 
-    print("\n========== ANSWER RESOLUTIONS ==========")
-    print(json.dumps(
-        resolutions,
-        indent=4,
-        ensure_ascii=False
-    ))
-    print("==========================================")
+    answer_requirements = generate_requirements_from_answers(
+        state["clarification_questions"],
+        state["client_answers"],
+        state["clarification_changes"]
+    )
+
+    print(
+        "\n========== ANSWER-GENERATED REQUIREMENTS =========="
+    )
+
+    print(
+        json.dumps(
+            answer_requirements,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    print(
+        "===================================================="
+    )
 
     return {
-        "answer_resolutions": resolutions
+        "answer_requirements": answer_requirements
     }
-# def build_srs_node(state):
 
-#     latest = get_latest_requirements(
-#         state["meeting_id"]
-#     )
+def collect_new_requirements_node(
+    state: GraphState
+):
 
-#     srs_text = build_srs(latest)
-#     print("srs built")
+    print(
+        "\n========== COLLECTING NEW REQUIREMENTS =========="
+    )
 
-#     return {
-#         "srs_text": srs_text
-#     }
+    new_requirements = collect_new_requirements(
+        state["accepted_changes"],
+        state["answer_requirements"]
+    )
+
+    print(
+        json.dumps(
+            new_requirements,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "new_requirements": new_requirements
+    }
+
+
+def classify_new_requirements_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== CLASSIFYING NEW REQUIREMENTS =========="
+    )
+
+    classified = classify_new_requirements(
+        state["new_requirements"]
+    )
+
+    print(
+        "\n========== CLASSIFIED NEW REQUIREMENTS =========="
+    )
+
+    print(
+        json.dumps(
+            classified,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "classified_new_requirements": classified
+    }
+
+
+def validate_new_requirement_format_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== CHECKING REQUIREMENT FORMAT =========="
+    )
+
+    requirements_to_rewrite = (
+        find_requirements_to_rewrite(
+            state["classified_new_requirements"]
+        )
+    )
+
+    print(
+        "\n========== REQUIREMENTS TO REWRITE =========="
+    )
+
+    print(
+        json.dumps(
+            requirements_to_rewrite,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "requirements_to_rewrite":
+            requirements_to_rewrite
+    }
+
+
+def normalize_new_requirements_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== NORMALIZING REQUIREMENTS =========="
+    )
+
+    rewritten = normalize_requirements(
+        state["requirements_to_rewrite"]
+    )
+
+    # ---------------------------------------------------------
+    # Combine already-valid requirements with rewritten ones
+    # ---------------------------------------------------------
+
+    rewritten_ids = {
+        requirement["id"]
+        for requirement in rewritten
+    }
+
+    final_requirements = []
+
+    for requirement in state[
+        "classified_new_requirements"
+    ]:
+
+        requirement_id = requirement["id"]
+
+        if requirement_id in rewritten_ids:
+
+            rewritten_requirement = next(
+                item
+                for item in rewritten
+                if item["id"] == requirement_id
+            )
+
+            final_requirements.append(
+                rewritten_requirement
+            )
+
+        else:
+
+            final_requirements.append(
+                requirement
+            )
+
+    print(
+        "\n========== NORMALIZED NEW REQUIREMENTS =========="
+    )
+
+    print(
+        json.dumps(
+            final_requirements,
+            indent=4,
+            ensure_ascii=False
+        )
+    )
+
+    return {
+        "normalized_new_requirements":
+            final_requirements
+    }
+ 
+def reconcile_requirements_node(
+    state: GraphState
+):
+
+    print(
+        "\n========== RECONCILIATION NODE =========="
+    )
+
+    final_requirements = reconcile_requirements(
+        original_requirements=state["requirements"],
+        accepted_changes=state["accepted_changes"],
+        answer_requirements=state["answer_requirements"],
+        normalized_new_requirements=state[
+            "normalized_new_requirements"
+        ]
+    )
+
+    return {
+        "final_requirements": final_requirements
+    }
+    
     
 def generate_srs_pdf_node(state: GraphState):
 
     pdf_path = create_pdf(
         state["srs_text"],
-        state["meeting_id"]
+        state["thread_id"]
     )
 
     print("srs pdf built");

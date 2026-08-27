@@ -3,11 +3,11 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
 
-def create_pdf(srs_text, meeting_id):
+def create_pdf(srs_text, thread_id):
 
     os.makedirs("generated_pdfs", exist_ok=True)
 
-    pdf_path = f"generated_pdfs/{meeting_id}.pdf"
+    pdf_path = f"generated_pdfs/{thread_id}.pdf"
 
     doc = SimpleDocTemplate(pdf_path)
 

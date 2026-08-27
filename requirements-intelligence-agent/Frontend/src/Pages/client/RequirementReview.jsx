@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom"
 import api from '../../api/api'
 
 export default function RequirementReview() {
-    const { meetingId } = useParams()
+    const { thread_id } = useParams()
     const [requirements, setRequirements] = useState(null)
     const [feedback, setFeedback] = useState("")
     const [loading, setLoading] = useState(false)
@@ -13,7 +13,7 @@ export default function RequirementReview() {
     const fetchRequirements = async () => {
         try {
             console.log("use effect fired")
-            const res = await api.get(`http://127.0.0.1:8000/requirements/${meetingId}`)
+            const res = await api.get(`http://127.0.0.1:8000/requirements/${thread_id}`)
             setRequirements(res.data.requirements)
             console.log("returned reqs", res.data.requirements)
         } catch (err) {
@@ -24,10 +24,10 @@ export default function RequirementReview() {
 
     useEffect(() => {
 
-        if (meetingId) {
+        if (thread_id) {
             fetchRequirements()
         }
-    }, [meetingId])
+    }, [thread_id])
 
     if (!requirements) return <div>Loading...</div>
 
@@ -41,7 +41,7 @@ export default function RequirementReview() {
 
                 feedback: feedback,
                 requirements: requirements,
-                meetingId: meetingId
+                thread_id: thread_id
             })
 
             console.log("refined reqs", res.data.requirements)
@@ -63,7 +63,7 @@ export default function RequirementReview() {
             const res = await api.post(
                 "/approve-reqs",
                 {
-                    meeting_id: meetingId
+                    thread_id: thread_id
                 }
             )
           
