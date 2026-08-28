@@ -9,12 +9,4 @@ def route_workflow(state):
         return "document"
     
     
-def route_after_client(state):
-
-    print("Approval:", state["approval_status"])
-
-    if state["approval_status"] == "approved":
-        return "approved"
-
-    return "rejected"
 

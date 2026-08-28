@@ -4,7 +4,6 @@ import api from "../../../api/api";
 import { useSelector } from "react-redux";
 
 export default function UploadModal({ onClose, onSubmit }) {
-
   const currentProject = useSelector((state) => state.project.currentProject);
 
   const fileInputRef = useRef(null);
@@ -186,26 +185,47 @@ export default function UploadModal({ onClose, onSubmit }) {
             onClick={handleUpload}
             disabled={!file || loading}
             className="
-              rounded-full
-              border
-              border-cyan-400/60
-              bg-black
-              px-6
-              py-3
-              text-sm
-              font-medium
-              uppercase
-              tracking-[2px]
-              text-white
-              transition-all
-              duration-300
-              hover:border-cyan-200
-              hover:shadow-[0_0_20px_rgba(34,211,238,0.4)]
-              disabled:cursor-not-allowed
-              disabled:opacity-30
-            "
+    flex
+    items-center
+    justify-center
+    gap-3
+    rounded-full
+    border
+    border-cyan-400/60
+    bg-black
+    px-6
+    py-3
+    text-sm
+    font-medium
+    uppercase
+    tracking-[2px]
+    text-white
+    transition-all
+    duration-300
+    hover:border-cyan-200
+    hover:shadow-[0_0_20px_rgba(34,211,238,0.4)]
+    disabled:cursor-not-allowed
+    disabled:opacity-70
+  "
           >
-            Start Analysis
+            {loading ? (
+              <>
+                <div
+                  className="
+          h-4
+          w-4
+          animate-spin
+          rounded-full
+          border-2
+          border-white/20
+          border-t-cyan-300
+        "
+                />
+                Analyzing...
+              </>
+            ) : (
+              "Start Analysis"
+            )}
           </button>
         </div>
       </div>

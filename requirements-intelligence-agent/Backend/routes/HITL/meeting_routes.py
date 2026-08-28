@@ -82,3 +82,39 @@ async def submit_meeting_review(
         "thread_id": thread_id,
         "status": "submitted"
     }
+    
+    
+@meeting_routes.get("/{thread_id}/final-requirements")
+async def get_final_requirements(thread_id: str):
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+    snapshot = graph.get_state(config)
+
+    if not snapshot.values:
+        raise HTTPException(
+            status_code=404,
+            detail="Meeting workflow not found"
+        )
+
+    final_requirements = snapshot.values.get(
+        "final_requirements"
+    )
+
+    if not final_requirements:
+        return {
+            "thread_id": thread_id,
+            "ready": False,
+            "final_requirements": None
+        }
+
+    return {
+        "thread_id": thread_id,
+        "ready": True,
+        "final_requirements": final_requirements
+    }
+    

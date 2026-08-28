@@ -71,28 +71,38 @@ async def create_project_service(creator_id, data):
 
             # 5. Create the project
             project = await connection.fetchrow(
-                """
-                INSERT INTO projects (
-                    id,
-                    name,
-                    description,
-                    product_owner_id,
-                    client_id
-                )
-                VALUES (
-                    gen_random_uuid(),
-                    $1,
-                    $2,
-                    $3,
-                    $4
-                )
-                RETURNING id, name, description, product_owner_id, client_id, created_at;
-                """,
-                data.projectName,
-                data.projectDescription,
-                creator_id,
-                data.clientId
-            )
+    """
+    INSERT INTO projects (
+        id,
+        name,
+        description,
+        product_owner_id,
+        client_id,
+        analysis_status
+    )
+    VALUES (
+        gen_random_uuid(),
+        $1,
+        $2,
+        $3,
+        $4,
+        'idle'
+    )
+    RETURNING
+        id,
+        name,
+        description,
+        product_owner_id,
+        client_id,
+        created_at,
+        thread_id,
+        analysis_status;
+    """,
+    data.projectName,
+    data.projectDescription,
+    creator_id,
+    data.clientId
+)
     print("PRODUCT OWNER:", dict(product_owner))
     print("CLIENT:", dict(client_user))
     print("PROJECT:", dict(project))
@@ -115,13 +125,21 @@ async def create_project_service(creator_id, data):
     },
 
     "project": {
-        "id": str(project["id"]),
-        "name": project["name"],
-        "description": project["description"],
-        "product_owner_id": str(project["product_owner_id"]),
-        "client_id": str(project["client_id"]),
-        "created_at": project["created_at"],
-    },
+    "id": str(project["id"]),
+    "name": project["name"],
+    "description": project["description"],
+    "product_owner_id": str(project["product_owner_id"]),
+    "client_id": str(project["client_id"]),
+    "created_at": project["created_at"],
+
+    "thread_id": (
+        str(project["thread_id"])
+        if project["thread_id"]
+        else None
+    ),
+
+    "analysis_status": project["analysis_status"],
+},
 }
     
 
@@ -154,7 +172,9 @@ async def get_user_projects_service(user_id):
                     description,
                     product_owner_id,
                     client_id,
-                    created_at
+                    thread_id,
+                    created_at,
+                    analysis_status
                 FROM projects
                 WHERE product_owner_id = $1
                 ORDER BY created_at DESC;
@@ -172,7 +192,9 @@ async def get_user_projects_service(user_id):
                     description,
                     product_owner_id,
                     client_id,
-                    created_at
+                    thread_id,
+                    created_at,
+                    analysis_status
                 FROM projects
                 WHERE client_id = $1
                 ORDER BY created_at DESC;
@@ -186,14 +208,20 @@ async def get_user_projects_service(user_id):
     return {
         "role": user["role"],
         "projects": [
-            {
-                "id": str(project["id"]),
-                "name": project["name"],
-                "description": project["description"],
-                "product_owner_id": str(project["product_owner_id"]),
-                "client_id": str(project["client_id"]),
-                "created_at": project["created_at"],
-            }
+           {
+    "id": str(project["id"]),
+    "name": project["name"],
+    "description": project["description"],
+    "product_owner_id": str(project["product_owner_id"]),
+    "client_id": str(project["client_id"]),
+    "created_at": project["created_at"],
+    "thread_id": (
+        str(project["thread_id"])
+        if project["thread_id"]
+        else None
+    ),
+    "analysis_status": project["analysis_status"],
+}
             for project in projects
         ]
     }

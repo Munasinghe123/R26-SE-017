@@ -26,7 +26,7 @@ from graph.nodes import (
     reconcile_requirements_node,
 )
 from graph.router import route_workflow
-from langgraph.checkpoint.memory import InMemorySaver
+from graph.checkpointer import checkpointer
 
 
 def build_graph():
@@ -102,8 +102,6 @@ def build_graph():
     # builder.add_edge("build_srs", "generate_pdf")
     # builder.add_edge("generate_pdf", END)
     
-   
-    checkpointer = InMemorySaver()
     return builder.compile(checkpointer=checkpointer)
     
         
