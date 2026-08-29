@@ -8,8 +8,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file if present
+# Load .env file if present (local service or root)
 load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 # ──────────────────────────────────────────────
 # PATHS
