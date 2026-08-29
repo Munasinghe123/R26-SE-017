@@ -1,0 +1,331 @@
+{
+  "purpose": "Replace manual appointment books, paper-based patient records, and scattered phone communication with an internal system and a patient-facing platform that manages appointments, patient information, doctor schedules, and basic reporting.",
+  "scope": "A hospital management solution comprising a patient portal for searching doctors, viewing available appointment slots, and booking appointments; an internal interface for doctors, receptionists, and administrators to manage appointments, patient records, doctor schedules, and basic hospital reports. The system will provide real-time appointment availability to prevent double-booking of doctors.",
+  "product_perspective": {
+    "system_interfaces": [],
+    "user_interfaces": [
+      "Patient interface for searching doctors and viewing available appointments",
+      "Appointment booking interface for patients",
+      "Doctor interface for viewing schedules and patient information",
+      "Receptionist interface for managing appointments and patient registration",
+      "Administrator interface for managing doctors, users, and reports"
+    ],
+    "hardware_interfaces": [],
+    "software_interfaces": [],
+    "communications_interfaces": [],
+    "memory_constraints": [],
+    "operations": [
+      "Patients use the platform to search for doctors and book appointments",
+      "Doctors use the internal interface to view schedules and patient information",
+      "Receptionists use the system to register patients and manage appointments",
+      "Administrators use the system to manage doctors, users, and reports"
+    ],
+    "site_adaptation_requirements": [],
+    "service_interfaces": []
+  },
+  "product_functions": [
+    "Search doctors by specialization",
+    "View doctor availability",
+    "Book appointments",
+    "Cancel appointments",
+    "Prevent double-booking through real-time appointment synchronization",
+    "Register and manage patient information",
+    "Allow doctors to view their appointment schedules",
+    "Allow doctors to view patient information",
+    "Allow receptionists to manage appointments",
+    "Allow administrators to manage doctors and users",
+    "Generate basic reports: daily appointments, monthly appointment totals, and doctor appointment statistics"
+  ],
+  "user_characteristics": [
+    {
+      "user_group": "Patients",
+      "characteristics": "General users who search for doctors and book hospital appointments"
+    },
+    {
+      "user_group": "Doctors",
+      "characteristics": "Medical professionals who view appointments and patient information"
+    },
+    {
+      "user_group": "Receptionists",
+      "characteristics": "Hospital staff responsible for patient registration and appointment management"
+    },
+    {
+      "user_group": "Administrators",
+      "characteristics": "Internal users responsible for managing doctors, users, and hospital reports"
+    }
+  ],
+  "assumptions_and_dependencies": [],
+  "specified_requirements": {
+    "functional": [
+      {
+        "id": "FR-1",
+        "description": "The system shall allow patients to search for doctors by specialization.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "Patients should be able to find doctors based on their specialization."
+          }
+        ]
+      },
+      {
+        "id": "FR-2",
+        "description": "The system shall allow patients to view available appointment slots for doctors.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "They need to see which time slots are available before booking."
+          }
+        ]
+      },
+      {
+        "id": "FR-3",
+        "description": "The system shall allow patients to book appointments with doctors.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "Patients should be able to select a doctor and book an appointment."
+          }
+        ]
+      },
+      {
+        "id": "FR-4",
+        "description": "The system shall synchronize appointment availability in real time to prevent double-booking.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "Sometimes two patients are given the same appointment time because we are using the manual appointment book."
+          },
+          {
+            "speaker": "BUSINESS_ANALYST",
+            "statement": "Then real-time appointment synchronization is required to ensure that a slot cannot be booked twice."
+          }
+        ]
+      },
+      {
+        "id": "FR-5",
+        "description": "The system shall allow patients to cancel their appointments.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "Patients should also be able to cancel their appointments if they cannot come."
+          }
+        ]
+      },
+      {
+        "id": "FR-6",
+        "description": "The system shall allow receptionists to register patients and manage their appointment information.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "Receptionists need to register patients and manage their appointments from the hospital side."
+          }
+        ]
+      },
+      {
+        "id": "FR-7",
+        "description": "The system shall allow doctors to view their appointment schedules.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "Doctors need to see their daily appointment schedule."
+          }
+        ]
+      },
+      {
+        "id": "FR-8",
+        "description": "The system shall allow doctors to view relevant patient information for their appointments.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "Doctors should be able to see the patient's basic information before the consultation."
+          }
+        ]
+      },
+      {
+        "id": "FR-9",
+        "description": "The system shall provide administrator access for managing doctors and internal users.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "I need administrator access to manage doctors and the hospital staff accounts."
+          }
+        ]
+      },
+      {
+        "id": "FR-10",
+        "description": "The system shall provide basic reporting of daily appointments, monthly appointment totals, and doctor appointment statistics.",
+        "source_evidence": [
+          {
+            "speaker": "CLIENT",
+            "statement": "We only need basic reports such as daily appointments, monthly totals, and how many appointments each doctor has."
+          }
+        ]
+      }
+    ],
+    "non_functional": []
+  },
+  "external_interfaces": [],
+  "design_constraints": [],
+  "standards_compliance": [],
+  "supporting_information": [
+    "Current appointment management is done using paper appointment books and telephone communication.",
+    "Patient information is partially maintained using paper records.",
+    "The hospital wants to reduce appointment scheduling errors and double-booking.",
+    "Timeline expectation of around three months.",
+    "Focus on appointment management and core patient information features first."
+  ]
+}
+
+{
+  "architecture": {
+    "style": "Modular Monolith",
+    "database": "Relational SQL",
+    "description": "Patient portal and hospital internal interface use a centralized application layer and database."
+  },
+
+  "components": [
+    {
+      "name": "Authentication & User Management",
+      "responsibilities": [
+        "User authentication",
+        "Role and access management"
+      ]
+    },
+    {
+      "name": "Doctor Management",
+      "responsibilities": [
+        "Manage doctors and specializations",
+        "Provide doctor availability"
+      ]
+    },
+    {
+      "name": "Patient Management",
+      "responsibilities": [
+        "Register patients",
+        "Manage patient information"
+      ]
+    },
+    {
+      "name": "Appointment Management",
+      "responsibilities": [
+        "Book and cancel appointments",
+        "Manage appointment slots",
+        "Prevent double-booking"
+      ]
+    },
+    {
+      "name": "Reporting",
+      "responsibilities": [
+        "Generate appointment and doctor statistics"
+      ]
+    },
+    {
+      "name": "Patient Portal",
+      "responsibilities": [
+        "Search doctors",
+        "View availability",
+        "Book and cancel appointments"
+      ]
+    },
+    {
+      "name": "Hospital Internal Interface",
+      "responsibilities": [
+        "Patient registration",
+        "Appointment management",
+        "Doctor and user management",
+        "Report access"
+      ]
+    }
+  ],
+
+  "interfaces": [
+    {
+      "provider": "Doctor Management",
+      "operation": "Search doctors",
+      "endpoint": "GET /api/doctors"
+    },
+    {
+      "provider": "Doctor Management",
+      "operation": "View availability",
+      "endpoint": "GET /api/doctors/{doctorId}/availability"
+    },
+    {
+      "provider": "Appointment Management",
+      "operation": "Book appointment",
+      "endpoint": "POST /api/appointments"
+    },
+    {
+      "provider": "Appointment Management",
+      "operation": "Cancel appointment",
+      "endpoint": "DELETE /api/appointments/{appointmentId}"
+    },
+    {
+      "provider": "Patient Management",
+      "operation": "Register patient",
+      "endpoint": "POST /api/patients"
+    }
+  ],
+
+  "data_architecture": {
+    "entities": [
+      "User",
+      "Role",
+      "Patient",
+      "Doctor",
+      "Specialization",
+      "DoctorSchedule",
+      "AppointmentSlot",
+      "Appointment"
+    ],
+    "relationships": [
+      "User has a Role",
+      "Doctor has a Specialization",
+      "Doctor has a Schedule",
+      "Patient has Appointments",
+      "Doctor has Appointments",
+      "Appointment occupies an AppointmentSlot"
+    ],
+    "data_ownership": {
+      "User": "Authentication & User Management",
+      "Patient": "Patient Management",
+      "Doctor": "Doctor Management",
+      "Appointment": "Appointment Management",
+      "AppointmentSlot": "Appointment Management"
+    }
+  },
+
+  "key_flows": [
+    {
+      "name": "Book Appointment",
+      "components": [
+        "Patient Portal",
+        "Appointment Management",
+        "Patient Management",
+        "Doctor Management",
+        "Database"
+      ],
+      "steps": [
+        "View available slots",
+        "Select slot",
+        "Validate patient and doctor",
+        "Reserve slot transactionally",
+        "Create appointment"
+      ]
+    },
+    {
+      "name": "Patient Registration",
+      "components": [
+        "Hospital Internal Interface",
+        "Patient Management",
+        "Database"
+      ]
+    }
+  ],
+
+  "architectural_constraints": [
+    "Prevent double-booking of the same doctor time slot",
+    "Use transactional appointment booking",
+    "Apply role-based access control",
+    "Maintain centralized relational data"
+  ]
+}
