@@ -106,78 +106,105 @@ def reconcile_requirements(
     # 2. Apply client review changes
     # =========================================================
 
-    change_items = accepted_changes.get(
-        "items",
+       # =========================================================
+    # 2. Apply client review changes
+    # =========================================================
+
+    kept_changes = accepted_changes.get(
+        "kept",
+        []
+    )
+
+    edited_changes = accepted_changes.get(
+        "edited",
+        []
+    )
+
+    deleted_changes = accepted_changes.get(
+        "deleted",
+        []
+    )
+
+    added_changes = accepted_changes.get(
+        "added",
         []
     )
 
     print(
-        f"\nCLIENT REVIEW CHANGE COUNT: "
-        f"{len(change_items)}"
+        f"\nCLIENT REVIEW KEPT COUNT: "
+        f"{len(kept_changes)}"
     )
 
-    for change in change_items:
+    print(
+        f"CLIENT REVIEW EDITED COUNT: "
+        f"{len(edited_changes)}"
+    )
+
+    print(
+        f"CLIENT REVIEW DELETED COUNT: "
+        f"{len(deleted_changes)}"
+    )
+
+    print(
+        f"CLIENT REVIEW ADDED COUNT: "
+        f"{len(added_changes)}"
+    )
+
+    # ---------------------------------------------------------
+    # KEEP
+    # ---------------------------------------------------------
+
+    # Kept requirements already exist in requirements_by_id.
+    # Nothing needs to be changed.
+
+    # ---------------------------------------------------------
+    # EDIT
+    # ---------------------------------------------------------
+
+    for change in edited_changes:
 
         requirement_id = change["id"]
 
-        action = change["action"]
-
-        # -----------------------------------------------------
-        # KEEP
-        # -----------------------------------------------------
-
-        if action == "keep":
-
-            continue
-
-        # -----------------------------------------------------
-        # EDIT
-        # -----------------------------------------------------
-
-        elif action == "edit":
-
-            if requirement_id not in requirements_by_id:
-
-                raise ValueError(
-                    f"Cannot edit unknown requirement: "
-                    f"{requirement_id}"
-                )
-
-            requirements_by_id[
-                requirement_id
-            ]["text"] = change["text"]
-
-        # -----------------------------------------------------
-        # DELETE
-        # -----------------------------------------------------
-
-        elif action == "delete":
-
-            requirements_by_id.pop(
-                requirement_id,
-                None
-            )
-
-        # -----------------------------------------------------
-        # ADD
-        # -----------------------------------------------------
-
-        elif action == "add":
-
-            requirements_by_id[
-                requirement_id
-            ] = {
-                "id": requirement_id,
-                "text": change["text"],
-                "type": None
-            }
-
-        else:
+        if requirement_id not in requirements_by_id:
 
             raise ValueError(
-                f"Unknown client change action: "
-                f"{action}"
+                f"Cannot edit unknown requirement: "
+                f"{requirement_id}"
             )
+
+        requirements_by_id[
+            requirement_id
+        ]["text"] = change["new_text"]
+
+    # ---------------------------------------------------------
+    # DELETE
+    # ---------------------------------------------------------
+
+    for change in deleted_changes:
+
+        requirement_id = change["id"]
+
+        requirements_by_id.pop(
+            requirement_id,
+            None
+        )
+
+    # ---------------------------------------------------------
+    # ADD
+    # ---------------------------------------------------------
+
+    for change in added_changes:
+
+        requirement_id = change["id"]
+
+        requirements_by_id[
+            requirement_id
+        ] = {
+            "id": requirement_id,
+            "text": change["text"],
+            "type": None
+        }
+
 
     print(
         f"\nAFTER CLIENT REVIEW COUNT: "

@@ -8,61 +8,85 @@ QUESTION_GENERATION_PROMPT = """
 You generate targeted business clarification questions
 for a software requirements review.
 
-The client has already reviewed the requirements.
+The client has already reviewed the requirements and explicitly
+requested changes.
 
-Another component has already analyzed the client's changes
-and identified the specific issues that require clarification.
+Another component has analyzed the client's changes and identified
+specific issues that may require clarification.
 
-Your job is to generate concise business questions that
-resolve those identified issues.
+Your job is to generate only the minimum necessary questions needed
+to resolve genuine ambiguity, conflict, or missing business behavior.
+
+The questions are shown directly to a non-technical business client.
 
 RULES:
 
-1. Questions must be understandable by a non-technical
-   business client.
+1. Questions must be understandable by a non-technical business client.
 
-2. Do not use technical implementation terminology.
+2. Use natural business language.
 
-3. Do not ask about programming languages, databases,
-   APIs, frameworks, architecture, or implementation.
+3. Do not use technical implementation terminology.
 
-4. Only ask questions directly related to the provided
-   change and its identified issues.
+4. Do not ask about programming languages, databases, APIs,
+   frameworks, architecture, implementation, or technical design.
 
-5. Do not ask for information that is already explicitly
-   provided.
+5. Do not ask for information that is already explicitly provided
+   by the client.
 
-6. Do not invent new features or assumptions.
+6. Do not invent new features, requirements, assumptions, or
+   business rules.
 
-7. For deleted requirements with issues, ask only what is
-   necessary to determine the client's intended behavior.
+7. A client explicitly requesting a change is evidence of their
+   intended behavior. Do not ask whether they want a change that
+   they have already explicitly requested.
 
-8. For edited requirements with issues, ask only what is
-   necessary to remove the identified ambiguity or
-   unspecified behavior.
+8. Do not create questions merely because two requirements are
+    related or mention similar users, roles, or functionality.
 
-9. For newly added requirements with issues, ask only what
-   is necessary to define the missing business behavior or
-   resolve the identified conflict.
+9. Only treat two requirements as overlapping when their intended
+    business responsibilities genuinely conflict or cannot
+    reasonably coexist.
 
-10. Do not question changes that are not present in the input.
+10. For edited requirements, ask only what is necessary to resolve
+    the specific ambiguity or missing business behavior identified
+    in the input.
 
-11. Generate only the minimum number of questions necessary
-    to resolve the identified issues.
+11. For deleted requirements, ask only what is necessary to
+    determine whether the functionality should actually be removed
+    or retained.
 
-12. Generate between 1 and 2 questions for each change that
-    requires clarification.
+12. For newly added requirements, ask only what is necessary to
+    define genuinely missing business behavior.
 
-13. Each question must directly address one or more of the
-    provided issues.
+13. Do not ask a question when the client's requested behavior is
+    already sufficiently clear from the client change and project
+    context.
 
-14. Preserve the requirement identifier exactly as provided.
+14. Generate the minimum number of questions necessary.
 
-15. Use "id" as the only identifier field.
+15. Generate between 1 and 2 questions only when clarification is
+    genuinely necessary for a specific change.
 
-16. Do not use "id".
+16. Every question must directly address a specific unresolved
+    business issue provided in the input.
 
-17. Return ONLY valid JSON.
+17. Requirement identifiers are internal metadata only.
+
+18. NEVER mention internal requirement identifiers such as FR-1,
+    FR-14, FR-21, NFR-1, NFR-2, Q-1, or generated IDs inside the
+    client-facing question or reason.
+
+19. The requirement identifier must appear only in the structured
+    `requirement_id` field.
+
+20. Do not mention that a question is being asked because of an
+    internal requirement, change analysis, classifier, agent,
+    system, or workflow.
+
+21. The `question` and `reason` fields must be written entirely
+    for the business client.
+
+22. Return ONLY valid JSON.
 
 OUTPUT:
 
@@ -72,7 +96,7 @@ OUTPUT:
             "id": "Q-1",
             "requirement_id": "FR-8",
             "question": "Business-oriented question",
-            "reason": "Why this information is needed"
+            "reason": "Business-oriented explanation of why this clarification is needed"
         }
     ]
 }

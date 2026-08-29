@@ -115,93 +115,111 @@ Use only evidence from the meeting.
 
 SPECIFIED_REQUIREMENTS_GUIDELINES = """
 Extract software requirements explicitly stated or clearly expressed
-in the meeting.
+by the stakeholders in the meeting.
 
 FUNCTIONAL REQUIREMENTS:
 
 Functional requirements describe what the software must do.
 
 Each functional requirement must:
-- describe one independently identifiable behavior;
+- describe one independently identifiable system behavior;
 - be independently testable;
 - begin with "The system shall...";
-- preserve the meaning of the stakeholder statement.
+- preserve the stakeholder's intended meaning.
+
+If a stakeholder statement contains multiple independent behaviors,
+split them into separate requirements when they can be tested
+independently.
+
+Do not combine unrelated behaviors into one requirement.
 
 NON-FUNCTIONAL REQUIREMENTS:
 
-Non-functional requirements describe, how the system should perform.
-Extract a non-functional requirement ONLY when the meeting explicitly
-states a quality attribute or constraint that applies to the SOFTWARE
-SYSTEM itself.
+Non-functional requirements describe quality attributes or constraints
+that apply to the software system itself.
 
-Do not classify project schedules, deadlines, delivery dates,
-development timelines, milestones, priorities, or planning statements
-as software non-functional requirements.
+Extract an NFR ONLY when the meeting provides explicit evidence for it.
 
 Examples include:
-
 - performance
+- response time
 - security
+- privacy
 - reliability
 - availability
 - usability
 - scalability
 - maintainability
 - portability
-- response time
-- resource limitations
-- software-specific operational constraints
 
-CRITICAL DISTINCTION:
+Security and privacy requirements should be classified as NFRs when
+they describe how the system must protect information or control
+access.
 
-Information about the PROJECT is NOT a software requirement.
+Do not infer NFRs from common software engineering practice.
 
-Do NOT classify the following as non-functional requirements:
+Do not create security, performance, scalability, reliability,
+usability, or other quality requirements unless the stakeholder
+provides evidence for them.
 
+PROJECT INFORMATION:
+
+Project information is not automatically a software requirement.
+
+Do not classify the following as NFRs:
 - project deadlines
 - development timelines
 - delivery dates
-- estimated completion dates
 - project schedules
-- development phases
-- team schedules
-- project plans
+- milestones
+- budgets
 - project priorities
 - business goals
-- stakeholder preferences about when the project should be delivered
+- planning statements
 
-Do NOT transform project information into a software requirement.
+Do not convert project information into software requirements.
 
-Do NOT infer non-functional requirements from common software engineering
-practice.
+SCOPE:
 
-For example, do not generate security, scalability, reliability,
-performance, or usability requirements unless the meeting provides
-evidence for them.
+Do not convert future considerations into current requirements.
 
-EMPTY IS VALID:
+If a feature is explicitly excluded from the current version,
+do not create a requirement for that feature.
 
-If the meeting contains no explicit software non-functional requirements,
-return an empty non_functional array.
+If a feature is only mentioned as a possible future feature,
+do not treat it as a current requirement.
 
-Do not create an NFR merely because the output schema contains an
-"non_functional" field.
+QUALITY:
 
-For every functional or non-functional requirement, identify the exact
-meeting statement(s) that provide evidence for that requirement.
+- Do not invent requirements.
+- Do not duplicate requirements.
+- Do not combine unrelated requirements.
+- Do not introduce stronger constraints than the stakeholder stated.
+- Preserve the original meaning and level of certainty.
+- Use only information supported by the meeting.
+
+SOURCE EVIDENCE:
+
+For every requirement, identify the exact meeting statement(s) that
+provide evidence for it.
 
 Evidence MUST come directly from the provided transcript.
 
-Do not create, paraphrase, or infer source evidence.
+Do not fabricate or infer source evidence.
 
-For both functional and non-functional requirements:
+EMPTY IS VALID:
 
-- use only evidence from the meeting;
-- do not invent requirements;
-- do not duplicate requirements;
-- do not combine unrelated requirements;
-- preserve the meaning of stakeholder statements.
+If the meeting contains no functional requirements, return an empty
+functional_requirements array.
+
+If the meeting contains no non-functional requirements, return an
+empty non_functional_requirements array.
+
+Do not create requirements simply because the output schema contains
+those fields.
 """
+
+
 
 EXTERNAL_INTERFACES_GUIDELINES = """
 Extract external interface information only when the meeting explicitly
@@ -303,8 +321,21 @@ STRICT EXTRACTION RULES:
 
 6. Preserve the meaning of stakeholder statements.
 
-7. Do not duplicate the same information across multiple fields unless
-   the information genuinely belongs to both fields.
+7. A single client statement must be classified as EITHER a functional
+   requirement OR a non-functional requirement — never both.
+
+   If a statement describes a system behavior (what the system does),
+   classify it as functional.
+
+   If the same statement also implies a quality attribute (how well/fast/
+   securely it does it), that quality attribute may ALSO become a
+   separate NFR only if it describes a distinct, independently
+   verifiable quality constraint — not a restatement of the FR.
+
+   Do not create an NFR whose source_evidence is identical or
+   near-identical to an FR's source_evidence unless the NFR adds a
+   quantifiable constraint not captured by the FR (e.g. a numeric
+   threshold).
 
 8. Functional and non-functional requirements must remain inside
    "specified_requirements".
@@ -317,6 +348,21 @@ STRICT EXTRACTION RULES:
 11. Return ONLY valid JSON.
     Do not return markdown.
     Do not return explanations.
+    
+SPECULATIVE LANGUAGE:
+If a stakeholder statement uses hedging or speculative language
+("possibility," "may," "might," "could," "eventually," "in the future,"
+"considering," "thinking about") to describe a feature, DO NOT create a
+requirement from it — regardless of FR or NFR. Only extract requirements
+from statements describing current, committed scope.
+
+ATOMICITY CHECK:
+Before finalizing a requirement, check if the description lists more than
+one distinct capability, metric, or object (e.g. "reports on X, Y, Z, and W")
+under a single "shall" statement. If so, split into separate requirements,
+one per distinct capability — do not combine multiple reportable items,
+data types, or actions into one requirement description.    
+    
 """
 
 OUTPUT_SCHEMA = """

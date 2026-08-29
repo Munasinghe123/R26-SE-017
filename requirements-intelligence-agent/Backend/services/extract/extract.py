@@ -2,6 +2,7 @@ import json
 
 from services.llm.llm import llm
 
+
 from .extract_guidelines import (
     PURPOSE_GUIDELINES,
     SCOPE_GUIDELINES,
@@ -205,7 +206,7 @@ def extract_requirements(transcript: str):
         }
 
     print("Schema validation: SUCCESS")
-
+    
     print("\n========== EXTRACTED STUFF ==========")
     print(json.dumps(data, indent=4, ensure_ascii=False))
     print("=====================================")
