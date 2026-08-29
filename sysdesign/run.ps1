@@ -37,7 +37,7 @@ switch ($target) {
         python infra/verify_tables.py
     }
     "all" {
-        Write-Host "🚀 Launching full Multi-Agent System (Ports 8000-8005 + Web 5173)..." -ForegroundColor Green
+        Write-Host "Launching full Multi-Agent System (Ports 8000-8005 + Web 5173)..." -ForegroundColor Green
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot/services/orchestrator'; python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot/services/agent1-requirements'; python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload"
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot/services/agent2-hld'; python -m uvicorn server:app --host 0.0.0.0 --port 8002 --reload"
@@ -45,12 +45,40 @@ switch ($target) {
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot/services/agent4-ui'; python -m uvicorn api:app --host 0.0.0.0 --port 8004 --reload"
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot/services/srs-assembler'; python -m uvicorn main:app --host 0.0.0.0 --port 8005 --reload"
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot/apps/web'; npm run dev"
-        Write-Host "✅ All 7 system services launched!" -ForegroundColor Cyan
+        Write-Host "All 7 system services launched!" -ForegroundColor Cyan
+    }
+    "stop" {
+        Write-Host "Stopping all Multi-Agent System services (Ports 8000-8005, 5173)..." -ForegroundColor Yellow
+        $ports = @(8000, 8001, 8002, 8003, 8004, 8005, 5173)
+        $killed = 0
+        foreach ($p in $ports) {
+            $conns = Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue
+            if ($conns) {
+                $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
+                foreach ($procId in $pids) {
+                    if ($procId -gt 0) {
+                        try {
+                            Stop-Process -Id $procId -Force -ErrorAction Stop
+                            Write-Host "  Terminated process $procId on port $p" -ForegroundColor Green
+                            $killed++
+                        } catch {
+                            Write-Host "  Could not terminate process $procId on port $p" -ForegroundColor DarkYellow
+                        }
+                    }
+                }
+            }
+        }
+        if ($killed -eq 0) {
+            Write-Host "No running services found on ports 8000-8005 or 5173." -ForegroundColor Cyan
+        } else {
+            Write-Host "All system services stopped ($killed process(es) terminated)." -ForegroundColor Cyan
+        }
     }
     default {
         Write-Host "Usage: .\run.ps1 <target>" -ForegroundColor Cyan
         Write-Host "Available targets:"
         Write-Host "  all          - Launch ENTIRE system (Ports 8000-8005 + Web 5173)" -ForegroundColor Yellow
+        Write-Host "  stop         - Stop ALL running services (Ports 8000-8005 + Web 5173)" -ForegroundColor Red
         Write-Host "  orchestrator - Start Orchestrator (port 8000)"
         Write-Host "  agent1       - Start Agent 1 Requirements (port 8001)"
         Write-Host "  agent2       - Start Agent 2 HLD (port 8002)"

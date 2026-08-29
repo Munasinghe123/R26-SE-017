@@ -1,0 +1,134 @@
+{
+    "purpose": "Replace scattered Excel and WhatsApp manual tracking with an internal system and a customer‑facing platform that manages inventory, orders, and basic reporting.",
+    "scope": "An e‑commerce solution comprising a customer portal for browsing products, adding to cart, and placing orders; an internal interface for admins and staff to handle orders, update stock, and view basic sales reports. The system will provide real‑time inventory synchronization to prevent selling out‑of‑stock items.",
+    "product_perspective": {
+        "system_interfaces": [],
+        "user_interfaces": [
+            "Customer browsing interface for product catalog",
+            "Shopping cart and order placement interface",
+            "Admin interface for internal users",
+            "Staff interface for order handling and stock updates"
+        ],
+        "hardware_interfaces": [],
+        "software_interfaces": [],
+        "communications_interfaces": [],
+        "memory_constraints": [],
+        "operations": [
+            "Customers use the platform to browse and order",
+            "Admins and staff use internal interfaces to manage orders and inventory"
+        ],
+        "site_adaptation_requirements": [],
+        "service_interfaces": []
+    },
+    "product_functions": [
+        "Browse products",
+        "Add products to cart",
+        "Place orders",
+        "Synchronize inventory in real time",
+        "Provide admin access for internal users",
+        "Allow staff to handle orders and update stock",
+        "Generate basic reports: daily sales, monthly totals, best‑selling products"
+    ],
+    "user_characteristics": [
+        {
+            "user_group": "Customers",
+            "characteristics": "General end users who browse and purchase products"
+        },
+        {
+            "user_group": "Admins",
+            "characteristics": "Internal users with administrative access"
+        },
+        {
+            "user_group": "Staff",
+            "characteristics": "Internal staff who handle orders and update stock"
+        }
+    ],
+    "assumptions_and_dependencies": [],
+    "specified_requirements": {
+        "functional": [
+            {
+                "id": "FR-1",
+                "description": "The system shall allow customers to browse products.",
+                "source_evidence": [
+                    {
+                        "speaker": "CLIENT",
+                        "statement": "Just browse in products, add into card and placing orders."
+                    }
+                ]
+            },
+            {
+                "id": "FR-2",
+                "description": "The system shall allow customers to add products to a cart.",
+                "source_evidence": [
+                    {
+                        "speaker": "CLIENT",
+                        "statement": "Just browse in products, add into card and placing orders."
+                    }
+                ]
+            },
+            {
+                "id": "FR-3",
+                "description": "The system shall allow customers to place orders.",
+                "source_evidence": [
+                    {
+                        "speaker": "CLIENT",
+                        "statement": "Just browse in products, add into card and placing orders."
+                    }
+                ]
+            },
+            {
+                "id": "FR-4",
+                "description": "The system shall synchronize inventory in real time to prevent selling out‑of‑stock items.",
+                "source_evidence": [
+                    {
+                        "speaker": "CLIENT",
+                        "statement": "We sometimes sell items that are already out of stock."
+                    },
+                    {
+                        "speaker": "BUSINESS_ANALYST",
+                        "statement": "All right. So real time inventory syncing is non‑negotiable."
+                    }
+                ]
+            },
+            {
+                "id": "FR-5",
+                "description": "The system shall provide admin access for internal users.",
+                "source_evidence": [
+                    {
+                        "speaker": "CLIENT",
+                        "statement": "I'll need an admin access and staff should be able to handle orders and update stock."
+                    }
+                ]
+            },
+            {
+                "id": "FR-6",
+                "description": "The system shall allow staff to handle orders and update stock.",
+                "source_evidence": [
+                    {
+                        "speaker": "CLIENT",
+                        "statement": "I'll need an admin access and staff should be able to handle orders and update stock."
+                    }
+                ]
+            },
+            {
+                "id": "FR-7",
+                "description": "The system shall provide basic reporting of daily sales, monthly totals, and best‑selling products.",
+                "source_evidence": [
+                    {
+                        "speaker": "CLIENT",
+                        "statement": "Just basic stuff, daily sales, monthly totals and which products are selling well."
+                    }
+                ]
+            }
+        ],
+        "non_functional": []
+    },
+    "external_interfaces": [],
+    "design_constraints": [],
+    "standards_compliance": [],
+    "supporting_information": [
+        "Current manual tracking is done in Excel and WhatsApp.",
+        "Timeline expectation of around two months.",
+        "Focus on core features first to deliver value early."
+    ]
+}

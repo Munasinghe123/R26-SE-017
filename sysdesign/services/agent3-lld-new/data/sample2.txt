@@ -1,0 +1,103 @@
+{
+  "system_context": {
+    "module_name": "Order Management"
+  },
+  "requirements_data": {
+    "actors": [
+      {
+        "name": "Customer",
+        "description": "An authenticated user interacting with the storefront."
+      }
+    ],
+    "domain_entities": [
+      {
+        "name": "Customer",
+        "attributes": [
+          "customer_id"
+        ]
+      },
+      {
+        "name": "Order",
+        "attributes": [
+          "order_id",
+          "customer_id",
+          "total_price",
+          "status"
+        ]
+      },
+      {
+        "name": "CartItem",
+        "attributes": [
+          "cart_item_id",
+          "order_id",
+          "product_id",
+          "quantity"
+        ]
+      }
+    ],
+    "domain_relationships": [
+      {
+        "source": "Customer",
+        "target": "Order",
+        "type": "one-to-many",
+        "description": "A customer can have multiple orders, and each order belongs to one customer."
+      },
+      {
+        "source": "Order",
+        "target": "CartItem",
+        "type": "one-to-many",
+        "description": "An order contains one or more cart items, and each cart item belongs to one order."
+      }
+    ],
+    "use_cases": [
+      {
+        "id": "UC-01",
+        "title": "Submit Checkout",
+        "main_flow": [
+          "1. Customer submits one or more cart items.",
+          "2. System validates the payload.",
+          "3. System calculates the total price.",
+          "4. System creates an Order for the Customer.",
+          "5. System creates the CartItem records associated with the Order.",
+          "6. System returns a success confirmation."
+        ]
+      }
+    ],
+    "business_rules": [
+      "An order cannot be created with an empty cart.",
+      "Each Order belongs to exactly one Customer.",
+      "Each CartItem belongs to exactly one Order.",
+      "An Order contains one or more CartItems."
+    ]
+  },
+  "hld_data": {
+    "architecture_components": [
+      "FrontendUI (Next.js)",
+      "OrderController (FastAPI)",
+      "DatabaseRepository"
+    ],
+    "api_contracts": [
+      {
+        "endpoint": "/api/orders/checkout",
+        "method": "POST",
+        "request_body": {
+          "customer_id": "string",
+          "cart_items": [
+            {
+              "product_id": "string",
+              "quantity": "integer"
+            }
+          ]
+        },
+        "response_success": {
+          "status": 201,
+          "message": "Order successfully created"
+        }
+      }
+    ],
+    "database_strategy": {
+      "type": "Relational Database (SQL)",
+      "table_relationships_required": true
+    }
+  }
+}

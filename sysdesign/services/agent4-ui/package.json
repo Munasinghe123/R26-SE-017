@@ -1,0 +1,12 @@
+{
+  "name": "agent4-ui",
+  "version": "1.0.0",
+  "description": "Consumes `UIRequest` derived from Agent 2's HLD output. Generates evaluated HTML UI prototypes.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
