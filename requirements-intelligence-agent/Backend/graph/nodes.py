@@ -25,6 +25,7 @@ from services.HITL.classify_new_requirements import ( classify_new_requirements)
 from services.HITL.validate_requirement_format import ( find_requirements_to_rewrite)
 from services.HITL.normalize_requirements import (normalize_requirements)
 from services.HITL.reconcile_requirements import (reconcile_requirements)
+from services.extract.classify_specified_requirements import reclassify_requirements
 
 
 def speech_enhancement_node(state: GraphState):
@@ -88,6 +89,23 @@ def extraction_node(state: GraphState):
     # print("============================================")
 
     return {"requirements": requirements}
+
+
+def reclassify_requirements_node(state: GraphState):
+
+    requirements = state["requirements"]
+
+    corrected_specified = reclassify_requirements(
+        requirements["specified_requirements"]
+    )
+
+    updated_requirements = {
+        **requirements,
+        "specified_requirements": corrected_specified
+    }
+
+    print("updated requirmtns",updated_requirements)
+    return {"requirements": updated_requirements}
 
 def client_view_node(state: GraphState):
 

@@ -5,6 +5,7 @@ from graph.nodes import (
     transcribe_node,
     diarization_node,
     extraction_node,
+    reclassify_requirements_node,
     # build_srs_node,
     generate_srs_pdf_node,
     document_node,
@@ -41,6 +42,7 @@ def build_graph():
     builder.add_node("role_identification", role_identification_node)
     builder.add_node("transcript_cleaning", transcript_cleaning_node)
     builder.add_node("extract", extraction_node)
+    builder.add_node("reclassify_requirements",reclassify_requirements_node)
     builder.add_node("client_view", client_view_node)
     builder.add_node("await_client", await_client_node)
     builder.add_node(
@@ -84,7 +86,8 @@ def build_graph():
     
     
     # common
-    builder.add_edge("extract", "client_view")
+    builder.add_edge("extract", "reclassify_requirements")
+    builder.add_edge("reclassify_requirements", "client_view")
     builder.add_edge("client_view", "await_client")
     builder.add_edge("await_client","process_client_review")
     builder.add_edge( "process_client_review","analyze_client_changes")
