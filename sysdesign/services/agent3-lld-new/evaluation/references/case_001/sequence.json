@@ -1,0 +1,38 @@
+{
+  "sequences": [
+    {
+      "name": "BookAppointment",
+      "description": "Patient books an appointment.",
+      "participants": [
+        "Patient",
+        "AppointmentService",
+        "Doctor"
+      ],
+      "participant_types": {
+        "Patient": "actor",
+        "AppointmentService": "control",
+        "Doctor": "entity"
+      },
+      "actors": [
+        "Patient"
+      ],
+      "logic_blocks": [],
+      "messages": [
+        {
+          "from_participant": "Patient",
+          "to_participant": "AppointmentService",
+          "method": "bookAppointment",
+          "arguments": [
+            "doctorId"
+          ],
+          "activates_target": false,
+          "deactivates_target": false,
+          "type": "call"
+        }
+      ],
+      "requirement_ids": [
+        "REQ-001"
+      ]
+    }
+  ]
+}

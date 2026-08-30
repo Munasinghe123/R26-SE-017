@@ -1,0 +1,65 @@
+{
+  "system_context": {
+    "module_name": "Order Management"
+  },
+  "requirements_data": {
+    "actors": [
+      {
+        "name": "Customer",
+        "description": "An authenticated user interacting with the storefront."
+      }
+    ],
+    "domain_entities": [
+      {
+        "name": "Order",
+        "attributes": ["order_id", "customer_id", "total_price", "status"]
+      }
+    ],
+    "use_cases": [
+      {
+        "id": "UC-01",
+        "title": "Submit Checkout",
+        "main_flow": [
+          "1. Customer submits cart items.",
+          "2. System validates the payload.",
+          "3. System calculates the total price.",
+          "4. System creates the Order records.",
+          "5. System returns a success confirmation."
+        ]
+      }
+    ],
+    "business_rules": [
+      "An order cannot be created with an empty cart."
+    ]
+  },
+  "hld_data": {
+    "architecture_components": [
+      "FrontendUI (Next.js)",
+      "OrderController (FastAPI)",
+      "DatabaseRepository"
+    ],
+    "api_contracts": [
+      {
+        "endpoint": "/api/orders/checkout",
+        "method": "POST",
+        "request_body": {
+          "customer_id": "string",
+          "cart_items": [
+            {
+              "product_id": "string",
+              "quantity": "integer"
+            }
+          ]
+        },
+        "response_success": {
+          "status": 201,
+          "message": "Order successfully created"
+        }
+      }
+    ],
+    "database_strategy": {
+      "type": "Relational Database (SQL)",
+      "table_relationships_required": true
+    }
+  }
+}
