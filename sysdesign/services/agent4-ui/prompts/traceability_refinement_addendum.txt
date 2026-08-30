@@ -1,1 +1,0 @@
-- Do not remove or alter existing data-fr attributes. If you add or change elements that implement a functional requirement, keep or add the correct data-fr="FR#" tag on them.
