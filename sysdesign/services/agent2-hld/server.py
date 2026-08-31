@@ -591,13 +591,17 @@ async def run_hld_generation(payload: dict):
         except Exception as e:
             logger.warning(f"Failed to read auto-elaborated diagrams: {e}")
 
+        from cam.parser import normalize_element_type, normalize_boundary
         components = []
         for idx, c in enumerate(arch.get("components", [])):
+            c_name = c.get("name", f"Component-{idx+1}")
+            elem_type = normalize_element_type(c_name, c.get("element_type", "")).value
+            bnd = normalize_boundary(c.get("layer", ""), c.get("boundary", "")).value
             components.append({
                 "id": f"C{idx+1}",
-                "name": c.get("name", f"Component-{idx+1}"),
-                "element_type": c.get("element_type", "service"),
-                "boundary": c.get("boundary", "business_logic"),
+                "name": c_name,
+                "element_type": elem_type,
+                "boundary": bnd,
                 "responsibilities": c.get("responsibilities", ["Core logic"]),
                 "provided_interfaces": c.get("provided_interfaces", []),
                 "required_interfaces": c.get("required_interfaces", []),

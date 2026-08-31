@@ -20,6 +20,8 @@ class ElementType(str, Enum):
     BROKER = "broker"
     CONTROLLER = "controller"
     CLIENT = "client"
+    MANAGER = "manager"
+    ENGINE = "engine"
 
 
 class Component(BaseModel):
