@@ -372,7 +372,8 @@ class UMLService:
             from evaluation.reference_loader import ReferenceLoader
 
             def _norm(s: str) -> str:
-                return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+                cleaned = UMLService._clean_requirement_text(s)
+                return cleaned.lower()
 
             input_req_ids = {r["id"].strip().upper() for r in req_list if r.get("id")}
             input_req_texts = {_norm(r["text"]) for r in req_list if r.get("text")}
@@ -418,7 +419,27 @@ class UMLService:
         )
 
     @staticmethod
+    def _clean_requirement_text(raw_text: str) -> str:
+        import re
+        s = str(raw_text or "").strip()
+        # Extract content after "Description:" if present
+        desc_match = re.search(r"description\s*:\s*(.+)$", s, flags=re.IGNORECASE)
+        if desc_match:
+            s = desc_match.group(1).strip()
+        # Remove leading bullets, numbering
+        s = re.sub(r"^[-*•\d.]+\s*", "", s)
+        # Remove bracketed IDs (e.g. [FR-1], [REQ-001])
+        s = re.sub(r"^\[[A-Za-z0-9_-]+\]\s*[:|-]?\s*", "", s)
+        # Remove unbracketed IDs starting with FR/REQ/NFR/R followed by digits (e.g. FR-1:, REQ-001:, FR1)
+        s = re.sub(r"^(?:FR|REQ|NFR|R)[-_.]?\d+\w*\s*[:|-]?\s*", "", s, flags=re.IGNORECASE)
+        # Remove leftover "Description:" prefix if present
+        s = re.sub(r"^(?:description|desc)\s*:\s*", "", s, flags=re.IGNORECASE)
+        # Collapse whitespace
+        return re.sub(r"\s+", " ", s).strip()
+
+    @staticmethod
     def _extract_requirements_from_input(requirements_text: str, requirement_ids: list[str]) -> list[dict]:
+        import re
         req_list = []
         if requirement_ids:
             req_text_map = {}
@@ -438,20 +459,22 @@ class UMLService:
                         req_text_map[current_id] += " " + sline
 
             for req_id in requirement_ids:
-                text = req_text_map.get(req_id, requirements_text.strip() if requirements_text else f"{req_id}")
-                req_list.append({"id": req_id, "text": text})
+                raw_text = req_text_map.get(req_id, requirements_text.strip() if requirements_text else f"{req_id}")
+                cleaned_text = UMLService._clean_requirement_text(raw_text)
+                req_list.append({"id": req_id, "text": cleaned_text or raw_text})
         elif requirements_text and requirements_text.strip():
             lines = [l.strip() for l in requirements_text.splitlines() if l.strip()]
             req_items = []
-            import re
             for line in lines:
                 match = re.match(r"^[-*]?\s*\[?([A-Za-z0-9_-]+)\]?\s*[:|-]?\s*(.+)", line)
                 if match and ("REQ" in match.group(1).upper() or "FR" in match.group(1).upper() or "R" in match.group(1).upper()):
-                    req_items.append({"id": match.group(1), "text": line})
+                    cleaned_line = UMLService._clean_requirement_text(match.group(2))
+                    req_items.append({"id": match.group(1), "text": cleaned_line or match.group(2)})
             if req_items:
                 req_list = req_items
             else:
-                req_list = [{"id": "REQ-1", "text": requirements_text.strip()}]
+                cleaned_full = UMLService._clean_requirement_text(requirements_text)
+                req_list = [{"id": "REQ-1", "text": cleaned_full or requirements_text.strip()}]
         return req_list
 
     @staticmethod
