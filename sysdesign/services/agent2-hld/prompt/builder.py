@@ -140,22 +140,70 @@ def build_feedback_from_scores(scores: dict) -> str:
     return f"Focus on improving the following low-scoring architectural quality metrics: {', '.join(low_metrics)}."
 
 
-def build_diagram_prompt(architecture: dict, kind: str = "plantuml", notes: str = "") -> str:
-    """Build structured diagram generation prompt for PlantUML or Mermaid."""
+def build_diagram_prompt(
+    architecture: dict,
+    requirements: Optional[dict] = None,
+    kind: str = "plantuml",
+    diagram_kind: Optional[str] = None,
+    title: Optional[str] = None,
+    iteration: int = 1,
+    previous_diagram: Optional[str] = None,
+    previous_diagram_cas: Optional[float] = None,
+    feedback_issues: Optional[list[str]] = None,
+    user_feedback: Optional[str] = None,
+    notes: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Build structured diagram generation or refinement prompt for PlantUML or Mermaid."""
+    d_kind = (diagram_kind or kind or "plantuml").lower()
+    project = title or (requirements.get("project") if isinstance(requirements, dict) else "System Architecture")
     arch_style = architecture.get("architecture_style", "Layered Architecture")
     comps = architecture.get("components", [])
-    conns = architecture.get("connectors", [])
-    
-    comp_list = "\n".join(f"- {c.get('name')} (Layer: {c.get('layer', 'Core')}, Boundary: {c.get('boundary', 'business_logic')})" for c in comps)
-    conn_list = "\n".join(f"- {c.get('from_component')} --> {c.get('to_component')} : {c.get('connector_type', 'sync_call')}" for c in conns)
-    
-    notes_text = f"\nUser Refinement Request: {notes}" if notes else ""
+    conns = architecture.get("connectors", []) or architecture.get("interactions", [])
+
+    comp_list = "\n".join(f"- [{c.get('name')}] (Layer: {c.get('layer', 'Core')}, Boundary: {c.get('boundary', 'business_logic')})" for c in comps)
+    conn_list = "\n".join(f"- {c.get('from_component') or c.get('from')} --> {c.get('to_component') or c.get('to')} : {c.get('connector_type') or c.get('type', 'sync_call')}" for c in conns)
+
+    req_text = ""
+    if isinstance(requirements, dict):
+        frs = requirements.get("functional_requirements", [])
+        if frs:
+            req_text = "FUNCTIONAL REQUIREMENTS:\n" + "\n".join(f"  - [{fr.get('id')}] {fr.get('description')}" for fr in frs)
+
+    notes_combined = user_feedback or notes or ""
+    user_req = f"\nUSER REFINEMENT INSTRUCTION:\n{notes_combined}" if notes_combined else ""
+
+    prev_text = ""
+    if previous_diagram:
+        prev_text = f"\nPREVIOUS DIAGRAM REVISION (Iteration {iteration - 1}, Score: {previous_diagram_cas or 'N/A'}):\n```\n{previous_diagram}\n```\n"
+
+    issues_text = ""
+    if feedback_issues:
+        issues_text = "\nISSUES TO FIX IN THIS ITERATION:\n" + "\n".join(f"  - {iss}" for iss in feedback_issues)
+
+    if d_kind == "plantuml":
+        schema_rule = (
+            "Output ONLY raw PlantUML code starting with @startuml and ending with @enduml.\n"
+            "Use package/rectangle groupings to visually group components by their layer.\n"
+            "Format line breaks properly using actual newlines."
+        )
+    else:
+        schema_rule = (
+            "Output ONLY raw Mermaid code starting with graph TD.\n"
+            "Use subgraph groupings to visually group components by their layer."
+        )
 
     return (
-        f"Generate clean, valid {kind.upper()} diagram code for this architecture.\n\n"
-        f"Architecture Style: {arch_style}\n{notes_text}\n\n"
+        f"# DIAGRAM GENERATION TASK (Iteration {iteration})\n"
+        f"Project: {project}\n"
+        f"Architecture Style: {arch_style}\n\n"
+        f"{req_text}\n\n"
         f"COMPONENTS:\n{comp_list}\n\n"
-        f"CONNECTORS:\n{conn_list}\n\n"
-        f"Output ONLY raw {kind} source code without markdown fences."
+        f"CONNECTORS:\n{conn_list}\n"
+        f"{prev_text}"
+        f"{issues_text}"
+        f"{user_req}\n\n"
+        f"INSTRUCTION: Refactor and optimize the {d_kind.upper()} diagram code based on the components, connectors, and instructions above.\n"
+        f"{schema_rule}"
     )
 
