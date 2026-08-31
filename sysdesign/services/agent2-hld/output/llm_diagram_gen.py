@@ -93,6 +93,143 @@ def extract_diagram_source(kind: str, raw_text: str) -> str:
     raise ValueError(f"Unknown diagram kind: {kind}")
 
 
+def _is_valid_diagram(kind: str, text: str) -> bool:
+    """Return True if the text looks like real diagram syntax, not JSON or prose."""
+    if not text or len(text.strip()) < 10:
+        return False
+    t = text.strip()
+    # Reject JSON responses
+    if t.startswith("{") or t.startswith("["):
+        return False
+    if '"error"' in t or '"message"' in t:
+        return False
+    if kind == "plantuml":
+        return "@startuml" in t.lower() and "@enduml" in t.lower()
+    if kind == "mermaid":
+        return bool(re.search(r"^(flowchart|graph)\s+", t, flags=re.IGNORECASE | re.MULTILINE))
+    return True
+
+
+def _build_plantuml_from_architecture(architecture: dict, title: str = "Architecture") -> str:
+    """Deterministic PlantUML generator — never calls LLM.
+    
+    Used as a guaranteed-valid fallback when the LLM returns JSON or invalid syntax.
+    Groups components by layer using package blocks and draws all interactions.
+    """
+    components = architecture.get("components", []) or []
+    interactions = architecture.get("interactions", []) or architecture.get("connectors", []) or []
+    style = architecture.get("architecture_style", "Layered")
+
+    lines = [
+        "@startuml",
+        "' Auto-generated from architecture data (deterministic fallback)",
+        f"title {title} — {style}",
+        "skinparam componentStyle rectangle",
+        "skinparam backgroundColor #FAFAFA",
+        "skinparam component {",
+        "  BackgroundColor #E8F4FD",
+        "  BorderColor #2196F3",
+        "}",
+        "",
+    ]
+
+    # Group components by layer
+    layer_map: dict[str, list] = {}
+    for c in components:
+        layer = (c.get("layer") or c.get("boundary") or "Core").strip()
+        layer_map.setdefault(layer, []).append(c)
+
+    alias_map: dict[str, str] = {}
+    for layer, comps in layer_map.items():
+        safe_layer = re.sub(r"[^a-zA-Z0-9_]", "_", layer)
+        lines.append(f'package "{layer}" as {safe_layer} {{')
+        for c in comps:
+            name = (c.get("name") or "").strip()
+            if not name:
+                continue
+            alias = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+            alias_map[name] = alias
+            responsibilities = c.get("responsibilities", []) or []
+            if isinstance(responsibilities, list) and responsibilities:
+                resp_str = responsibilities[0][:40]
+            elif isinstance(responsibilities, str):
+                resp_str = responsibilities[:40]
+            else:
+                resp_str = c.get("element_type", "component")
+            lines.append(f'  [{name}] as {alias} : {resp_str}')
+        lines.append("}")
+        lines.append("")
+
+    # Draw interactions
+    if interactions:
+        lines.append("' === Interactions ===")
+    for inter in interactions:
+        src = (inter.get("from") or inter.get("source") or "").strip()
+        tgt = (inter.get("to") or inter.get("target") or "").strip()
+        label = (inter.get("type") or inter.get("protocol") or "").strip()
+        if not src or not tgt:
+            continue
+        src_alias = alias_map.get(src, re.sub(r"[^a-zA-Z0-9_]", "_", src))
+        tgt_alias = alias_map.get(tgt, re.sub(r"[^a-zA-Z0-9_]", "_", tgt))
+        arrow = f"{src_alias} --> {tgt_alias}"
+        if label:
+            arrow += f" : {label}"
+        lines.append(arrow)
+
+    lines.append("")
+    lines.append("@enduml")
+    return "\n".join(lines) + "\n"
+
+
+def _build_mermaid_from_architecture(architecture: dict, title: str = "Architecture") -> str:
+    """Deterministic Mermaid generator — never calls LLM."""
+    components = architecture.get("components", []) or []
+    interactions = architecture.get("interactions", []) or architecture.get("connectors", []) or []
+
+    lines = ["flowchart TD", f"  %% {title}"]
+
+    layer_map: dict[str, list] = {}
+    for c in components:
+        layer = (c.get("layer") or c.get("boundary") or "Core").strip()
+        layer_map.setdefault(layer, []).append(c)
+
+    alias_map: dict[str, str] = {}
+    for layer, comps in layer_map.items():
+        safe_layer = re.sub(r"[^a-zA-Z0-9_]", "_", layer)
+        lines.append(f"  subgraph {safe_layer}[\"'{layer}'\"']")
+        for c in comps:
+            name = (c.get("name") or "").strip()
+            if not name:
+                continue
+            alias = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+            alias_map[name] = alias
+            lines.append(f"    {alias}[\"{name}\"]")  
+        lines.append("  end")
+
+    for inter in interactions:
+        src = (inter.get("from") or inter.get("source") or "").strip()
+        tgt = (inter.get("to") or inter.get("target") or "").strip()
+        label = (inter.get("type") or inter.get("protocol") or "").strip()
+        if not src or not tgt:
+            continue
+        sa = alias_map.get(src, re.sub(r"[^a-zA-Z0-9_]", "_", src))
+        ta = alias_map.get(tgt, re.sub(r"[^a-zA-Z0-9_]", "_", tgt))
+        if label:
+            lines.append(f"  {sa} -->|{label}| {ta}")
+        else:
+            lines.append(f"  {sa} --> {ta}")
+
+    return "\n".join(lines) + "\n"
+
+
+def _generate_fallback_diagram(kind: str, architecture: dict, title: str) -> str:
+    """Return a deterministic diagram from architecture data without calling the LLM."""
+    if kind == "plantuml":
+        return _build_plantuml_from_architecture(architecture, title)
+    return _build_mermaid_from_architecture(architecture, title)
+
+
+
 def _safe_id(name: str) -> str:
     return (name or "").strip().replace(" ", "_").replace("-", "_")
 
@@ -505,6 +642,15 @@ def generate_diagram_with_iterations(
 
         raw = provider.generate(prompt, model=model, options=DIAGRAM_GENERATION_OPTIONS)
         diagram = extract_diagram_source(kind, raw)
+
+        # Validate: if LLM returned JSON or invalid syntax, use deterministic fallback
+        if not _is_valid_diagram(kind, diagram):
+            logger.warning(
+                "[diagram_gen] LLM returned invalid %s (JSON or prose). "
+                "Using deterministic fallback generator. Raw preview: %.120s",
+                kind, raw.strip()[:120]
+            )
+            diagram = _generate_fallback_diagram(kind, architecture, title)
 
         diagram_cas, breakdown, issues = _evaluate(kind, diagram, architecture)
 

@@ -173,6 +173,10 @@ export default function ArchitectureReview() {
   const [jobStatus, setJobStatus]   = useState(null);
   const [error, setError]           = useState(null);
 
+  // Kroki SVG render state — must be declared here (before any early returns)
+  const [svgUrl, setSvgUrl] = useState(null);
+  const [svgError, setSvgError] = useState(false);
+
   useEffect(() => {
     if (!jobId) return;
 
@@ -258,6 +262,30 @@ export default function ArchitectureReview() {
       setDiffText(diffLines.join("\n"));
     }
   }, [iterations]);
+
+  // Kroki SVG rendering — POST the raw PlantUML text (avoids btoa UTF-8 breakage)
+  // Note: activeIteration is computed below after early returns, so we re-compute the code here
+  useEffect(() => {
+    const activeIt = (iterations && iterations.length > 0)
+      ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
+      : null;
+    const raw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
+    if (!raw || raw.startsWith('{') || raw.startsWith('"')) {
+      setSvgError(true);
+      setSvgUrl(null);
+      return;
+    }
+    setSvgError(false);
+    setSvgUrl(null);
+    fetch("https://kroki.io/plantuml/svg", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: raw,
+    })
+      .then(r => r.ok ? r.blob() : Promise.reject(r.status))
+      .then(blob => setSvgUrl(URL.createObjectURL(blob)))
+      .catch(() => setSvgError(true));
+  }, [iterations, activeVersion]);
 
   const handleRefineDiagram = async () => {
     if (!refinePrompt.trim()) return;
@@ -400,28 +428,6 @@ export default function ArchitectureReview() {
   const isAcceptable = diagramCas >= 0.60;
   // Only show AI refinement engine when diagram CAS is below threshold
   const needsRefinement = diagramCas < 0.60;
-
-  // Kroki SVG rendering — POST the raw PlantUML text (avoids btoa UTF-8 breakage)
-  const [svgUrl, setSvgUrl] = useState(null);
-  const [svgError, setSvgError] = useState(false);
-  useEffect(() => {
-    const raw = (activeIteration?.code || "").replace(/\\n/g, "\n").trim();
-    if (!raw || raw.startsWith('{') || raw.startsWith('"')) {
-      setSvgError(true);
-      return;
-    }
-    setSvgError(false);
-    setSvgUrl(null);
-    // Use Kroki POST endpoint with plain text — avoids btoa encoding issues
-    fetch("https://kroki.io/plantuml/svg", {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: raw,
-    })
-      .then(r => r.ok ? r.blob() : Promise.reject(r.status))
-      .then(blob => setSvgUrl(URL.createObjectURL(blob)))
-      .catch(() => setSvgError(true));
-  }, [activeIteration?.code]);
 
   return (
     <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
