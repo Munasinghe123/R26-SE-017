@@ -16,6 +16,7 @@ from pipeline import (
     get_job_state,
     restore_job_from_db,
     select_candidate,
+    refine_diagram,
     JOB_STORE,
     JOB_ARTIFACTS,
     JOB_LISTENERS,
@@ -97,6 +98,17 @@ async def select_candidate_endpoint(job_id: str, payload: Dict[str, Any]):
     try:
         await select_candidate(job_id, payload)
         return {"status": "success", "message": "Candidate selected and elaborated successfully"}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/jobs/{job_id}/refine-diagram")
+async def refine_diagram_endpoint(job_id: str, payload: Dict[str, Any]):
+    try:
+        res = await refine_diagram(job_id, payload)
+        return res
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as exc:

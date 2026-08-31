@@ -160,6 +160,45 @@ def _load_winner_for_run() -> dict:
         return json.load(f)
 
 
+@app.post("/api/runs/{run_id}/select")
+async def select_candidate_endpoint(run_id: str, payload: dict):
+    """User selects an architecture candidate. Updates winner.json and elaborates the diagram."""
+    model = payload.get("model")
+    architecture = payload.get("architecture")
+    scores = payload.get("scores")
+    
+    if not model or not architecture or not scores:
+        raise HTTPException(400, "Payload must contain model, architecture, and scores")
+        
+    RESULTS_DIR.mkdir(exist_ok=True)
+    winner_data = {
+        "model": model,
+        "architecture": architecture,
+        "scores": scores,
+        "selected_by_user": True
+    }
+    with open(RESULTS_DIR / "winner.json", "w", encoding="utf-8") as f:
+        json.dump(winner_data, f, indent=2)
+
+    # Elaborate diagram for selected candidate
+    reqs = _load_requirements_for_run()
+    elab = elaborate_winner(run_id, winner_data, reqs)
+    
+    # Save diagram paths
+    puml_path = str(RESULTS_DIR / "diagram.puml")
+    mmd_path = str(RESULTS_DIR / "diagram.mmd")
+    
+    return {
+        "status": "success",
+        "run_id": run_id,
+        "outputs": {
+            "plantuml": puml_path if (RESULTS_DIR / "diagram.puml").exists() else None,
+            "mermaid": mmd_path if (RESULTS_DIR / "diagram.mmd").exists() else None,
+        },
+        "elaboration": elab
+    }
+
+
 @app.get("/api/results/{run_id}/diagram_workflow")
 async def get_diagram_workflow(run_id: str):
     state = load_workflow()

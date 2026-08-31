@@ -189,8 +189,10 @@ export default function ArchitectureReview() {
   // Compute diff text between v1 and v2
   useEffect(() => {
     if (iterations.length >= 2) {
-      const v1 = iterations[0].code.split("\n");
-      const v2 = iterations[1].code.split("\n");
+      const rawV1 = (iterations[0].code || "").replace(/\\n/g, "\n");
+      const rawV2 = (iterations[iterations.length - 1].code || "").replace(/\\n/g, "\n");
+      const v1 = rawV1.split("\n");
+      const v2 = rawV2.split("\n");
 
       let diffLines = [];
       let i = 0, j = 0;
@@ -218,33 +220,43 @@ export default function ArchitectureReview() {
     setRefining(true);
 
     try {
-      // Call Agent 2 endpoint
-      const res = await fetch(`${AGENT2_URL}/api/runs/${jobId}/diagram/plantuml/improve`, {
+      const res = await fetch(`${ORCHESTRATOR}/jobs/${jobId}/refine-diagram`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedback: refinePrompt, current_code: iterations[iterations.length - 1].code })
+        body: JSON.stringify({ prompt: refinePrompt })
       });
 
       if (res.ok) {
         const data = await res.json();
-        const nextVer = `v${iterations.length + 1}`;
-        setIterations([
-          ...iterations,
-          { version: nextVer, cas: data.new_cas || 0.91, prompt: refinePrompt, code: data.improved_code || iterations[1].code }
-        ]);
-        setActiveVersion(nextVer);
+        const pumlWorkflow = data.plantuml || {};
+        const history = pumlWorkflow.history || [];
+
+        if (history.length > 0) {
+          const newIterList = history.map((item, idx) => ({
+            version: `v${idx + 1}`,
+            cas: item.diagram_cas ?? 0,
+            prompt: item.source === "manual" ? "Manual Edit" : (item.llm_iteration > 1 ? refinePrompt : "Initial Generation"),
+            code: (item.diagram || "").replace(/\\n/g, "\n"),
+            breakdown: item.breakdown || {},
+            issues: item.issues || []
+          }));
+          setIterations(newIterList);
+          setActiveVersion(`v${newIterList.length}`);
+        } else if (data.plantuml_code) {
+          const nextVer = `v${iterations.length + 1}`;
+          setIterations([
+            ...iterations,
+            { version: nextVer, cas: data.new_cas || iterations[0].cas, prompt: refinePrompt, code: data.plantuml_code.replace(/\\n/g, "\n") }
+          ]);
+          setActiveVersion(nextVer);
+        }
       } else {
-        // Fallback simulation for offline testing
-        const nextVer = `v${iterations.length + 1}`;
-        const newCode = iterations[iterations.length - 1].code + `\n' Refined: ${refinePrompt}\n[Refined Module] --> [Database]`;
-        setIterations([
-          ...iterations,
-          { version: nextVer, cas: 0.92, prompt: refinePrompt, code: newCode }
-        ]);
-        setActiveVersion(nextVer);
+        const errData = await res.json().catch(() => ({}));
+        setError(`Refinement failed: ${errData.detail || res.statusText}`);
       }
     } catch (err) {
-      console.warn("Refine trigger failed, fallback applied:", err);
+      console.error("Refine trigger failed:", err);
+      setError("Failed to connect to the orchestrator for diagram refinement.");
     } finally {
       setRefining(false);
       setRefinePrompt("");
@@ -690,7 +702,7 @@ export default function ArchitectureReview() {
                   Diagram Iteration History (PlantUML)
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {iterations.map(it => (
                   <button
                     key={it.version}
@@ -704,7 +716,7 @@ export default function ArchitectureReview() {
                     `}
                   >
                     <GitCommit size={12} />
-                    {it.version} (CAS {it.cas})
+                    {it.version} (CAS {typeof it.cas === 'number' ? it.cas.toFixed(3) : it.cas})
                   </button>
                 ))}
               </div>
@@ -713,48 +725,85 @@ export default function ArchitectureReview() {
             {/* Iteration Viewer & AI Refine Prompt */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
-              {/* Code Viewer */}
-              <div className="lg:col-span-2 p-5 rounded-2xl border border-cyan-400/20 bg-[#080818] font-mono text-xs text-cyan-200 overflow-x-auto space-y-3">
-                <div className="flex justify-between items-center text-white/50 pb-2 border-b border-white/10 text-[11px]">
-                  <span>Active Revision: <strong>{activeIteration.version}</strong></span>
-                  <span>CAS Score: <strong className="text-cyan-400">{activeIteration.cas}</strong></span>
+              {/* VSCode / AntiGravity Style Code Editor */}
+              <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#0a0c1a] overflow-hidden flex flex-col font-mono shadow-2xl">
+                {/* Editor Header Bar */}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-[#050610] border-b border-white/10 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
+                    <span className="ml-2 font-bold text-cyan-400 text-[11px] uppercase tracking-wider">
+                      architecture_diagram_{activeIteration.version}.puml
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-white/50 text-[11px]">
+                    <span className="px-2 py-0.5 rounded bg-cyan-400/10 text-cyan-300 font-semibold">
+                      CAS: {typeof activeIteration.cas === 'number' ? activeIteration.cas.toFixed(3) : activeIteration.cas}
+                    </span>
+                    <span>Lines: {(activeIteration.code || "").split("\n").length}</span>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(activeIteration.code)}
+                      className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold cursor-pointer transition-all"
+                    >
+                      Copy Code
+                    </button>
+                  </div>
                 </div>
-                <pre className="p-4 bg-black/60 rounded-xl overflow-x-auto text-cyan-300 leading-relaxed">
-                  {activeIteration.code}
-                </pre>
+
+                {/* Code Editor Body with Line Numbers */}
+                <div className="p-4 overflow-x-auto max-h-[500px] overflow-y-auto flex text-xs leading-relaxed bg-[#060814]">
+                  {/* Line Numbers Gutter */}
+                  <div className="select-none pr-4 mr-4 text-right text-white/30 border-r border-white/10 font-mono space-y-0.5">
+                    {(activeIteration.code || "").split("\n").map((_, i) => (
+                      <div key={i}>{i + 1}</div>
+                    ))}
+                  </div>
+
+                  {/* Code Text Content */}
+                  <div className="text-cyan-200 font-mono whitespace-pre space-y-0.5 flex-1">
+                    {(activeIteration.code || "").split("\n").map((line, i) => (
+                      <div key={i} className="hover:bg-cyan-500/10 px-1 rounded transition-colors">
+                        {line || " "}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* AI Prompt Refiner Modal/Card */}
-              <div className="p-6 rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-950/40 via-indigo-950/20 to-black space-y-4">
-                <div className="flex items-center gap-2 text-violet-300">
-                  <Sparkles size={18} />
-                  <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                    AI Refinement Engine
-                  </h4>
-                </div>
-                <p className="text-xs text-white/50">
-                  Enter prompt instructions to refactor the PlantUML architecture diagram (e.g. "Add a Redis Caching Layer between API Gateway and DB").
-                </p>
+              {/* AI Prompt Refiner Card */}
+              <div className="p-6 rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-950/40 via-indigo-950/20 to-black space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-violet-300">
+                    <Sparkles size={18} />
+                    <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                      AI Refinement Engine
+                    </h4>
+                  </div>
+                  <p className="text-xs text-white/50 leading-relaxed">
+                    Enter prompt instructions to refactor the PlantUML diagram using real LLM execution &amp; 6-metric research evaluation.
+                  </p>
 
-                <textarea
-                  rows={4}
-                  value={refinePrompt}
-                  onChange={e => setRefinePrompt(e.target.value)}
-                  placeholder="e.g. Reorganize components into 3 explicit packages..."
-                  className="w-full p-3 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder:text-white/30 focus:border-cyan-400 outline-none"
-                />
+                  <textarea
+                    rows={5}
+                    value={refinePrompt}
+                    onChange={e => setRefinePrompt(e.target.value)}
+                    placeholder="e.g. Add a Redis Caching Layer between API Gateway and DB..."
+                    className="w-full p-3 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder:text-white/30 focus:border-cyan-400 outline-none"
+                  />
+                </div>
 
                 <button
                   onClick={handleRefineDiagram}
                   disabled={refining || !refinePrompt.trim()}
                   className="
-                    w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider
+                    w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold uppercase tracking-wider
                     bg-cyan-400 text-black cursor-pointer hover:bg-cyan-300 transition-all
-                    disabled:opacity-40 disabled:cursor-not-allowed
+                    disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(45,220,255,0.3)]
                   "
                 >
-                  <Send size={14} />
-                  {refining ? "Refining with AI..." : "Generate New Iteration"}
+                  <Send size={14} className={refining ? "animate-spin" : ""} />
+                  {refining ? "Evaluating with AI..." : "Generate New Iteration"}
                 </button>
               </div>
 
@@ -772,7 +821,7 @@ export default function ArchitectureReview() {
               <div className="flex items-center gap-2">
                 <FileDiff className="text-cyan-400" size={18} />
                 <h3 className="text-sm font-bold text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                  Unified Architecture Diff (v1 vs v2)
+                  Unified Architecture Diff (v1 vs {iterations[iterations.length - 1]?.version || "v2"})
                 </h3>
               </div>
               <span className="text-xs text-white/40 font-mono">
@@ -780,13 +829,13 @@ export default function ArchitectureReview() {
               </span>
             </div>
 
-            <div className="p-4 rounded-xl bg-black/80 font-mono text-xs space-y-1 overflow-x-auto max-h-96">
+            <div className="p-4 rounded-xl bg-black/90 font-mono text-xs space-y-1 overflow-x-auto max-h-[500px] border border-white/10">
               {diffText.split("\n").map((line, idx) => {
                 let colorCls = "text-white/60";
-                if (line.startsWith("+")) colorCls = "text-green-400 bg-green-950/40 px-1 rounded";
-                if (line.startsWith("-")) colorCls = "text-red-400 bg-red-950/40 px-1 rounded";
+                if (line.startsWith("+")) colorCls = "text-green-300 bg-green-950/60 px-2 py-0.5 rounded font-semibold";
+                if (line.startsWith("-")) colorCls = "text-red-300 bg-red-950/60 px-2 py-0.5 rounded font-semibold";
                 return (
-                  <div key={idx} className={`${colorCls} leading-relaxed`}>
+                  <div key={idx} className={`${colorCls} leading-relaxed whitespace-pre`}>
                     {line}
                   </div>
                 );
@@ -795,7 +844,7 @@ export default function ArchitectureReview() {
           </div>
         )}
 
-        {/* ── Verdict & Actions Footer ───────────────────────────────── */}
+        {/* ── Verdict & Actions Footer (Swapped Buttons) ───────────────── */}
         <div className={`p-6 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 ${
           isAcceptable ? "border-green-400/30 bg-green-950/20" : "border-amber-400/30 bg-amber-950/20"
         }`}>
@@ -811,14 +860,7 @@ export default function ArchitectureReview() {
           </div>
 
           <div className="flex gap-3">
-            <button
-              onClick={handleAccept}
-              disabled={selecting}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-black bg-cyan-400 hover:bg-cyan-300 cursor-pointer transition-all disabled:opacity-50"
-            >
-              {selecting ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {selecting ? "Saving Selection..." : "Accept & Proceed"}
-            </button>
+            {/* Left side: Regenerate HLD */}
             <button
               onClick={handleReject}
               disabled={restarting || selecting}
@@ -826,6 +868,15 @@ export default function ArchitectureReview() {
             >
               <RefreshCw size={16} className={restarting ? "animate-spin" : ""} />
               Regenerate HLD
+            </button>
+            {/* Right side: Accept & Proceed */}
+            <button
+              onClick={handleAccept}
+              disabled={selecting}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-black bg-cyan-400 hover:bg-cyan-300 cursor-pointer transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(45,220,255,0.3)]"
+            >
+              {selecting ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {selecting ? "Saving Selection..." : "Accept & Proceed"}
             </button>
           </div>
         </div>

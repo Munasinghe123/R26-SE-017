@@ -639,3 +639,47 @@ async def select_candidate(job_id: str, payload: Dict[str, Any]) -> None:
         "job": job.model_dump(mode="json")
     })
 
+
+async def refine_diagram(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    job = JOB_STORE.get(job_id)
+    if not job:
+        job = await restore_job_from_db(job_id)
+    if not job:
+        raise ValueError(f"Job {job_id} not found.")
+
+    prompt = payload.get("prompt") or payload.get("notes") or ""
+
+    old_arch = JOB_ARTIFACTS.get(job_id, {}).get("architecture")
+    run_id = None
+    if isinstance(old_arch, ArchitecturePackage):
+        run_id = old_arch.generation_metadata.get("run_id")
+    elif isinstance(old_arch, dict):
+        run_id = old_arch.get("generation_metadata", {}).get("run_id")
+
+    if not run_id:
+        raise ValueError(f"No run ID found for job {job_id}")
+
+    hld_url = AGENT_URLS["hld"]
+    agent_base_url = hld_url.rsplit("/run", 1)[0]
+    improve_url = f"{agent_base_url}/api/runs/{run_id}/diagram/plantuml/improve"
+
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        resp = await client.post(improve_url, json={"notes": prompt})
+        if resp.status_code != 200:
+            raise RuntimeError(f"Agent diagram refine failed: {resp.text}")
+        workflow_res = resp.json()
+
+    # Extract current plantuml code and score from workflow
+    current = workflow_res.get("plantuml", {}).get("current") or {}
+    updated_puml = current.get("diagram")
+    updated_cas = current.get("diagram_cas")
+
+    if updated_puml and isinstance(old_arch, ArchitecturePackage):
+        old_arch.plantuml_code = updated_puml
+        if updated_cas is not None:
+            old_arch.scores["CAS"] = updated_cas
+        await _db_persist_stage(job_id, "hld", "complete", old_arch.model_dump(mode="json"), 0)
+
+    return workflow_res
+
+
