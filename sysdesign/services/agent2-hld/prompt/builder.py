@@ -130,3 +130,32 @@ STRUCTURAL CONSTRAINTS:
 3. DATA INTEGRITY: Ensure there are no isolated components; all components must be interconnected using valid connectors."""
 
     return "\n\n".join([role_layer, context_layer, schema_layer, constraint_layer, guardrail_layer])
+
+
+def build_feedback_from_scores(scores: dict) -> str:
+    """Build constructive feedback string for regeneration loops from score breakdown."""
+    low_metrics = [k for k, v in scores.items() if isinstance(v, (int, float)) and v < 0.6 and k != "CAS"]
+    if not low_metrics:
+        return "Improve general architectural cohesion and component interface specificity."
+    return f"Focus on improving the following low-scoring architectural quality metrics: {', '.join(low_metrics)}."
+
+
+def build_diagram_prompt(architecture: dict, kind: str = "plantuml", notes: str = "") -> str:
+    """Build structured diagram generation prompt for PlantUML or Mermaid."""
+    arch_style = architecture.get("architecture_style", "Layered Architecture")
+    comps = architecture.get("components", [])
+    conns = architecture.get("connectors", [])
+    
+    comp_list = "\n".join(f"- {c.get('name')} (Layer: {c.get('layer', 'Core')}, Boundary: {c.get('boundary', 'business_logic')})" for c in comps)
+    conn_list = "\n".join(f"- {c.get('from_component')} --> {c.get('to_component')} : {c.get('connector_type', 'sync_call')}" for c in conns)
+    
+    notes_text = f"\nUser Refinement Request: {notes}" if notes else ""
+
+    return (
+        f"Generate clean, valid {kind.upper()} diagram code for this architecture.\n\n"
+        f"Architecture Style: {arch_style}\n{notes_text}\n\n"
+        f"COMPONENTS:\n{comp_list}\n\n"
+        f"CONNECTORS:\n{conn_list}\n\n"
+        f"Output ONLY raw {kind} source code without markdown fences."
+    )
+
