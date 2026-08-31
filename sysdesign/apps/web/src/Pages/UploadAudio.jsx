@@ -50,7 +50,8 @@ function UploadAudio() {
       }
     } catch (err) {
       console.error(err);
-      setStatusText("Extraction failed. Please check backend connection.");
+      const errorMsg = err.response?.data?.detail || err.response?.data?.message || "Extraction failed. Please check backend connection.";
+      setStatusText(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -137,7 +138,11 @@ function UploadAudio() {
             </button>
 
             {statusText && (
-              <div className="mt-5 p-4 rounded-xl bg-cyan-950/40 border border-cyan-400/30 text-cyan-300 text-xs font-semibold animate-pulse text-center">
+              <div className={`mt-5 p-4 rounded-xl text-xs font-semibold text-center border ${
+                statusText.toLowerCase().includes("rejected") || statusText.toLowerCase().includes("failed") || statusText.toLowerCase().includes("non-technical")
+                  ? "bg-red-950/40 border-red-500/40 text-red-300 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                  : "bg-cyan-950/40 border-cyan-400/30 text-cyan-300 animate-pulse"
+              }`}>
                 {statusText}
               </div>
             )}

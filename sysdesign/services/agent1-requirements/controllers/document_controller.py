@@ -1,12 +1,30 @@
 
 import uuid
+from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 from utils.saveFile import save_file
 from graph.instance import graph
+from services.read_document import read_document
+from services.validate_document import validate_technical_document
 
 
 async def handle_document_upload(file, project_id=None):
     path = save_file(file)
+
+    # 1. Read document text and validate whether it is a technical requirements document
+    try:
+        text = await run_in_threadpool(read_document, path)
+        validation = await run_in_threadpool(validate_technical_document, text)
+        if not validation.get("is_technical", False):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Uploaded document rejected: {validation.get('reason', 'The document does not contain technical software requirements.')}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Document pre-validation notice: {e}")
+
     meeting_id = project_id if project_id else str(uuid.uuid4())
 
     payload = {

@@ -1,11 +1,10 @@
 
 
-from fastapi import APIRouter, UploadFile, File, Form,Query
-# from services.meetings_service import get_latest_requirements
-from controllers.refine_controller import refine_endpoint
+from fastapi import APIRouter, UploadFile, File, Form, Query
 from pydantic import BaseModel
-from typing import Dict, Any
-
+from typing import Dict, Any, Optional
+from starlette.concurrency import run_in_threadpool
+from controllers.refine_controller import refine_endpoint
 from graph.instance import graph
 
 refine_routes = APIRouter()
@@ -16,11 +15,33 @@ class RefineRequest(BaseModel):
     feedback: str
     meetingId: str
 
+
+class EvaluationRequest(BaseModel):
+    requirements: Dict[str, Any]
+    project_scope: Optional[str] = None
+    meetingId: Optional[str] = None
+
+
 @refine_routes.post('/refine-reqs')
 async def refine_extracted_requirements(req: RefineRequest):
     return await refine_endpoint(req)
 
-from starlette.concurrency import run_in_threadpool
+
+@refine_routes.post('/evaluate-requirements')
+async def evaluate_requirements_endpoint(req: EvaluationRequest):
+    from services.evaluation import evaluate_requirements_suite
+    res = await run_in_threadpool(evaluate_requirements_suite, req.requirements)
+    return res
+
+
+@refine_routes.get("/requirements/{meeting_id}/evaluation")
+async def get_requirements_evaluation(meeting_id: str):
+    from services.evaluation import evaluate_requirements_suite
+    # First get the requirements
+    req_data = await get_requirements(meeting_id)
+    raw_reqs = req_data.get("requirements") or {}
+    res = await run_in_threadpool(evaluate_requirements_suite, raw_reqs)
+    return res
 
 @refine_routes.get("/requirements/{meeting_id}")
 async def get_requirements(meeting_id: str):

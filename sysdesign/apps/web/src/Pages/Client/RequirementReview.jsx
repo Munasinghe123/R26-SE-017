@@ -12,8 +12,11 @@ import {
   Sparkles,
   Info,
   HelpCircle,
-  Clock
+  Clock,
+  BarChart3,
+  FileCheck2
 } from "lucide-react";
+import QualityEvaluationModal from "../../Components/QualityEvaluationModal";
 
 const AGENT1 = import.meta.env.VITE_AGENT1_URL || "http://127.0.0.1:8001";
 
@@ -25,6 +28,11 @@ export default function RequirementReview() {
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
   const [feedBackModal, setFeedBackModal] = useState(false);
+
+  // Quality evaluation state
+  const [evaluationModal, setEvaluationModal] = useState(false);
+  const [evaluationData, setEvaluationData] = useState(null);
+  const [evaluating, setEvaluating] = useState(false);
 
   console.log("meeting id", meetingId)
 
@@ -51,6 +59,36 @@ export default function RequirementReview() {
       fetchRequirements();
     }
   }, [meetingId]);
+
+  const handleRunEvaluation = async () => {
+    setEvaluationModal(true);
+    if (evaluationData) return; // already loaded
+
+    setEvaluating(true);
+    try {
+      let res;
+      try {
+        res = await axios.post(`${AGENT1}/evaluate-requirements`, {
+          requirements: requirements,
+          project_scope: requirements?.scope,
+          meetingId: meetingId
+        });
+      } catch (e1) {
+        res = await axios.post(`/evaluate-requirements`, {
+          requirements: requirements,
+          project_scope: requirements?.scope,
+          meetingId: meetingId
+        });
+      }
+      if (res?.data) {
+        setEvaluationData(res.data);
+      }
+    } catch (err) {
+      console.error("Evaluation failed:", err);
+    } finally {
+      setEvaluating(false);
+    }
+  };
 
   if (!requirements) {
     return (
@@ -120,6 +158,12 @@ export default function RequirementReview() {
             </div>
 
             <div className="flex items-center gap-3">
+              <button
+                onClick={handleRunEvaluation}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-purple-500/20 hover:from-cyan-500/30 hover:to-purple-500/30 border border-cyan-400/40 text-cyan-300 hover:text-white text-xs font-bold uppercase tracking-wider shadow-[0_0_15px_rgba(34,211,238,0.2)] transition cursor-pointer"
+              >
+                <BarChart3 size={15} /> Quality Audit Report
+              </button>
               <span className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-300">
                 Version <strong>v{version}.0</strong>
               </span>
@@ -374,6 +418,14 @@ export default function RequirementReview() {
           </div>
         </div>
       )}
+
+      {/* IEEE 29148 QUALITY EVALUATION AUDIT MODAL */}
+      <QualityEvaluationModal
+        isOpen={evaluationModal}
+        onClose={() => setEvaluationModal(false)}
+        evaluationData={evaluationData}
+        loading={evaluating}
+      />
     </div>
   );
 }
