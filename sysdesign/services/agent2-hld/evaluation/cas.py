@@ -1,82 +1,58 @@
 """
-HLA Agent — CAS: Composite Architecture Score + Ranker
+Evaluation — CAS: Composite Architecture Score + Ranker
 
-CAS = 0.25*RCR + 0.25*NAS + 0.20*SMI + 0.15*LSCS + 0.15*SCI
+CAS = w₁·RTS + w₂·QAC + w₃·CI + w₄·CoS + w₅·SSM₁ + w₆·SSM₂
+
+Weights are derived via AHP (Saaty, 1980). Default weights are preliminary
+researcher-derived values (CR = 0.013 < 0.10). Final weights require
+expert survey validation.
 
 Provides:
-  - CAS computation from individual scores
+  - CAS computation from 6 individual metric scores
   - Verdict classification (Accepted / Marginal / Poor)
   - Candidate ranking across all models
 """
 
 import logging
-from config import PHASE1_WEIGHTS, PHASE2_WEIGHTS, WEIGHTS, CAS_ACCEPTED, CAS_MARGINAL, THRESHOLDS
+from evaluation.ahp import compute_ahp_weights
 
 logger = logging.getLogger(__name__)
 
+# ── Default AHP-derived weights (preliminary) ────────
 
-def compute_cas(scores: dict, phase: int = 1) -> dict:
-    """
-    Compute Composite Architecture Score from individual metric scores.
+_DEFAULT_WEIGHTS, _DEFAULT_CR = compute_ahp_weights()
+
+# Verdict thresholds
+CAS_ACCEPTED = 0.75
+CAS_MARGINAL = 0.60
+
+
+def compute_cas(
+    scores: dict,
+    weights: dict = None,
+) -> dict:
+    """Compute Composite Architecture Score from 6 individual metrics.
 
     Args:
-        scores: Dict with metric keys
-        phase: 1 for Tradeoff Analysis (RCR, NAS), 2 for Structural (SMI, LSCS, SCI)
+        scores: Dict with keys: RTS, QAC, CI, CoS, SSM1, SSM2
+        weights: Optional custom weight dict. Defaults to AHP-derived weights.
 
     Returns:
         {
             "cas": float,
             "verdict": "Accepted" | "Marginal" | "Poor",
-            "weighted_breakdown": { metric: weighted_value },
-            "below_threshold": [metric_names]
+            "weighted_breakdown": {metric: weighted_value},
+            "weights_used": {metric: weight},
+            "weights_source": "ahp_preliminary" | "custom",
         }
     """
-    weighted = {}
-    cas = 0.0
-    
-    weights = PHASE1_WEIGHTS if phase == 1 else PHASE2_WEIGHTS
+    w = weights or _DEFAULT_WEIGHTS
+    weights_source = "custom" if weights else "ahp_preliminary"
 
-    for metric, weight in weights.items():
-        value = scores.get(metric, 0.0)
-        w_value = value * weight
-        weighted[metric] = round(w_value, 4)
-        cas += w_value
-
-    cas = round(cas, 4)
-
-    verdict = "Accepted"
-    if phase == 1:
-        if cas >= CAS_ACCEPTED:
-            verdict = "Accepted"
-        elif cas >= CAS_MARGINAL:
-            verdict = "Marginal"
-        else:
-            verdict = "Poor"
-    else:
-        verdict = "Structural Evaluation Complete"
-
-    below = [m for m, s in scores.items() if m in THRESHOLDS and s < THRESHOLDS[m]]
-
-    logger.info(f"Phase {phase} CAS: {cas:.4f} → {verdict} | Below threshold: {below}")
-
-    return {
-        "cas": cas,
-        "verdict": verdict,
-        "weighted_breakdown": weighted,
-        "below_threshold": below,
-    }
-
-
-def compute_final_cas(scores: dict) -> dict:
-    """
-    Compute final 5-metric CAS used in Phase 2 (HLD validation).
-
-    CAS = 0.25*RCR + 0.25*NAS + 0.20*SMI + 0.15*LSCS + 0.15*SCI
-    """
     weighted = {}
     cas = 0.0
 
-    for metric, weight in WEIGHTS.items():
+    for metric, weight in w.items():
         value = scores.get(metric, 0.0)
         w_value = value * weight
         weighted[metric] = round(w_value, 4)
@@ -91,23 +67,26 @@ def compute_final_cas(scores: dict) -> dict:
     else:
         verdict = "Poor"
 
-    below = [m for m, s in scores.items() if m in THRESHOLDS and s < THRESHOLDS[m]]
+    logger.info(f"CAS: {cas:.4f} → {verdict}")
 
     return {
         "cas": cas,
         "verdict": verdict,
         "weighted_breakdown": weighted,
-        "below_threshold": below,
+        "weights_used": w,
+        "weights_source": weights_source,
     }
 
 
-def rank_candidates(candidates: list[dict], cas_key: str = "PHASE1_CAS") -> list[dict]:
-    """
-    Rank architecture candidates by CAS score (descending).
+def rank_candidates(
+    candidates: list[dict],
+    cas_key: str = "CAS",
+) -> list[dict]:
+    """Rank architecture candidates by CAS score (descending).
 
     Args:
-        candidates: List of dicts, each with at least:
-            { "model", "candidate_num", "scores": { RCR, NAS, SMI, LSCS, SCI, CAS } }
+        candidates: List of dicts, each with 'scores' containing CAS
+        cas_key: Key to sort by (default: "CAS")
 
     Returns:
         Same list sorted by CAS descending, with 'rank' field added (1-based)
@@ -125,7 +104,8 @@ def rank_candidates(candidates: list[dict], cas_key: str = "PHASE1_CAS") -> list
         winner = sorted_candidates[0]
         logger.info(
             f"Winner: {winner.get('model', '?')} candidate "
-            f"{winner.get('candidate_num', '?')} with {cas_key}={winner['scores'].get(cas_key, 0):.4f}"
+            f"{winner.get('candidate_num', '?')} with "
+            f"{cas_key}={winner['scores'].get(cas_key, 0):.4f}"
         )
 
     return sorted_candidates
