@@ -79,17 +79,20 @@ function buildCandidateUid(c, idx) {
 function generateFallbackMermaidCode(architecture) {
   if (!architecture) return "graph TD\n    A[Client] --> B[API Gateway]";
   const comps = architecture.components || [];
-  const conns = architecture.connectors || architecture.interactions || [];
+  const conns = (architecture.connectors?.length ? architecture.connectors : null)
+             || (architecture.interactions?.length ? architecture.interactions : null)
+             || [];
 
   let lines = ["graph TD"];
   const layers = architecture.layers || [];
 
   if (layers.length > 0) {
     layers.forEach(layer => {
-      const layerComps = comps.filter(c => (c.layer || "").toLowerCase() === (layer.name || "").toLowerCase());
+      const layerName = layer.name || layer.layer || "Layer";
+      const layerComps = comps.filter(c => (c.layer || c.boundary || "").toLowerCase() === layerName.toLowerCase());
       if (layerComps.length > 0) {
-        const subId = (layer.name || "Layer").replace(/[^a-zA-Z0-9]/g, "_");
-        lines.push(`    subgraph ${subId} ["${layer.name}"]`);
+        const subId = layerName.replace(/[^a-zA-Z0-9]/g, "_");
+        lines.push(`    subgraph ${subId} ["${layerName}"]`);
         layerComps.forEach(c => {
           const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
           lines.push(`        ${cId}["${c.name}"]`);
@@ -98,19 +101,31 @@ function generateFallbackMermaidCode(architecture) {
       }
     });
   } else {
+    const layerMap = {};
     comps.forEach(c => {
-      const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
-      lines.push(`    ${cId}["${c.name}"]`);
+      const lName = c.layer || c.boundary || "Core";
+      if (!layerMap[lName]) layerMap[lName] = [];
+      layerMap[lName].push(c);
+    });
+    Object.entries(layerMap).forEach(([lName, lComps]) => {
+      const subId = lName.replace(/[^a-zA-Z0-9]/g, "_");
+      lines.push(`    subgraph ${subId} ["${lName}"]`);
+      lComps.forEach(c => {
+        const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
+        lines.push(`        ${cId}["${c.name}"]`);
+      });
+      lines.push("    end");
     });
   }
 
   conns.forEach(conn => {
-    const fromId = (conn.from_component || conn.from || "").replace(/[^a-zA-Z0-9]/g, "_");
-    const toId = (conn.to_component || conn.to || "").replace(/[^a-zA-Z0-9]/g, "_");
-    const label = conn.connector_type || conn.type || "";
+    const fromId = (conn.from_component || conn.from || conn.source || "").replace(/[^a-zA-Z0-9]/g, "_");
+    const toId = (conn.to_component || conn.to || conn.target || "").replace(/[^a-zA-Z0-9]/g, "_");
+    const label = conn.connector_type || conn.type || conn.protocol || "";
     if (fromId && toId) {
       if (label) {
-        lines.push(`    ${fromId} -->|"${label}"| ${toId}`);
+        const cleanLabel = String(label).replace(/["|]/g, "").trim();
+        lines.push(`    ${fromId} -->|${cleanLabel}| ${toId}`);
       } else {
         lines.push(`    ${fromId} --> ${toId}`);
       }
@@ -122,18 +137,19 @@ function generateFallbackMermaidCode(architecture) {
 
 /**
  * Client-side deterministic PlantUML generator.
- * Mirrors _build_plantuml_from_architecture() in llm_diagram_gen.py.
- * Used when the stored plantuml_code is invalid (e.g. LLM returned JSON).
+ * Fully extracts components, layers, and all interaction connections.
  */
 function generateFallbackPlantUML(architecture, title = "Architecture") {
   if (!architecture) {
     return "@startuml\nskinparam componentStyle rectangle\nskinparam backgroundColor #0d1117\ntitle Architecture\n[System Core] as S\n@enduml\n";
   }
-  const comps   = architecture.components   || [];
-  const conns   = architecture.interactions || architecture.connectors || [];
-  const style   = architecture.architecture_style || "Layered";
+  const comps = architecture.components || [];
+  const conns = (architecture.connectors?.length ? architecture.connectors : null)
+             || (architecture.interactions?.length ? architecture.interactions : null)
+             || [];
+  const style = architecture.architecture_style || architecture.detected_style || "Layered Architecture";
 
-  const safeId  = (s) => (s || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const safeId = (s) => (s || "").replace(/[^a-zA-Z0-9_]/g, "_");
 
   const lines = [
     "@startuml",
@@ -158,7 +174,7 @@ function generateFallbackPlantUML(architecture, title = "Architecture") {
     "",
   ];
 
-  // Group by layer
+  // Group components by layer
   const layerMap = {};
   comps.forEach(c => {
     const layer = (c.layer || c.boundary || "Core").trim();
@@ -183,18 +199,24 @@ function generateFallbackPlantUML(architecture, title = "Architecture") {
     lines.push("");
   });
 
-  if (conns.length) lines.push("' === Component Interactions ===");
-  conns.forEach(conn => {
-    const src   = (conn.from   || conn.source || conn.from_component || "").trim();
-    const tgt   = (conn.to     || conn.target || conn.to_component   || "").trim();
-    const label = (conn.type   || conn.connector_type || conn.protocol || "").trim().replace(/["\n\r]/g, "");
-    if (!src || !tgt) return;
-    const sa = aliasMap[src] || safeId(src);
-    const ta = aliasMap[tgt] || safeId(tgt);
-    if (sa && ta && sa !== ta) {
-      lines.push(label ? `${sa} --> ${ta} : ${label}` : `${sa} --> ${ta}`);
-    }
-  });
+  if (conns.length > 0) {
+    lines.push("' === Component Interactions ===");
+    conns.forEach(conn => {
+      const src = (conn.from_component || conn.from || conn.source || "").trim();
+      const tgt = (conn.to_component || conn.to || conn.target || "").trim();
+      const label = (conn.connector_type || conn.type || conn.protocol || "").trim().replace(/["\n\r]/g, "");
+      if (!src || !tgt) return;
+      const sa = aliasMap[src] || safeId(src);
+      const ta = aliasMap[tgt] || safeId(tgt);
+      if (sa && ta && sa !== ta) {
+        if (label === "async_message" || label.toLowerCase().includes("async")) {
+          lines.push(`${sa} ..> ${ta} : ${label}`);
+        } else {
+          lines.push(label ? `${sa} --> ${ta} : ${label}` : `${sa} --> ${ta}`);
+        }
+      }
+    });
+  }
 
   lines.push("");
   lines.push("@enduml");
@@ -287,6 +309,7 @@ export default function ArchitectureReview() {
   const [error, setError]           = useState(null);
 
   // Kroki SVG render state — must be declared here (before any early returns)
+  const [diagramEngine, setDiagramEngine] = useState("plantuml"); // "plantuml" | "mermaid"
   const [svgUrl, setSvgUrl] = useState(null);
   const [svgError, setSvgError] = useState(false);
 
@@ -392,34 +415,45 @@ export default function ArchitectureReview() {
     }
   }, [iterations]);
 
-  // Kroki SVG rendering — POST raw PlantUML text
+  // Kroki SVG rendering — fetches live vector SVG based on selected engine
   useEffect(() => {
     const activeIt = (iterations && iterations.length > 0)
       ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
       : null;
 
-    let raw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
+    const targetArch = selectedCandidate?.architecture || arch;
+    const title = targetArch?.architecture_style
+               || selectedCandidate?.style
+               || "Architecture";
 
-    // Detect invalid stored code (JSON error from LLM) → use client-side fallback
-    if (!isValidPlantUML(raw)) {
-      const targetArch = selectedCandidate?.architecture || arch;
-      const title = targetArch?.architecture_style
-                 || selectedCandidate?.style
-                 || "Architecture";
-      raw = generateFallbackPlantUML(targetArch || null, title);
+    let payloadText = "";
+    let endpoint = "";
+
+    if (diagramEngine === "mermaid") {
+      endpoint = "https://kroki.io/mermaid/svg";
+      payloadText = generateFallbackMermaidCode(targetArch);
+    } else {
+      endpoint = "https://kroki.io/plantuml/svg";
+      let raw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
+      if (!isValidPlantUML(raw)) {
+        payloadText = generateFallbackPlantUML(targetArch || null, title);
+      } else {
+        payloadText = raw;
+      }
     }
 
     setSvgError(false);
     setSvgUrl(null);
-    fetch("https://kroki.io/plantuml/svg", {
+
+    fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
-      body: raw,
+      body: payloadText,
     })
       .then(r => r.ok ? r.blob() : Promise.reject(r.status))
       .then(blob => setSvgUrl(URL.createObjectURL(blob)))
       .catch(() => setSvgError(true));
-  }, [iterations, activeVersion, selectedCandidate, arch]);
+  }, [iterations, activeVersion, selectedCandidate, arch, diagramEngine]);
 
   const handleRefineDiagram = async () => {
     if (!refinePrompt.trim()) return;
@@ -1005,23 +1039,48 @@ export default function ArchitectureReview() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Visual SVG Render Canvas */}
-              <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#070919] min-h-[460px] flex flex-col shadow-2xl overflow-hidden">
-                <div className="flex justify-between items-center px-5 py-3 bg-[#050610] border-b border-white/10">
-                  <span className="text-xs font-bold text-white/70 uppercase font-mono">Live Vector Diagram Canvas — PlantUML Engine</span>
+              <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#070919] min-h-[480px] flex flex-col shadow-2xl overflow-hidden">
+                <div className="flex flex-wrap justify-between items-center px-5 py-3 bg-[#050610] border-b border-white/10 gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white/70 uppercase font-mono">Engine:</span>
+                    <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/10 text-xs">
+                      <button
+                        onClick={() => setDiagramEngine("plantuml")}
+                        className={`px-3 py-1 rounded-md font-mono text-[11px] font-bold cursor-pointer transition-all ${
+                          diagramEngine === "plantuml"
+                            ? "bg-cyan-400 text-black shadow-[0_0_10px_rgba(45,220,255,0.4)]"
+                            : "text-white/60 hover:text-white"
+                        }`}
+                      >
+                        PlantUML (Enterprise / StarUML)
+                      </button>
+                      <button
+                        onClick={() => setDiagramEngine("mermaid")}
+                        className={`px-3 py-1 rounded-md font-mono text-[11px] font-bold cursor-pointer transition-all ${
+                          diagramEngine === "mermaid"
+                            ? "bg-cyan-400 text-black shadow-[0_0_10px_rgba(45,220,255,0.4)]"
+                            : "text-white/60 hover:text-white"
+                        }`}
+                      >
+                        Mermaid (GitHub Native)
+                      </button>
+                    </div>
+                  </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
                     svgError ? "bg-red-500/20 text-red-300" : svgUrl ? "bg-green-500/20 text-green-300" : "bg-white/10 text-white/50"
                   }`}>
-                    {svgError ? "Render Error" : svgUrl ? "SVG Vector High-Res" : "Rendering..."}
+                    {svgError ? "Render Error" : svgUrl ? "Vector High-Res SVG" : "Rendering..."}
                   </span>
                 </div>
-                <div className="flex-1 flex items-center justify-center p-4 bg-[#0d1117] overflow-auto">
+
+                <div className="flex-1 flex items-center justify-center p-6 bg-[#0d1117] overflow-auto min-h-[380px]">
                   {svgError ? (
                     <div className="text-center space-y-2">
                       <p className="text-red-400 text-xs font-mono font-semibold">⚠ Diagram could not be rendered.</p>
-                      <p className="text-white/40 text-[11px]">Check the Refinement Engine tab to inspect source code.</p>
+                      <p className="text-white/40 text-[11px]">Switch engine or check the Refinement Engine tab to inspect code.</p>
                     </div>
                   ) : svgUrl ? (
-                    <img src={svgUrl} alt="Architecture Diagram" className="max-h-[420px] w-full object-contain" />
+                    <img src={svgUrl} alt="Architecture Diagram" className="max-h-[460px] w-full object-contain" />
                   ) : (
                     <div className="flex items-center gap-3 text-cyan-400 text-xs font-mono">
                       <RefreshCw size={16} className="animate-spin" />
@@ -1031,8 +1090,8 @@ export default function ArchitectureReview() {
                 </div>
               </div>
 
-              {/* Right Panel: Mermaid Export */}
-              <div className="space-y-4 flex flex-col">
+              {/* Right Panel: Multiple Industry Export Formats */}
+              <div className="space-y-4 flex flex-col justify-between">
                 {/* CAS score summary */}
                 <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-1">
                   <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Diagram Quality Score</span>
@@ -1040,25 +1099,45 @@ export default function ArchitectureReview() {
                   <p className="text-[11px] text-white/50">{isAcceptable ? "✅ Passed — Ready to accept" : "⚠ Below threshold — Refinement needed"}</p>
                 </div>
 
-                {/* Copyable Mermaid for GitHub README */}
-                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-3 flex-1 flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono block">GitHub README Mermaid Export</span>
-                    <p className="text-[11px] text-white/60">Paste into <code className="text-cyan-300">README.md</code> for native rendering:</p>
-                    <div className="p-3 rounded-xl bg-black/90 font-mono text-[11px] text-cyan-200 border border-white/10 max-h-52 overflow-y-auto whitespace-pre">
-                      {`\`\`\`mermaid\n${generateFallbackMermaidCode(selectedCandidate?.architecture)}\n\`\`\``}
-                    </div>
+                {/* StarUML / PlantUML Export Box */}
+                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
+                      StarUML / PlantUML Model
+                    </span>
+                    <button
+                      onClick={() => {
+                        const targetArch = selectedCandidate?.architecture || arch;
+                        const puml = generateFallbackPlantUML(targetArch, targetArch?.architecture_style || "Architecture");
+                        navigator.clipboard.writeText(puml);
+                        alert("Copied PlantUML / StarUML code to clipboard!");
+                      }}
+                      className="px-2.5 py-1 rounded bg-cyan-400/20 text-cyan-300 hover:bg-cyan-400/30 text-[10px] font-mono font-bold cursor-pointer transition-all border border-cyan-400/30"
+                    >
+                      Copy StarUML
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture);
-                      navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
-                      alert("Mermaid code copied! Paste directly into your GitHub README.md");
-                    }}
-                    className="w-full py-2.5 rounded-xl bg-cyan-400 text-black font-bold text-xs cursor-pointer hover:bg-cyan-300 transition-all"
-                  >
-                    Copy Mermaid Code
-                  </button>
+                  <p className="text-[10px] text-white/50">Compatible with StarUML, Visual Paradigm &amp; Enterprise Architect.</p>
+                </div>
+
+                {/* GitHub README Mermaid Export */}
+                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
+                      GitHub README (Mermaid)
+                    </span>
+                    <button
+                      onClick={() => {
+                        const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture || arch);
+                        navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
+                        alert("Mermaid code copied! Paste directly into your GitHub README.md");
+                      }}
+                      className="px-2.5 py-1 rounded bg-cyan-400/20 text-cyan-300 hover:bg-cyan-400/30 text-[10px] font-mono font-bold cursor-pointer transition-all border border-cyan-400/30"
+                    >
+                      Copy Mermaid
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-white/50">Paste directly into your repo's <code className="text-cyan-300">README.md</code> for native GitHub rendering.</p>
                 </div>
               </div>
             </div>
