@@ -1,6 +1,15 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
-from contracts.v1.architecture import Boundary, ElementType
+
+try:
+    from contracts.v1.architecture import Boundary, ElementType
+except ImportError:
+    import sys
+    from pathlib import Path
+    pkg_path = Path(__file__).resolve().parents[3] / "packages" / "contracts"
+    if str(pkg_path) not in sys.path:
+        sys.path.insert(0, str(pkg_path))
+    from contracts.v1.architecture import Boundary, ElementType
 
 
 class RawCAMComponent(BaseModel):

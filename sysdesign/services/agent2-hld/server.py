@@ -22,6 +22,7 @@ from config import INPUT_DIR, RESULTS_DIR, WEB_DIR, MODELS, LLM_PROVIDER, PROVID
 from storage.db import get_all_runs, get_run, get_candidates
 from generation.generator import check_models_available
 from providers import get_provider_name
+from main import elaborate_winner
 
 from output.diagram_workflow import (
     load_workflow,
@@ -181,8 +182,12 @@ async def select_candidate_endpoint(run_id: str, payload: dict):
         json.dump(winner_data, f, indent=2)
 
     # Elaborate diagram for selected candidate
-    reqs = _load_requirements_for_run()
-    elab = elaborate_winner(run_id, winner_data, reqs)
+    reqs_file = RESULTS_DIR / "_temp_input.json"
+    if not reqs_file.exists():
+        reqs = _load_requirements_for_run()
+        with open(reqs_file, "w", encoding="utf-8") as f:
+            json.dump(reqs, f)
+    elab = elaborate_winner(run_id, winner_data, reqs_file)
     
     # Save diagram paths
     puml_path = str(RESULTS_DIR / "diagram.puml")
