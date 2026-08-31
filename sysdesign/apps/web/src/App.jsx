@@ -9,10 +9,12 @@ import RequirementReview from "./Pages/client/RequirementReview";
 import GetStarted from "./Pages/Get-Started";
 import SelectMode from "./Pages/Select-Mode";
 import TestMeeting from "./Pages/Test-Meeting";
-import UserDashboard from "./Pages/protected/Dashboard/User-Dashboard";
-import Footer from "./components/Footer";
 import ProjectDashboard from "./Pages/Protected/Dashboard/Project-Dashboard";
+import UserDashboard from "./Pages/Protected/Dashboard/User-Dashboard";
 import CreateProject from "./Pages/Protected/Create-Project";
+import ClientDashboard from "./Pages/Client/ClientDashboard";
+import ClientRequirementReview from "./Pages/Client/ClientRequirementReview";
+import Footer from "./components/Footer";
 
 // ── New Pipeline Pages ─────────────────────────────────────────────────────
 import PipelineDashboard  from "./Pages/Protected/Pipeline/PipelineDashboard";
@@ -49,7 +51,22 @@ function AppLayout() {
         {/* ── Protected — Dashboard ─────────────────────────────────── */}
         <Route path="/user-dashboard"    element={<UserDashboard />} />
         <Route path="/project-dashboard" element={<ProjectDashboard />} />
+        <Route path="/client-dashboard"  element={<ClientDashboard />} />
         <Route path="/create-project"    element={<CreateProject />} />
+
+        {/* ── Client Requirements Portal & Review Routes ───────────── */}
+        <Route
+          path="/client/requirements/:meetingId"
+          element={<ClientRequirementReview />}
+        />
+        <Route
+          path="/client/requirements"
+          element={<ClientRequirementReview />}
+        />
+        <Route
+          path="/client-review/:meetingId"
+          element={<ClientRequirementReview />}
+        />
 
         {/* ── Protected — Requirements Review (Agent 1 output) ─────── */}
         <Route

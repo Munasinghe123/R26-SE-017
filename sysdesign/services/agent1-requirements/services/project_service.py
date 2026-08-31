@@ -111,7 +111,8 @@ async def get_projects_by_user_service(user_id):
             """
             SELECT p.id, p.name, p.description, p.product_owner_id, p.client_id, p.created_at,
                    COALESCE(u1.name, 'Product Owner') AS product_owner_name,
-                   COALESCE(u2.name, 'Client') AS client_name
+                   COALESCE(u2.name, 'Client') AS client_name,
+                   (SELECT id FROM meetings WHERE project_id = p.id ORDER BY updated_at DESC LIMIT 1) AS latest_meeting_id
             FROM projects p
             LEFT JOIN users u1 ON p.product_owner_id = u1.id
             LEFT JOIN users u2 ON p.client_id = u2.id
@@ -126,7 +127,8 @@ async def get_projects_by_user_service(user_id):
                 """
                 SELECT p.id, p.name, p.description, p.product_owner_id, p.client_id, p.created_at,
                        COALESCE(u1.name, 'Product Owner') AS product_owner_name,
-                       COALESCE(u2.name, 'Client') AS client_name
+                       COALESCE(u2.name, 'Client') AS client_name,
+                       (SELECT id FROM meetings WHERE project_id = p.id ORDER BY updated_at DESC LIMIT 1) AS latest_meeting_id
                 FROM projects p
                 LEFT JOIN users u1 ON p.product_owner_id = u1.id
                 LEFT JOIN users u2 ON p.client_id = u2.id
@@ -144,6 +146,7 @@ async def get_projects_by_user_service(user_id):
                 "client_id": str(row["client_id"]) if row["client_id"] else None,
                 "product_owner_name": row["product_owner_name"],
                 "client_name": row["client_name"],
+                "latest_meeting_id": str(row["latest_meeting_id"]) if row.get("latest_meeting_id") else None,
                 "created_at": row["created_at"].isoformat() if row["created_at"] else None
             })
 

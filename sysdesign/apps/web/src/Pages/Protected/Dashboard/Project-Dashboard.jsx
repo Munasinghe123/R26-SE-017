@@ -141,12 +141,25 @@ export default function ProjectDashboard() {
             </div>
           </div>
 
-          <Link to={`/requirements-review/${localStorage.getItem("lastMeetingId")}`}>
-            <button className="flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-bold text-xs uppercase tracking-wider rounded-full shadow-lg transition duration-300 active:scale-95 cursor-pointer whitespace-nowrap">
-              <ArrowRight size={16} />
-              Resume Requirements Review
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => {
+                const url = `${window.location.origin}/client/requirements/${localStorage.getItem("lastMeetingId")}`;
+                navigator.clipboard.writeText(url);
+                alert("Client Review Link copied! Share this URL with the Client to open in any browser.");
+              }}
+              className="flex items-center gap-2 px-5 py-3.5 bg-white/5 hover:bg-white/10 text-cyan-300 border border-cyan-400/40 font-bold text-xs uppercase tracking-wider rounded-full shadow transition duration-300 active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              Copy Client Link
             </button>
-          </Link>
+
+            <Link to={`/requirements-review/${localStorage.getItem("lastMeetingId")}`}>
+              <button className="flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-bold text-xs uppercase tracking-wider rounded-full shadow-lg transition duration-300 active:scale-95 cursor-pointer whitespace-nowrap">
+                <ArrowRight size={16} />
+                Resume Requirements Review
+              </button>
+            </Link>
+          </div>
         </div>
       )}
 
@@ -212,21 +225,48 @@ export default function ProjectDashboard() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-white/5">
-                <button 
-                  onClick={() => navigate("/select-mode", { state: { projectId: project.id } })}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-2xl transition duration-300 cursor-pointer"
-                >
-                  <Play size={15} />
-                  Start Elicitation
-                </button>
-                <button 
-                  onClick={() => navigate("/upload-audio", { state: { projectId: project.id } })}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold rounded-2xl border border-white/10 transition duration-300 cursor-pointer"
-                >
-                  Upload Documents
-                  <ArrowRight size={15} />
-                </button>
+              <div className="space-y-3 pt-4 border-t border-white/5">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button 
+                    onClick={() => {
+                      const mId = project.latest_meeting_id || project.id;
+                      navigate(`/requirements-review/${mId}`);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition duration-300 cursor-pointer shadow-md"
+                  >
+                    <FileCheck size={14} />
+                    Review Requirements
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const mId = project.latest_meeting_id || project.id;
+                      const url = `${window.location.origin}/client/requirements/${mId}`;
+                      navigator.clipboard.writeText(url);
+                      alert("Client Review URL copied to clipboard: " + url);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-4 py-3 bg-white/5 hover:bg-white/10 text-cyan-300 border border-cyan-400/40 text-xs font-semibold rounded-xl transition duration-300 cursor-pointer"
+                    title="Copy Client Shareable URL"
+                  >
+                    Copy Client Link
+                  </button>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button 
+                    onClick={() => navigate("/select-mode", { state: { projectId: project.id } })}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 text-xs font-semibold rounded-xl border border-cyan-500/30 transition duration-300 cursor-pointer"
+                  >
+                    <Play size={13} />
+                    Start Elicitation
+                  </button>
+                  <button 
+                    onClick={() => navigate("/upload-audio", { state: { projectId: project.id } })}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold rounded-xl border border-white/10 transition duration-300 cursor-pointer"
+                  >
+                    Upload Documents
+                    <ArrowRight size={13} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
 import audio from "../Images/audio.png";
 
 function UploadAudio() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const projectId = location.state?.projectId || new URLSearchParams(location.search).get("projectId");
+
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
@@ -18,6 +21,9 @@ function UploadAudio() {
 
     const formData = new FormData();
     formData.append("file", file);
+    if (projectId) {
+      formData.append("projectId", projectId);
+    }
 
     try {
       const res = await axios.post(
@@ -34,6 +40,9 @@ function UploadAudio() {
       if (data?.meeting_id) {
         localStorage.setItem("lastMeetingId", data.meeting_id);
         localStorage.setItem("lastMeetingTime", new Date().toISOString());
+        if (projectId) {
+          localStorage.setItem(`project_${projectId}_meetingId`, data.meeting_id);
+        }
         setStatusText("Extraction Complete! Redirecting to Requirements Review...");
         setTimeout(() => {
           navigate(`/requirements-review/${data.meeting_id}`);
@@ -41,7 +50,8 @@ function UploadAudio() {
       }
     } catch (err) {
       console.error(err);
-      setStatusText("Extraction failed. Please check backend connection.");
+      const errorMsg = err.response?.data?.detail || err.response?.data?.message || "Extraction failed. Please check backend connection.";
+      setStatusText(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -128,7 +138,11 @@ function UploadAudio() {
             </button>
 
             {statusText && (
-              <div className="mt-5 p-4 rounded-xl bg-cyan-950/40 border border-cyan-400/30 text-cyan-300 text-xs font-semibold animate-pulse text-center">
+              <div className={`mt-5 p-4 rounded-xl text-xs font-semibold text-center border ${
+                statusText.toLowerCase().includes("rejected") || statusText.toLowerCase().includes("failed") || statusText.toLowerCase().includes("non-technical")
+                  ? "bg-red-950/40 border-red-500/40 text-red-300 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                  : "bg-cyan-950/40 border-cyan-400/30 text-cyan-300 animate-pulse"
+              }`}>
                 {statusText}
               </div>
             )}
