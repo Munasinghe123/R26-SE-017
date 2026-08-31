@@ -68,14 +68,35 @@ REQUIRED JSON OUTPUT SCHEMA:
       "participants": ["string"],
       "participant_types": {{
         "Customer": "actor",
-        "APIGateway": "boundary",
-        "CoreService": "control"
+        "FrontendUI": "boundary",
+        "OrderController": "controller"
       }},
-      "messages": [
+      "items": [
         {{
           "from": "string",
           "to": "string",
           "message": "string",
+          "type": "call",
+          "activate": false,
+          "deactivate": false
+        }},
+        {{
+          "block_type": "loop",
+          "condition": "string",
+          "items": [
+            {{
+              "from": "string",
+              "to": "string",
+              "message": "string",
+              "type": "call"
+            }}
+          ]
+        }},
+        {{
+          "from": "string",
+          "to": "string",
+          "message": "string",
+          "type": "return",
           "activate": false,
           "deactivate": false
         }}
@@ -185,36 +206,39 @@ OUTPUT SCHEMA
       "participant_types": {{
         "<participant_name>": "<participant_type>"
       }},
-      "logic_blocks": [
-        {{
-          "block_type": "alt",
-          "condition": "string",
-          "messages": [
-            {{
-              "from": "string",
-              "to": "string",
-              "message": "string",
-              "activate": false,
-              "deactivate": false
-            }}
-          ],
-          "logic_blocks": []
-        }}
-      ],
-      "messages": [
+      "items": [
         {{
           "from": "string",
           "to": "string",
           "message": "string",
+          "type": "call",
           "activate": false,
           "deactivate": false
+        }},
+        {{
+          "block_type": "loop",
+          "condition": "string",
+          "items": [
+            {{
+              "from": "string",
+              "to": "string",
+              "message": "string",
+              "type": "call"
+            }}
+          ]
+        }},
+        {{
+          "from": "string",
+          "to": "string",
+          "message": "string",
+          "type": "return"
         }}
       ]
     }}
   ]
 }}
 
-Participant types may include "actor", "boundary", "control", "entity", "database", or "participant".
+Participant types may include "actor", "boundary", "controller", "service", "repository", "entity", "database", or "external_system".
 
 INPUT
 Requirements:

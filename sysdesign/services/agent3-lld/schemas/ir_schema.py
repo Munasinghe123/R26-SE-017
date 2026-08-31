@@ -21,14 +21,20 @@ class ParticipantType(str, Enum):
 	ACTOR = "actor"
 	BOUNDARY = "boundary"
 	CONTROL = "control"
+	CONTROLLER = "controller"
+	SERVICE = "service"
+	REPOSITORY = "repository"
 	DATABASE = "database"
 	ENTITY = "entity"
+	EXTERNAL_SYSTEM = "external_system"
 
 
 class LogicBlockType(str, Enum):
 	ALT = "alt"
 	ELSE = "else"
 	END = "end"
+	LOOP = "loop"
+	OPT = "opt"
 
 
 @dataclass
@@ -78,6 +84,7 @@ class LogicBlock:
 	condition: str = ""
 	messages: list[SequenceMessage] = field(default_factory=list)
 	logic_blocks: list[LogicBlock] = field(default_factory=list)
+	items: list[SequenceMessage | LogicBlock] = field(default_factory=list)
 
 
 @dataclass
@@ -89,6 +96,7 @@ class SequenceIR:
 	actors: list[str] = field(default_factory=list)
 	logic_blocks: list[LogicBlock] = field(default_factory=list)
 	messages: list[SequenceMessage] = field(default_factory=list)
+	items: list[SequenceMessage | LogicBlock] = field(default_factory=list)
 	requirement_ids: list[str] = field(default_factory=list)
 
 
