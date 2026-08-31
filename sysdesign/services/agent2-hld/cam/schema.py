@@ -1,6 +1,15 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
-from contracts.v1.architecture import Boundary, ElementType
+
+try:
+    from contracts.v1.architecture import Boundary, ElementType
+except ImportError:
+    import sys
+    from pathlib import Path
+    pkg_path = Path(__file__).resolve().parents[3] / "packages" / "contracts"
+    if str(pkg_path) not in sys.path:
+        sys.path.insert(0, str(pkg_path))
+    from contracts.v1.architecture import Boundary, ElementType
 
 
 class RawCAMComponent(BaseModel):
@@ -38,6 +47,8 @@ class RawCAMQualityProvision(BaseModel):
 class RawCAMArchitecture(BaseModel):
     architecture_style: str = Field(default="Layered Architecture")
     style_confidence: Optional[float] = 1.0
+    detected_style: Optional[str] = Field(default=None, description="Style detected by rule-based classifier")
+    style_confidences: Optional[Dict[str, float]] = Field(default=None, description="Per-style confidence scores")
     pros_and_cons: Optional[str] = ""
     layers: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
     components: List[RawCAMComponent] = Field(min_length=1)

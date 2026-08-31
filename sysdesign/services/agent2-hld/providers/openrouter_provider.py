@@ -1,37 +1,42 @@
-import os
 """
-HLA Agent — Groq Provider
-Open-source LLM inference via Groq Cloud (free tier available).
-Supports: Llama 3.3 70B, Mixtral 8x7B, etc.
+HLA Agent — OpenRouter Provider
+
+Single unified LLM provider for all models via OpenRouter API.
+Uses OpenAI-compatible endpoint (https://openrouter.ai/api/v1).
+
+Models are configured via environment variables:
+    OPENROUTER_MODEL_1, OPENROUTER_MODEL_2, OPENROUTER_MODEL_3
 """
 
+import os
 import logging
 from openai import OpenAI
 
 from providers.base import LLMProvider
-from config import OPENROUTER_API_KEY
 
 logger = logging.getLogger(__name__)
 
 
-class GroqProvider(LLMProvider):
-    """Groq Cloud provider for fast open-source LLM inference."""
+class OpenRouterProvider(LLMProvider):
+    """OpenRouter provider — routes to any model via single API."""
 
     def __init__(self):
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("GROQ_API_KEY") or OPENROUTER_API_KEY
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
         if not api_key:
             raise ValueError(
                 "OPENROUTER_API_KEY not set. Get a key at https://openrouter.ai"
             )
-        self.client = OpenAI(base_url='https://openrouter.ai/api/v1', api_key=api_key)
-
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
 
     @property
     def provider_name(self) -> str:
-        return "Groq"
+        return "OpenRouter"
 
     def generate(self, prompt: str, model: str, options: dict) -> str:
-        """Generate architecture via Groq API."""
+        """Generate architecture via OpenRouter API."""
         response = self.client.chat.completions.create(
             model=model,
             messages=[
@@ -41,25 +46,24 @@ class GroqProvider(LLMProvider):
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=options.get("temperature", 0.7),
+            temperature=options.get("temperature", 0.1),
             max_tokens=options.get("max_tokens", 4000),
+            seed=options.get("seed", None),
         )
         return response.choices[0].message.content.strip()
 
     def list_models(self) -> list[str]:
-        """List available Groq models."""
+        """List available OpenRouter models."""
         try:
             models = self.client.models.list()
             return [m.id for m in models.data]
         except Exception as e:
-            logger.error(f"Failed to list Groq models: {e}")
+            logger.error(f"Failed to list OpenRouter models: {e}")
             return []
 
     def check_available(self, models: list[str]) -> dict[str, bool]:
-        """Check which models are available on OpenRouter."""
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("GROQ_API_KEY") or OPENROUTER_API_KEY
+        """Check model availability — if API key is set, assume available."""
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
         if not api_key:
             return {m: False for m in models}
         return {m: True for m in models}
-
-

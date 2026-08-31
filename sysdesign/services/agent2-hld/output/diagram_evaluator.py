@@ -1,14 +1,14 @@
 """Diagram Evaluator — Research-Grade Validation
 
-Applies the same rigorous evaluation metrics (RCR, NAS, SMI, LSCS, SCI) 
+Applies the same 6-metric evaluation framework (RTS, QAC, CI, CoS, SSM₁, SSM₂)
 used for architecture validation to diagram artifacts.
 
 This ensures diagrams are not just syntactically correct but also:
-- Architecturally complete (RCR)
-- Quality-attribute aligned (NAS)
-- Structurally modular (SMI)
-- Topologically consistent (LSCS)
-- Clearly documented (SCI)
+- Architecturally complete (RTS)
+- Quality-attribute aligned (QAC)
+- Structurally decoupled (CI)
+- Semantically cohesive (CoS)
+- Style-conformant (SSM₁, SSM₂)
 
 Academic Positioning:
 - Extends architecture evaluation to visual artifacts
@@ -21,12 +21,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from evaluation.rcr import compute_rcr
-from evaluation.nas import compute_nas
-from evaluation.smi import compute_smi
-from evaluation.lscs import compute_lscs
-from evaluation.sci import compute_sci
-from evaluation.cas import compute_final_cas
+from evaluation import evaluate_architecture
 
 logger = logging.getLogger(__name__)
 
@@ -43,54 +38,84 @@ def _extract_architecture_from_diagram(diagram: str, kind: str, original_archite
         "architecture_style": original_architecture.get("architecture_style", ""),
         "layers": original_architecture.get("layers", []),
         "components": [],
-        "interactions": [],
+        "connectors": [],
     }
     
-    # Extract components from diagram
+def _extract_architecture_from_diagram(diagram: str, kind: str, original_architecture: dict) -> dict:
+    """Reverse-engineer architecture structure from diagram source.
+    
+    This allows us to validate if the diagram faithfully represents the architecture.
+    """
+    import re
+    
+    extracted = {
+        "architecture_style": original_architecture.get("architecture_style", ""),
+        "layers": original_architecture.get("layers", []),
+        "components": [],
+        "connectors": [],
+    }
+    
+    orig_comps = original_architecture.get("components", [])
+
     if kind == "plantuml":
-        # Match: [ComponentName] as alias
-        comp_pattern = r'\[([^\]]+)\](?:\s+as\s+(\w+))?'
-        for match in re.finditer(comp_pattern, diagram):
-            comp_name = match.group(1).strip()
-            # Find original component for responsibility
-            orig_comp = next((c for c in original_architecture.get("components", []) 
-                            if c.get("name", "") == comp_name), None)
-            if orig_comp:
-                extracted["components"].append(orig_comp)
+        # Match [ComponentName], component [ComponentName], database "Name", queue "Name", etc.
+        comp_pattern = r'(?:\[([^\]\n]+)\]|(?:component|database|queue|storage|node|actor|cloud|rectangle|frame|package)\s+["\']?([^"\'\n\\[]+)["\']?)\s*(?:as\s+(\w+))?'
         
-        # Extract interactions: component1 --> component2 : label
-        inter_pattern = r'(\w+)\s*(-+>|\.\.>)\s*(\w+)(?:\s*:\s*([^\n]+))?'
+        seen_names = set()
+        for match in re.finditer(comp_pattern, diagram, re.IGNORECASE):
+            raw_name = (match.group(1) or match.group(2) or "").strip()
+            alias = (match.group(3) or "").strip()
+            if not raw_name or raw_name.startswith("@"):
+                continue
+            
+            # Resolve to original component
+            orig_comp = next((c for c in orig_comps if c.get("name", "").strip() in {raw_name, alias} or c.get("name", "").replace(" ", "_") in {raw_name, alias}), None)
+            if not orig_comp and raw_name:
+                orig_comp = next((c for c in orig_comps if raw_name.lower() in c.get("name", "").lower()), None)
+
+            if orig_comp:
+                c_name = orig_comp.get("name")
+                if c_name not in seen_names:
+                    seen_names.add(c_name)
+                    extracted["components"].append(orig_comp)
+        
+        # Connectors: handles "A" -> "B", A --> B, A -[down]-> B, A ..> B, A ==> B with optional labels : label
+        inter_pattern = r'["\']?([\w\s]+)["\']?\s*(?:-\[\w+\]->|-+>|\.\.>|==>|->)\s*["\']?([\w\s]+)["\']?(?:\s*:\s*([^\n]+))?'
         for match in re.finditer(inter_pattern, diagram):
             from_comp = match.group(1).strip()
-            to_comp = match.group(3).strip()
-            label = (match.group(4) or "").strip()
+            to_comp = match.group(2).strip()
+            label = (match.group(3) or "").strip()
             
-            # Map aliases back to component names
+            if from_comp.startswith("@") or to_comp.startswith("@"):
+                continue
+
             from_name = _resolve_component_name(from_comp, diagram, original_architecture)
             to_name = _resolve_component_name(to_comp, diagram, original_architecture)
             
             if from_name and to_name:
-                extracted["interactions"].append({
-                    "from": from_name,
-                    "to": to_name,
-                    "type": label or "Direct Call",
-                    "direction": "down",  # Default assumption
+                extracted["connectors"].append({
+                    "from_component": from_name,
+                    "to_component": to_name,
+                    "connector_type": label or "sync_call",
+                    "protocol": "",
                 })
     
     elif kind == "mermaid":
-        # Match: ComponentName["Label"] or ComponentName
-        comp_pattern = r'(\w+)\[([^\]]+)\]'
+        # Matches Mermaid shapes: [...] [(...)] (...) {{...}} ([...])
+        comp_pattern = r'(\w+)(?:\[|\[\(|\(|\{\{|\(\[)([^\]\)\}\n]+)(?:\]|\)\]|\)|\}\}|\]\))'
+        seen_names = set()
         for match in re.finditer(comp_pattern, diagram):
             comp_id = match.group(1).strip()
-            comp_label = match.group(2).strip().strip('"')
+            comp_label = match.group(2).strip().strip('"').strip("'")
             
-            orig_comp = next((c for c in original_architecture.get("components", []) 
-                            if c.get("name", "") == comp_label or 
-                            c.get("name", "").replace(" ", "_") == comp_id), None)
+            orig_comp = next((c for c in orig_comps if c.get("name", "") in {comp_label, comp_id} or c.get("name", "").replace(" ", "_") == comp_id), None)
             if orig_comp:
-                extracted["components"].append(orig_comp)
+                c_name = orig_comp.get("name")
+                if c_name not in seen_names:
+                    seen_names.add(c_name)
+                    extracted["components"].append(orig_comp)
         
-        # Extract interactions: A -->|label| B
+        # Connectors: A -->|label| B or A --> B
         inter_pattern = r'(\w+)\s*--+>(?:\|"?([^"|]+)"?\|)?\s*(\w+)'
         for match in re.finditer(inter_pattern, diagram):
             from_id = match.group(1).strip()
@@ -101,11 +126,11 @@ def _extract_architecture_from_diagram(diagram: str, kind: str, original_archite
             to_name = _resolve_component_name(to_id, diagram, original_architecture)
             
             if from_name and to_name:
-                extracted["interactions"].append({
-                    "from": from_name,
-                    "to": to_name,
-                    "type": label or "Direct Call",
-                    "direction": "down",
+                extracted["connectors"].append({
+                    "from_component": from_name,
+                    "to_component": to_name,
+                    "connector_type": label or "sync_call",
+                    "protocol": "",
                 })
     
     return extracted
@@ -113,22 +138,27 @@ def _extract_architecture_from_diagram(diagram: str, kind: str, original_archite
 
 def _resolve_component_name(identifier: str, diagram: str, architecture: dict) -> Optional[str]:
     """Resolve component identifier/alias to actual component name."""
+    clean_id = identifier.strip().strip('"').strip("'")
+    
     # Direct match
     for comp in architecture.get("components", []):
-        name = comp.get("name", "")
-        if name == identifier or name.replace(" ", "_") == identifier:
+        name = comp.get("name", "").strip()
+        if name in {identifier, clean_id} or name.replace(" ", "_") in {identifier, clean_id}:
             return name
     
-    # Fuzzy match on diagram declarations
+    # Fuzzy match on diagram declarations (both PlantUML & Mermaid)
     import re
     if "plantuml" in diagram.lower() or "@startuml" in diagram.lower():
-        # Look for [Name] as identifier
-        pattern = rf'\[([^\]]+)\]\s+as\s+{re.escape(identifier)}\b'
-        match = re.search(pattern, diagram)
+        pattern = rf'(?:\[([^\]]+)\]|(?:component|database|queue|storage|node|actor|cloud|rectangle)\s+["\']?([^"\'\n\\[]+)["\']?)\s+as\s+{re.escape(clean_id)}\b'
+        match = re.search(pattern, diagram, re.IGNORECASE)
         if match:
-            return match.group(1).strip()
-    
-    return identifier  # Fallback to identifier itself
+            found = (match.group(1) or match.group(2) or "").strip()
+            for comp in architecture.get("components", []):
+                if comp.get("name", "").strip() == found or found.lower() in comp.get("name", "").lower():
+                    return comp.get("name")
+            return found
+            
+    return clean_id
 
 
 def evaluate_diagram_with_metrics(
@@ -138,7 +168,7 @@ def evaluate_diagram_with_metrics(
     architecture: dict,
     requirements: dict,
 ) -> dict:
-    """Evaluate diagram using full research-grade metrics.
+    """Evaluate diagram using full 6-metric research-grade framework.
     
     Args:
         diagram: Diagram source code (PlantUML or Mermaid)
@@ -150,85 +180,71 @@ def evaluate_diagram_with_metrics(
         {
             "diagram_cas": float,
             "metrics": {
-                "RCR": {...},
-                "NAS": {...},
-                "SMI": {...},
-                "LSCS": {...},
-                "SCI": {...}
+                "rts": {...}, "qac": {...}, "ci": {...},
+                "cos": {...}, "ssm": {...}
             },
             "scores": {
-                "RCR": float,
-                "NAS": float,
-                "SMI": float,
-                "LSCS": float,
-                "SCI": float,
-                "CAS": float
+                "RTS": float, "QAC": float, "CI": float,
+                "CoS": float, "SSM1": float, "SSM2": float, "CAS": float
             },
             "verdict": str,
+            "detected_style": str,
             "issues": [str],
             "extracted_architecture": dict
         }
     """
-    logger.info(f"Evaluating {kind} diagram with research-grade metrics")
+    logger.info(f"Evaluating {kind} diagram with 6-metric framework")
     
     # Extract architecture from diagram
     extracted_arch = _extract_architecture_from_diagram(diagram, kind, architecture)
     
-    # Apply all 5 metrics
-    rcr_result = compute_rcr(extracted_arch, requirements)
-    nas_result = compute_nas(extracted_arch, requirements)
-    smi_result = compute_smi(extracted_arch)
-    lscs_result = compute_lscs(extracted_arch)
-    sci_result = compute_sci(extracted_arch)
+    # Apply full 6-metric evaluation
+    eval_result = evaluate_architecture(extracted_arch, requirements)
     
-    # Compute CAS
+    # Extract scores dict
     scores = {
-        "RCR": rcr_result["score"],
-        "NAS": nas_result["score"],
-        "SMI": smi_result["score"],
-        "LSCS": lscs_result["score"],
-        "SCI": sci_result["score"],
+        "RTS": eval_result["RTS"],
+        "QAC": eval_result["QAC"],
+        "CI": eval_result["CI"],
+        "CoS": eval_result["CoS"],
+        "SSM1": eval_result["SSM1"],
+        "SSM2": eval_result["SSM2"],
+        "CAS": eval_result["CAS"],
     }
-    
-    cas_result = compute_final_cas(scores)
-    scores["CAS"] = cas_result["cas"]
     
     # Generate issues from metric results
     issues = []
+    details = eval_result.get("details", {})
     
-    if rcr_result.get("uncovered"):
-        issues.append(f"RCR: {len(rcr_result['uncovered'])} uncovered requirements: {', '.join(rcr_result['uncovered'][:5])}")
+    rts_detail = details.get("rts", {})
+    if rts_detail.get("untraced"):
+        issues.append(f"RTS: {len(rts_detail['untraced'])} untraced requirements: {', '.join(rts_detail['untraced'][:5])}")
     
-    if nas_result.get("unaligned"):
-        issues.append(f"NAS: {len(nas_result['unaligned'])} unaligned NFRs: {', '.join(nas_result['unaligned'][:5])}")
+    qac_detail = details.get("qac", {})
+    if qac_detail.get("uncovered"):
+        issues.append(f"QAC: {len(qac_detail['uncovered'])} uncovered NFRs: {', '.join(qac_detail['uncovered'][:5])}")
     
-    if smi_result.get("average_instability", 0) > 0.7:
-        issues.append(f"SMI: High instability ({smi_result['average_instability']:.2f}) indicates tight coupling")
+    ci_detail = details.get("ci", {})
+    if ci_detail.get("graph_density", 0) > 0.5:
+        issues.append(f"CI: High graph density ({ci_detail['graph_density']:.2f}) indicates tight coupling")
     
-    if lscs_result.get("violations", 0) > 0:
-        issues.append(f"LSCS: {lscs_result['violations']} structural violations detected")
-        for v in lscs_result.get("violation_details", [])[:3]:
-            issues.append(f"  - {v.get('reason', 'Unknown violation')}")
+    cos_detail = details.get("cos", {})
+    low_cohesion = [
+        c["name"] for c in cos_detail.get("component_cohesion", [])
+        if c.get("cohesion", 1.0) < 0.5 and c.get("num_responsibilities", 0) >= 2
+    ]
+    if low_cohesion:
+        issues.append(f"CoS: {len(low_cohesion)} components with low cohesion: {', '.join(low_cohesion[:5])}")
     
-    if sci_result.get("valid", 0) < sci_result.get("total", 1):
-        invalid_count = sci_result["total"] - sci_result["valid"]
-        issues.append(f"SCI: {invalid_count} components lack proper naming/documentation")
-    
-    logger.info(f"Diagram CAS: {scores['CAS']:.4f} | Verdict: {cas_result['verdict']}")
+    logger.info(f"Diagram CAS: {scores['CAS']:.4f} | Verdict: {eval_result['verdict']}")
     
     return {
         "diagram_cas": scores["CAS"],
-        "metrics": {
-            "RCR": rcr_result,
-            "NAS": nas_result,
-            "SMI": smi_result,
-            "LSCS": lscs_result,
-            "SCI": sci_result,
-        },
+        "metrics": details,
         "scores": scores,
-        "verdict": cas_result["verdict"],
+        "verdict": eval_result["verdict"],
+        "detected_style": eval_result.get("detected_style", ""),
         "issues": issues,
         "extracted_architecture": extracted_arch,
-        "weighted_breakdown": cas_result["weighted_breakdown"],
-        "below_threshold": cas_result["below_threshold"],
+        "weighted_breakdown": details.get("cas", {}).get("weighted_breakdown", {}),
     }

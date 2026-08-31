@@ -12,12 +12,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
-    INPUT_DIR, RESULTS_DIR, MODELS, CANDIDATES_PER_MODEL,
+    INPUT_DIR, RESULTS_DIR, MODELS, MAX_CANDIDATES_PER_MODEL,
     THRESHOLDS, MAX_REGENERATION_LOOPS, LLM_PROVIDER,
 )
 from prompt.builder import build_architecture_prompt, build_feedback_from_scores
 from generation.generator import generate_all, regenerate_single, check_models_available
-from parsing.parser import parse_architecture, ParseError
+from cam.parser import parse_cam, CAMParseError, extract_json_from_text
 from evaluation import evaluate_architecture
 from evaluation.cas import rank_candidates
 from output.report import generate_report
@@ -26,6 +26,7 @@ from output.mermaid_gen import generate_mermaid
 from output.radar import generate_radar_chart
 from output.diagram_workflow import ensure_initial_plantuml, public_workflow_view
 from storage.db import create_run, update_run, insert_candidate
+from storage import neon_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,18 +36,64 @@ logging.basicConfig(
 logger = logging.getLogger("HLA-Agent")
 
 
+def _normalize_nfr(item: dict, idx: int) -> dict:
+    """
+    Normalize NFR items from any incoming schema to the internal canonical shape:
+      { id, type, target, description }
+
+    Supported incoming formats:
+      - Sample JSON:   { id, type, target }                  (agent2-hld internal)
+      - Contracts:     { id, iso_characteristic, description } (from req_to_hld adapter)
+      - Agent 1 output: { id, text, type }                   (sections format from agent1)
+    """
+    nfr_id = item.get("id") or f"NFR-{idx+1}"
+    # Resolve 'type' — may come as 'iso_characteristic' or be absent
+    nfr_type = (
+        item.get("type")
+        or item.get("iso_characteristic")
+        or "performance_efficiency"
+    )
+    # Resolve 'target' text — may come as 'target', 'description', or 'text'
+    nfr_target = (
+        item.get("target")
+        or item.get("description")
+        or item.get("text")
+        or ""
+    )
+    return {"id": nfr_id, "type": nfr_type, "target": nfr_target, "description": nfr_target}
+
+
+def _normalize_fr(item: dict, idx: int) -> dict:
+    """
+    Normalize FR items so they always carry an 'id' and 'description' key.
+    Supports 'text' (Agent 1 sections format) as well as 'description'.
+    """
+    fr_id = item.get("id") or f"FR-{idx+1}"
+    fr_desc = (
+        item.get("description")
+        or item.get("text")
+        or ""
+    )
+    return {"id": fr_id, "description": fr_desc, **item}  # keep all original keys
+
+
 def load_input(path: str) -> dict:
-    """Load and validate input JSON file."""
+    """Load and validate input JSON file, normalizing FR/NFR shapes for all downstream consumers."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if "project" not in data and "project_name" in data:
         data["project"] = data["project_name"]
     if "project" not in data:
         data["project"] = "Default Project"
-    if "functional_requirements" not in data:
-        data["functional_requirements"] = []
-    if "non_functional_requirements" not in data:
-        data["non_functional_requirements"] = []
+
+    # Normalize FRs
+    raw_frs = data.get("functional_requirements", [])
+    data["functional_requirements"] = [_normalize_fr(fr, i) for i, fr in enumerate(raw_frs)]
+
+    # Normalize NFRs — critical: ensures builder.py always gets 'type' and 'target'
+    raw_nfrs = data.get("non_functional_requirements", [])
+    data["non_functional_requirements"] = [_normalize_nfr(nfr, i) for i, nfr in enumerate(raw_nfrs)]
+
     logger.info(f"Loaded: {data['project']} | {len(data['functional_requirements'])} FRs, "
                 f"{len(data['non_functional_requirements'])} NFRs")
     return data
@@ -56,9 +103,10 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                       candidates_per_model: int = None, ws=None) -> dict:
     """
     Phase 1: Generate candidates, evaluate, rank, and wait for human selection.
+    Uses the 6-metric style-aware evaluation framework.
     """
     models = models or MODELS
-    candidates_per_model = candidates_per_model or CANDIDATES_PER_MODEL
+    candidates_per_model = candidates_per_model or MAX_CANDIDATES_PER_MODEL
     import uuid
     run_id = str(uuid.uuid4())[:8]
 
@@ -80,18 +128,37 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
 
     notify("init", f"Loaded: {project}")
 
+    # Validate API key first — fail early with clear message
+    from config import OPENROUTER_API_KEY
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY is not set. "
+            "Add your OpenRouter API key to sysdesign/services/agent2-hld/.env and restart the server."
+        )
+
     # Check models
     notify("models", "Checking model availability...")
     availability = check_models_available(models)
     available_models = [m for m in models if availability.get(m, False)]
     if not available_models:
-        raise RuntimeError("No LLM models available.")
+        raise RuntimeError(
+            f"None of the configured models responded. "
+            f"Checked: {', '.join(models)}. "
+            f"Verify your OPENROUTER_API_KEY and model IDs in .env."
+        )
 
     all_candidates = []
 
     # Generate
     notify("generation", "Generating architecture candidates...")
     candidates = generate_all(requirements, models=available_models, candidates_per_model=candidates_per_model)
+
+    # Default zero-scores for failed/unparseable candidates
+    ZERO_SCORES = {
+        "RTS": 0, "QAC": 0, "CI": 0, "CoS": 0,
+        "SSM1": 0, "SSM2": 0, "CAS": 0,
+        "verdict": "Failed", "detected_style": "unknown",
+    }
 
     for c in candidates:
         if not c.success:
@@ -100,28 +167,24 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                 "candidate_num": c.candidate_num,
                 "raw_text": c.raw_text,
                 "error": c.error or "Generation Failed",
-                "scores": {
-                    "PHASE1_CAS": 0,
-                    "CAS": 0,
-                    "RCR": 0,
-                    "NAS": 0,
-                    "SMI": 0,
-                    "LSCS": 0,
-                    "SCI": 0,
-                    "phase1_verdict": "Failed",
-                    "verdict": "Failed"
-                },
+                "scores": {**ZERO_SCORES},
                 "llm": {
                     "provider": getattr(c, "provider_name", ""),
                     "duration_ms": c.duration_ms,
                     "attempts": getattr(c, "attempts", []),
                     "raw_text": c.raw_text,
                 },
-                "architecture": {"architecture_style": "Failed", "components": []}
+                "architecture": {"architecture_style": "Failed", "components": [], "connectors": []}
             })
             continue
         try:
-            arch = parse_architecture(c.raw_text)
+            # Use cam parser — parse_cam returns ArchitecturePackage (Pydantic),
+            # but evaluate_architecture needs a dict. Use extract + json.loads for dict path.
+            json_str = extract_json_from_text(c.raw_text)
+            arch = json.loads(json_str)
+            if not isinstance(arch, dict):
+                raise CAMParseError(f"Expected dict, got {type(arch).__name__}")
+
             scores = evaluate_architecture(arch, requirements)
             all_candidates.append({
                 "model": c.model,
@@ -137,31 +200,21 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                 },
                 "error": None
             })
-        except ParseError as e:
+        except (CAMParseError, json.JSONDecodeError, Exception) as e:
             logger.warning(f"Skipping unparseable candidate: {e}")
             all_candidates.append({
                 "model": c.model,
                 "candidate_num": c.candidate_num,
                 "raw_text": c.raw_text,
                 "error": f"Parse Error: {e}",
-                "scores": {
-                    "PHASE1_CAS": 0,
-                    "CAS": 0,
-                    "RCR": 0,
-                    "NAS": 0,
-                    "SMI": 0,
-                    "LSCS": 0,
-                    "SCI": 0,
-                    "phase1_verdict": "Parse Failed",
-                    "verdict": "Parse Failed"
-                },
+                "scores": {**ZERO_SCORES, "verdict": "Parse Failed"},
                 "llm": {
                     "provider": getattr(c, "provider_name", ""),
                     "duration_ms": c.duration_ms,
                     "attempts": getattr(c, "attempts", []),
                     "raw_text": c.raw_text,
                 },
-                "architecture": {"architecture_style": "Unparseable", "components": []}
+                "architecture": {"architecture_style": "Unparseable", "components": [], "connectors": []}
             })
 
     # Only rank candidates that actually parsed successfully
@@ -173,30 +226,46 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
         raise RuntimeError("No valid architecture candidates produced")
 
     notify("ranking", "Ranking candidates...")
-    ranked_valid = rank_candidates(valid_candidates, cas_key="PHASE1_CAS")
+    ranked_valid = rank_candidates(valid_candidates, cas_key="CAS")
     
     # Append failed candidates at the bottom with rank -1
     for fc in failed_candidates:
         fc["rank"] = -1
     ranked = ranked_valid + failed_candidates
 
-    # Log to DB and set to pending_selection
+    # Log to SQLite + Neon (dual-write) and set to pending_selection
+    job_id = requirements.get("job_id")  # may be present when called from orchestrator
+    case_study_id = requirements.get("project", run_id)
     for c in ranked:
         db_id = insert_candidate(run_id, c["model"], c["candidate_num"],
                          c["architecture"], c["scores"], c["rank"])
         c["id"] = db_id  # Store DB ID for Phase 2 retrieval
+
+        # Dual-write to shared Neon thesis dataset (non-blocking)
+        if c.get("error") is None:
+            neon_db.record_candidate(
+                job_id=job_id,
+                case_study_id=case_study_id,
+                llm_model=c["model"],
+                seed=c.get("seed", 42),
+                detected_style=c["scores"].get("detected_style", ""),
+                style_confidence=c["scores"].get("style_confidence", 0.0),
+                scores=c["scores"],
+                rank_position=c["rank"],
+                cam=c["architecture"],
+            )
     
     update_run(run_id, status="pending_selection", total_candidates=len(ranked))
     
     # ATAM Trivial Decision Logic (Dominance Detection)
     dominant_winner = False
     if len(ranked_valid) >= 2:
-        top_cas = ranked_valid[0]["scores"].get("PHASE1_CAS", 0)
-        second_cas = ranked_valid[1]["scores"].get("PHASE1_CAS", 0)
+        top_cas = ranked_valid[0]["scores"].get("CAS", 0)
+        second_cas = ranked_valid[1]["scores"].get("CAS", 0)
         if top_cas >= 0.90 and (top_cas - second_cas) >= 0.10:
             dominant_winner = True
     elif len(ranked_valid) == 1:
-        if ranked_valid[0]["scores"].get("PHASE1_CAS", 0) >= 0.90:
+        if ranked_valid[0]["scores"].get("CAS", 0) >= 0.90:
             dominant_winner = True
 
     notify("done", "Phase 1 complete. Pending human selection.")
@@ -265,7 +334,7 @@ def elaborate_winner(run_id: str, selected_candidate: dict, input_file: str | Pa
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(generate_report([selected_candidate], requirements, run_id, diagram_meta=diagram_meta))
 
-    # Phase 2 visualization artifact: full 5-metric radar for selected architecture.
+    # Phase 2 visualization artifact: full 6-metric radar for selected architecture.
     radar_path = RESULTS_DIR / "radar_chart.png"
     generate_radar_chart([selected_candidate], str(radar_path), f"{project} — Phase 2 Quality Profile")
 
@@ -304,7 +373,8 @@ if __name__ == "__main__":
     
     print(f"\nCandidates ready for ATAM Tradeoff Analysis: {len(phase1['ranked_candidates'])}")
     for c in phase1["ranked_candidates"]:
-        print(f"[{c['rank']}] {c['model']} (Phase1CAS: {c['scores']['PHASE1_CAS']:.4f})")
+        style = c['scores'].get('detected_style', '?')
+        print(f"[{c['rank']}] {c['model']} (CAS: {c['scores'].get('CAS', 0):.4f}, Style: {style})")
         
     print(f"\n{'='*50}")
     print("PHASE 2: ELABORATION")

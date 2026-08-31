@@ -21,7 +21,7 @@ def _get_connection():
 
 
 def init_db():
-    """Create database tables if they don't exist."""
+    """Create database tables if they don't exist, and migrate missing columns."""
     conn = _get_connection()
     cursor = conn.cursor()
 
@@ -45,14 +45,40 @@ def init_db():
             model TEXT NOT NULL,
             candidate_num INTEGER NOT NULL,
             architecture_style TEXT,
+            detected_style TEXT,
             architecture_json TEXT,
-            rcr REAL, nas REAL, smi REAL, lscs REAL, sci REAL,
+            rts REAL, qac REAL, ci REAL, cos REAL, ssm1 REAL, ssm2 REAL,
             cas REAL,
             verdict TEXT,
             rank INTEGER,
             FOREIGN KEY (run_id) REFERENCES runs(run_id)
         )
     """)
+
+    conn.commit()
+
+    # ── Schema migration: add any columns missing from older DB files ────────
+    # SQLite does not support IF NOT EXISTS in ALTER TABLE, so we check first.
+    existing_cols = {
+        row[1] for row in cursor.execute("PRAGMA table_info(candidates)").fetchall()
+    }
+    migrations = {
+        "detected_style":    "TEXT DEFAULT ''",
+        "architecture_style":"TEXT DEFAULT ''",
+        "rts":               "REAL DEFAULT 0",
+        "qac":               "REAL DEFAULT 0",
+        "ci":                "REAL DEFAULT 0",
+        "cos":               "REAL DEFAULT 0",
+        "ssm1":              "REAL DEFAULT 0",
+        "ssm2":              "REAL DEFAULT 0",
+        "cas":               "REAL DEFAULT 0",
+        "verdict":           "TEXT DEFAULT ''",
+        "rank":              "INTEGER DEFAULT 0",
+    }
+    for col, col_def in migrations.items():
+        if col not in existing_cols:
+            cursor.execute(f"ALTER TABLE candidates ADD COLUMN {col} {col_def}")
+            logger.info(f"DB migration: added column candidates.{col}")
 
     conn.commit()
     conn.close()
@@ -64,12 +90,23 @@ def create_run(project: str, input_json: dict, run_id: str = None) -> str:
     run_id = run_id or str(uuid.uuid4())
     conn = _get_connection()
     conn.execute(
-        "INSERT INTO runs (run_id, timestamp, project, input_json) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO runs (run_id, timestamp, project, input_json) VALUES (?, ?, ?, ?)",
         (run_id, datetime.now().isoformat(), project, json.dumps(input_json))
     )
     conn.commit()
     conn.close()
     return run_id
+
+
+def insert_run(run_id: str, project: str, input_json_str: str):
+    """Insert a new run entry by run_id (alias used by main.py)."""
+    conn = _get_connection()
+    conn.execute(
+        "INSERT OR IGNORE INTO runs (run_id, timestamp, project, input_json) VALUES (?, ?, ?, ?)",
+        (run_id, datetime.now().isoformat(), project, input_json_str)
+    )
+    conn.commit()
+    conn.close()
 
 
 def update_run(run_id: str, **kwargs):
@@ -88,15 +125,17 @@ def insert_candidate(run_id: str, model: str, candidate_num: int,
     conn = _get_connection()
     cursor = conn.execute("""
         INSERT INTO candidates
-        (run_id, model, candidate_num, architecture_style, architecture_json,
-         rcr, nas, smi, lscs, sci, cas, verdict, rank)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (run_id, model, candidate_num, architecture_style, detected_style, architecture_json,
+         rts, qac, ci, cos, ssm1, ssm2, cas, verdict, rank)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         run_id, model, candidate_num,
         architecture.get("architecture_style", ""),
+        scores.get("detected_style", ""),
         json.dumps(architecture),
-        scores.get("RCR", 0), scores.get("NAS", 0), scores.get("SMI", 0),
-        scores.get("LSCS", 0), scores.get("SCI", 0), scores.get("CAS", 0),
+        scores.get("RTS", 0), scores.get("QAC", 0), scores.get("CI", 0),
+        scores.get("CoS", 0), scores.get("SSM1", 0), scores.get("SSM2", 0),
+        scores.get("CAS", 0),
         scores.get("verdict", ""), rank,
     ))
     conn.commit()
