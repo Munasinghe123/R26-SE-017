@@ -383,7 +383,8 @@ class RegenerateRequest(BaseModel):
 async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
     from generation.generator import regenerate_single
     from prompt.builder import build_architecture_prompt
-    from main import parse_architecture, evaluate_architecture, ParseError
+    from cam.parser import extract_json_from_text, CAMParseError
+    from evaluation import evaluate_architecture
     
     path = RESULTS_DIR / "_temp_input.json"
     with open(path, "r", encoding="utf-8") as f:
@@ -403,15 +404,9 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                 "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
                 "error": result.error or "Regeneration failed",
                     "scores": {
-                        "PHASE1_CAS": 0,
-                        "CAS": 0,
-                        "RCR": 0,
-                        "NAS": 0,
-                        "SMI": 0,
-                        "LSCS": 0,
-                        "SCI": 0,
-                        "phase1_verdict": "Failed",
-                        "verdict": "Failed"
+                        "RTS": 0, "QAC": 0, "CI": 0, "CoS": 0,
+                        "SSM1": 0, "SSM2": 0, "CAS": 0,
+                        "verdict": "Failed", "detected_style": "unknown",
                     },
                     "llm": {
                         "provider": getattr(result, "provider_name", ""),
@@ -419,12 +414,15 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                         "attempts": getattr(result, "attempts", []),
                         "raw_text": result.raw_text,
                     },
-                "architecture": {"architecture_style": "Failed", "components": []}
+                "architecture": {"architecture_style": "Failed", "components": [], "connectors": []}
             }
         }
         
     try:
-        arch = parse_architecture(result.raw_text)
+        json_str = extract_json_from_text(result.raw_text)
+        arch = json.loads(json_str)
+        if not isinstance(arch, dict):
+            raise CAMParseError(f"Expected dict, got {type(arch).__name__}")
         scores = evaluate_architecture(arch, requirements)
         return {
             "success": True,
@@ -441,22 +439,16 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                 "error": None
             }
         }
-    except ParseError as e:
+    except (CAMParseError, json.JSONDecodeError, Exception) as e:
         return {
             "success": False,
             "candidate": {
                 "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
                 "error": f"Parse Error: {e}",
                     "scores": {
-                        "PHASE1_CAS": 0,
-                        "CAS": 0,
-                        "RCR": 0,
-                        "NAS": 0,
-                        "SMI": 0,
-                        "LSCS": 0,
-                        "SCI": 0,
-                        "phase1_verdict": "Parse Failed",
-                        "verdict": "Parse Failed"
+                        "RTS": 0, "QAC": 0, "CI": 0, "CoS": 0,
+                        "SSM1": 0, "SSM2": 0, "CAS": 0,
+                        "verdict": "Parse Failed", "detected_style": "unknown",
                     },
                     "llm": {
                         "provider": getattr(result, "provider_name", ""),
@@ -464,7 +456,7 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                         "attempts": getattr(result, "attempts", []),
                         "raw_text": result.raw_text,
                     },
-                "architecture": {"architecture_style": "Unparseable", "components": []}
+                "architecture": {"architecture_style": "Unparseable", "components": [], "connectors": []}
             }
         }
 
@@ -526,8 +518,8 @@ async def run_hld_generation(payload: dict):
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, lambda: generate_and_rank(temp_path))
 
-        candidates = res.get("candidates", [])
-        winner = res.get("winner", {})
+        candidates = res.get("ranked_candidates", [])
+        winner = candidates[0] if candidates else {}
         arch = winner.get("architecture", {})
         scores = winner.get("scores", {})
 
@@ -556,13 +548,13 @@ async def run_hld_generation(payload: dict):
             })
 
         metric_scores = {
-            "RTS": scores.get("RTS", 0.85),
-            "QAC": scores.get("QAC", 0.80),
-            "CI": scores.get("CI", 0.75),
-            "CoS": scores.get("CoS", 0.82),
-            "SSM1": scores.get("SSM1", 0.70),
-            "SSM2": scores.get("SSM2", 0.72),
-            "CAS": scores.get("CAS", 0.78),
+            "RTS":  scores.get("RTS",  0.0),
+            "QAC":  scores.get("QAC",  0.0),
+            "CI":   scores.get("CI",   0.0),
+            "CoS":  scores.get("CoS",  0.0),
+            "SSM1": scores.get("SSM1", 0.0),
+            "SSM2": scores.get("SSM2", 0.0),
+            "CAS":  scores.get("CAS",  0.0),
         }
 
         verdict = "accepted" if metric_scores["CAS"] >= 0.60 else "marginal"
@@ -585,60 +577,11 @@ async def run_hld_generation(payload: dict):
         }
     except Exception as e:
         logger.error(f"HLD pipeline run error: {e}", exc_info=True)
-        return {
-            "schema_version": "1.0",
-            "job_id": job_id,
-            "tenant_id": tenant_id,
-            "project_name": project_name,
-            "architecture_style": "Layered Microservices",
-            "style_confidence": 0.90,
-            "components": [
-                {
-                    "id": "C1",
-                    "name": "API Gateway",
-                    "element_type": "gateway",
-                    "boundary": "presentation",
-                    "responsibilities": ["Request routing", "Rate limiting"],
-                    "provided_interfaces": ["HTTPS /api/v1"],
-                    "required_interfaces": ["AuthService"],
-                    "requirement_ids": ["FR-1"]
-                },
-                {
-                    "id": "C2",
-                    "name": "Core Service",
-                    "element_type": "service",
-                    "boundary": "business_logic",
-                    "responsibilities": ["Business processing"],
-                    "provided_interfaces": ["gRPC"],
-                    "required_interfaces": ["Database"],
-                    "requirement_ids": ["FR-2"]
-                }
-            ],
-            "connectors": [
-                {
-                    "id": "K1",
-                    "from_component": "C1",
-                    "to_component": "C2",
-                    "connector_type": "sync_call",
-                    "protocol": "gRPC",
-                    "data_transferred": "PayloadData"
-                }
-            ],
-            "quality_provisions": [],
-            "scores": {
-                "RTS": 0.85,
-                "QAC": 0.80,
-                "CI": 0.75,
-                "CoS": 0.82,
-                "SSM1": 0.70,
-                "SSM2": 0.72,
-                "CAS": 0.78
-            },
-            "verdict": "accepted",
-            "rejected_alternatives": [],
-            "generation_metadata": {"fallback": True},
-            "artifact_uris": {}
-        }
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 
 if __name__ == "__main__":
