@@ -33,7 +33,12 @@ class SemanticEngine:
         self._model = SentenceTransformer(model_name)
         self._model.eval()
         self._cache: dict[str, np.ndarray] = {}
-        logger.info(f"Semantic engine ready (dim={self._model.get_sentence_embedding_dimension()})")
+        # get_embedding_dimension() is the new name in sentence-transformers >= 3.x
+        # getattr fallback keeps compatibility with older installs
+        _dim_fn = getattr(self._model, "get_embedding_dimension", None) \
+               or getattr(self._model, "get_sentence_embedding_dimension", None)
+        logger.info(f"Semantic engine ready (dim={_dim_fn() if _dim_fn else '?'})")
+
 
     def embed(self, text: str) -> np.ndarray:
         """Embed a single text string → 384-dim vector (cached)."""
