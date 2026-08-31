@@ -120,6 +120,96 @@ function generateFallbackMermaidCode(architecture) {
   return lines.join("\n");
 }
 
+/**
+ * Client-side deterministic PlantUML generator.
+ * Mirrors _build_plantuml_from_architecture() in llm_diagram_gen.py.
+ * Used when the stored plantuml_code is invalid (e.g. LLM returned JSON).
+ */
+function generateFallbackPlantUML(architecture, title = "Architecture") {
+  if (!architecture) {
+    return "@startuml\nskinparam componentStyle rectangle\nskinparam backgroundColor #0d1117\ntitle Architecture\n[System Core] as S\n@enduml\n";
+  }
+  const comps   = architecture.components   || [];
+  const conns   = architecture.interactions || architecture.connectors || [];
+  const style   = architecture.architecture_style || "Layered";
+
+  const safeId  = (s) => (s || "").replace(/[^a-zA-Z0-9_]/g, "_");
+
+  const lines = [
+    "@startuml",
+    `title ${title} — ${style}`,
+    "skinparam componentStyle rectangle",
+    "skinparam backgroundColor #0d1117",
+    "skinparam defaultFontColor #c9d1d9",
+    "skinparam package {",
+    "  BackgroundColor #161b22",
+    "  BorderColor #30363d",
+    "  FontColor #58a6ff",
+    "}",
+    "skinparam component {",
+    "  BackgroundColor #21262d",
+    "  BorderColor #58a6ff",
+    "  FontColor #f0f6fc",
+    "}",
+    "skinparam arrow {",
+    "  Color #2ddcff",
+    "  FontColor #8b949e",
+    "}",
+    "",
+  ];
+
+  // Group by layer
+  const layerMap = {};
+  comps.forEach(c => {
+    const layer = (c.layer || c.boundary || "Core").trim();
+    if (!layerMap[layer]) layerMap[layer] = [];
+    layerMap[layer].push(c);
+  });
+
+  const aliasMap = {};
+  Object.entries(layerMap).forEach(([layer, cs]) => {
+    const safeLayer = safeId(layer) || "Layer";
+    lines.push(`package "${layer}" as ${safeLayer} {`);
+    cs.forEach(c => {
+      const rawName = (c.name || "").trim();
+      if (!rawName) return;
+      const cleanName = rawName.replace(/["\[\]]/g, "");
+      const alias = safeId(cleanName);
+      aliasMap[rawName] = alias;
+      aliasMap[cleanName] = alias;
+      lines.push(`  [${cleanName}] as ${alias}`);
+    });
+    lines.push("}");
+    lines.push("");
+  });
+
+  if (conns.length) lines.push("' === Component Interactions ===");
+  conns.forEach(conn => {
+    const src   = (conn.from   || conn.source || conn.from_component || "").trim();
+    const tgt   = (conn.to     || conn.target || conn.to_component   || "").trim();
+    const label = (conn.type   || conn.connector_type || conn.protocol || "").trim().replace(/["\n\r]/g, "");
+    if (!src || !tgt) return;
+    const sa = aliasMap[src] || safeId(src);
+    const ta = aliasMap[tgt] || safeId(tgt);
+    if (sa && ta && sa !== ta) {
+      lines.push(label ? `${sa} --> ${ta} : ${label}` : `${sa} --> ${ta}`);
+    }
+  });
+
+  lines.push("");
+  lines.push("@enduml");
+  return lines.join("\n") + "\n";
+}
+
+/** Returns true if the string is valid PlantUML (has @startuml/@enduml) */
+function isValidPlantUML(code) {
+  if (!code || typeof code !== "string") return false;
+  const t = code.trim();
+  if (t.startsWith("{") || t.startsWith("[")) return false;
+  if (t.includes('"error"') || t.includes('"message"')) return false;
+  return t.toLowerCase().includes("@startuml") && t.toLowerCase().includes("@enduml");
+}
+
 function VerdictBadge({ verdict, cas }) {
   const cfg = {
     accepted:     { text: "ACCEPTED",     cls: "text-green-900 bg-green-400",  Icon: CheckCircle2 },
@@ -241,11 +331,23 @@ export default function ArchitectureReview() {
           setCandidates(mappedCandidates);
           setSelectedCandidate(mappedCandidates[0]);
 
-          if (archArtifact.plantuml_code) {
-            setDiagrams({ plantuml: archArtifact.plantuml_code, mermaid: archArtifact.mermaid_code || "" });
-            setIterations([{ version: "v1", cas: archArtifact.scores?.CAS ?? 0, prompt: "Initial generation", code: archArtifact.plantuml_code }]);
-            setActiveVersion("v1");
+          // Ensure valid initial PlantUML diagram
+          let initialPuml = archArtifact.plantuml_code;
+          if (!isValidPlantUML(initialPuml)) {
+            initialPuml = generateFallbackPlantUML(
+              archArtifact,
+              archArtifact.architecture_style || "Architecture"
+            );
           }
+
+          setDiagrams({ plantuml: initialPuml, mermaid: archArtifact.mermaid_code || "" });
+          setIterations([{
+            version: "v1",
+            cas: archArtifact.scores?.CAS ?? 0,
+            prompt: "Initial generation",
+            code: initialPuml
+          }]);
+          setActiveVersion("v1");
         } else if (data.job?.status === "failed") {
           setError(`Pipeline failed: ${data.job.error || "Unknown error. Check the agent2-hld server logs."}`);
         } else if (data.job?.status === "running" || data.job?.status === "pending") {
@@ -290,18 +392,23 @@ export default function ArchitectureReview() {
     }
   }, [iterations]);
 
-  // Kroki SVG rendering — POST the raw PlantUML text (avoids btoa UTF-8 breakage)
-  // Note: activeIteration is computed below after early returns, so we re-compute the code here
+  // Kroki SVG rendering — POST raw PlantUML text
   useEffect(() => {
     const activeIt = (iterations && iterations.length > 0)
       ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
       : null;
-    const raw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
-    if (!raw || raw.startsWith('{') || raw.startsWith('"')) {
-      setSvgError(true);
-      setSvgUrl(null);
-      return;
+
+    let raw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
+
+    // Detect invalid stored code (JSON error from LLM) → use client-side fallback
+    if (!isValidPlantUML(raw)) {
+      const targetArch = selectedCandidate?.architecture || arch;
+      const title = targetArch?.architecture_style
+                 || selectedCandidate?.style
+                 || "Architecture";
+      raw = generateFallbackPlantUML(targetArch || null, title);
     }
+
     setSvgError(false);
     setSvgUrl(null);
     fetch("https://kroki.io/plantuml/svg", {
@@ -312,7 +419,7 @@ export default function ArchitectureReview() {
       .then(r => r.ok ? r.blob() : Promise.reject(r.status))
       .then(blob => setSvgUrl(URL.createObjectURL(blob)))
       .catch(() => setSvgError(true));
-  }, [iterations, activeVersion]);
+  }, [iterations, activeVersion, selectedCandidate, arch]);
 
   const handleRefineDiagram = async () => {
     if (!refinePrompt.trim()) return;
@@ -907,18 +1014,18 @@ export default function ArchitectureReview() {
                     {svgError ? "Render Error" : svgUrl ? "SVG Vector High-Res" : "Rendering..."}
                   </span>
                 </div>
-                <div className="flex-1 flex items-center justify-center p-4 bg-white overflow-auto">
+                <div className="flex-1 flex items-center justify-center p-4 bg-[#0d1117] overflow-auto">
                   {svgError ? (
                     <div className="text-center space-y-2">
-                      <p className="text-red-500 text-xs font-mono font-semibold">⚠ PlantUML diagram could not render.</p>
-                      <p className="text-gray-500 text-[11px]">The LLM returned invalid PlantUML. Use Refinement Engine to regenerate.</p>
+                      <p className="text-red-400 text-xs font-mono font-semibold">⚠ Diagram could not be rendered.</p>
+                      <p className="text-white/40 text-[11px]">Check the Refinement Engine tab to inspect source code.</p>
                     </div>
                   ) : svgUrl ? (
                     <img src={svgUrl} alt="Architecture Diagram" className="max-h-[420px] w-full object-contain" />
                   ) : (
-                    <div className="flex items-center gap-3 text-cyan-400 text-xs">
+                    <div className="flex items-center gap-3 text-cyan-400 text-xs font-mono">
                       <RefreshCw size={16} className="animate-spin" />
-                      Rendering architecture diagram via Kroki engine...
+                      Rendering high-resolution vector diagram via Kroki...
                     </div>
                   )}
                 </div>
@@ -999,7 +1106,15 @@ export default function ArchitectureReview() {
               <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#0a0c1a] overflow-hidden flex flex-col font-mono shadow-2xl">
                 {/* Editor Header Bar */}
                 {(() => {
-                  const formattedCode = (activeIteration.code || "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
+                  const rawCode = (activeIteration.code || "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
+                  // If LLM returned JSON instead of PlantUML, show the deterministic fallback
+                  const formattedCode = isValidPlantUML(rawCode)
+                    ? rawCode
+                    : generateFallbackPlantUML(
+                        selectedCandidate?.architecture || null,
+                        selectedCandidate?.architecture?.architecture_style || selectedCandidate?.style || "Architecture"
+                      );
+                  const isUsingFallback = !isValidPlantUML(rawCode);
                   const codeLines = formattedCode.split("\n");
 
                   return (
