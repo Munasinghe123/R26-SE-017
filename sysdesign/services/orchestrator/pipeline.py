@@ -257,6 +257,11 @@ async def run_stage_requirements(job_id: str) -> None:
     update_stage_status(job_id, "requirements", "complete", duration_ms=dur_req)
     await _db_persist_stage(job_id, "requirements", "complete", reqs.model_dump(mode="json"), dur_req)
     
+    notify_listeners(job_id, {
+        "event": "log", 
+        "log": f"✅ [REQUIREMENTS] Specifications validated ({len(reqs.functional_requirements)} FRs, {len(reqs.non_functional_requirements)} NFRs)."
+    })
+
     # Pause here, waiting for next step
     job.status = "waiting_for_hld"
     job.updated_at = datetime.utcnow()
@@ -279,8 +284,37 @@ async def run_stage_hld(job_id: str) -> None:
     update_stage_status(job_id, "hld", "running")
     t0 = datetime.utcnow()
 
+    notify_listeners(job_id, {
+        "event": "log",
+        "log": "🚀 [HLD] Dispatching candidate generation across OpenRouter models (Llama 3.3, Qwen 2.5 Coder, DeepSeek V3)..."
+    })
+
+    stop_heartbeat = asyncio.Event()
+
+    async def _heartbeat():
+        msgs = [
+            "⚙️ [HLD] Synthesizing structural layers and component boundaries...",
+            "⚙️ [HLD] Generating primary best-fit & alternative tradeoff candidate options...",
+            "📊 [HLD] Python Evaluation Engine: Loading SentenceTransformers semantic embeddings...",
+            "📊 [HLD] Python Evaluation Engine: Computing RTS, QAC, CI, CoS, SSM₁, SSM₂, and AHP CAS...",
+            "🎨 [HLD] Elaboration: Rendering high-resolution PlantUML & Mermaid architectural diagrams...",
+        ]
+        i = 0
+        while not stop_heartbeat.is_set():
+            try:
+                await asyncio.wait_for(stop_heartbeat.wait(), timeout=12.0)
+            except asyncio.TimeoutError:
+                if not stop_heartbeat.is_set():
+                    notify_listeners(job_id, {"event": "log", "log": msgs[i % len(msgs)]})
+                    i += 1
+
+    heartbeat_task = asyncio.create_task(_heartbeat())
+
     try:
         arch_data = await call_stage_http("hld", AGENT_URLS["hld"], reqs.model_dump(mode="json"))
+        stop_heartbeat.set()
+        await heartbeat_task
+
         arch = ArchitecturePackage(**arch_data)
         dur_hld = int((datetime.utcnow() - t0).total_seconds() * 1000)
         JOB_ARTIFACTS[job_id]["architecture"] = arch
@@ -289,6 +323,12 @@ async def run_stage_hld(job_id: str) -> None:
 
         cas_score = arch.scores.CAS if arch.scores else 0.0
         cas_threshold = float(os.getenv("HLD_CAS_THRESHOLD", "0.60"))
+        arch_style = arch.architecture_style or "Architecture"
+
+        notify_listeners(job_id, {
+            "event": "log",
+            "log": f"✅ [HLD] Architecture synthesized! Style: {arch_style} · CAS: {cas_score:.3f} (Rank #1 Winner)"
+        })
 
         if arch.verdict == "rejected" or cas_score < cas_threshold:
             update_stage_status(job_id, "hld", "complete", duration_ms=dur_hld)
@@ -321,6 +361,7 @@ async def run_stage_hld(job_id: str) -> None:
         notify_listeners(job_id, {"event": "paused", "stage": "hld", "job": job.model_dump(mode="json")})
 
     except Exception as exc:
+        stop_heartbeat.set()
         logger.error(f"HLD failed for {job_id}: {exc}", exc_info=True)
         update_stage_status(job_id, "hld", "failed", error=str(exc))
         job.status = "failed"

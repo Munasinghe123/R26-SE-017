@@ -23,10 +23,14 @@ logger = logging.getLogger(__name__)
 
 def _is_non_retryable_error(error: Exception) -> bool:
     """Return True for errors that should fail fast without retries."""
-    status = getattr(error, "status_code", None)
     text = str(error).lower()
 
-    if status in {400, 401, 402, 403, 404}:
+    # Rate-limiting, temporary upstream issues, and timeouts should ALWAYS be retried
+    if any(m in text for m in ["rate-limited", "rate limit", "429", "temporarily", "timeout", "service unavailable"]):
+        return False
+
+    status = getattr(error, "status_code", None)
+    if status in {401, 402, 403, 404}:
         return True
 
     non_retryable_markers = [
@@ -35,7 +39,6 @@ def _is_non_retryable_error(error: Exception) -> bool:
         "authentication",
         "permission",
         "not found",
-        "invalid_request_error",
     ]
     return any(marker in text for marker in non_retryable_markers)
 
