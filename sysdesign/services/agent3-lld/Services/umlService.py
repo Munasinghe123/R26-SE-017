@@ -45,7 +45,7 @@ def encode_plantuml(plantuml_str):
         str.maketrans(standard_alphabet, plantuml_alphabet)
     )
 
-    return result
+    return result.replace("=", "0")
 
 
 class UMLService:
@@ -74,24 +74,25 @@ class UMLService:
         )
 
     @staticmethod
-    def generate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    def generate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         return UMLService._generate_uml_multi_agent(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
     @staticmethod
-    async def agenerate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    async def agenerate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         return await UMLService._agenerate_uml_multi_agent(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
-
     @staticmethod
-    def _generate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    def _generate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         multi_agent_result = UMLService.generate_multi_agent_internal(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
@@ -101,10 +102,11 @@ class UMLService:
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
     @staticmethod
-    async def _agenerate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    async def _agenerate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         multi_agent_result = await UMLService.agenerate_multi_agent_internal(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
@@ -114,6 +116,7 @@ class UMLService:
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
     @staticmethod
@@ -123,6 +126,7 @@ class UMLService:
         requirements: str,
         requirement_ids: list[str],
         project_id: int | None = None,
+        generation_run_id: int | None = None,
     ):
         selected_candidate = multi_agent_result.selected_candidate
 
@@ -200,6 +204,22 @@ class UMLService:
                 "total_latency_ms": multi_agent_result.orchestration.total_latency_ms,
             },
         }
+
+        # =========================================================
+        # RESEARCH EVALUATION PIPELINE (POST-REFINEMENT & RENDER)
+        # =========================================================
+        try:
+            UMLService._run_and_persist_evaluation(
+                result=result,
+                requirements_text=requirements,
+                requirement_ids=requirement_ids or [],
+                project_id=project_id,
+                generation_run_id=generation_run_id,
+                candidate_id=selected_candidate.candidate_id if selected_candidate else None,
+            )
+        except Exception as eval_exc:
+            logger.exception("research_evaluation_execution_failed", extra={"error": str(eval_exc)})
+
         return result
 
     @staticmethod
@@ -219,29 +239,26 @@ class UMLService:
         er_plantuml = generate_er_plantuml(parsed_json.get("er_diagram", {}))
 
         def render_png(plantuml_code: str, diagram_type: str, name: str | None = None):
-            if not plantuml_code:
-                return ""
-            try:
-                encoded = encode_plantuml(plantuml_code)
-                png_url = f"https://www.plantuml.com/plantuml/png/~1{encoded}"
-                resp = requests.get(png_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
-                if resp.status_code == 200 and resp.content:
-                    c_url = upload_png_to_cloudinary(
-                        resp.content,
-                        project_id=project_id,
-                        diagram_type=diagram_type,
-                        public_id=f"{diagram_type}_{name or 'diagram'}"
-                    )
-                    if c_url:
-                        return c_url
-                return f"https://www.plantuml.com/plantuml/svg/~1{encoded}"
-            except Exception as e:
-                logger.warning(f"PlantUML Cloudinary render/upload warning: {e}")
-                try:
-                    encoded = encode_plantuml(plantuml_code)
-                    return f"https://www.plantuml.com/plantuml/svg/~1{encoded}"
-                except Exception:
-                    return ""
+            logger.info("plantuml_render_started", extra={"diagram_type": diagram_type})
+            encoded = encode_plantuml(plantuml_code)
+            plantuml_response = requests.get(
+                f"https://www.plantuml.com/plantuml/png/{encoded}",
+                timeout=30,
+            )
+
+            if plantuml_response.status_code != 200:
+                logger.error("plantuml_render_failed", extra={"diagram_type": diagram_type, "status_code": plantuml_response.status_code})
+                raise Exception("PlantUML server error")
+
+            logger.info("plantuml_render_successful", extra={"diagram_type": diagram_type, "bytes": len(plantuml_response.content)})
+            public_id = f"{name or diagram_type}_{uuid.uuid4().hex[:8]}"
+            cloudinary_url = upload_png_to_cloudinary(
+                png_bytes=plantuml_response.content,
+                project_id=project_id,
+                diagram_type=diagram_type,
+                public_id=public_id,
+            )
+            return cloudinary_url
 
         class_url = render_png(class_plantuml, "class", "class_diagram")
 
@@ -252,10 +269,24 @@ class UMLService:
             sequence_outputs.append({
                 "name": sequence_data["name"],
                 "cloudinary_url": sequence_url,
-                "plantuml": sequence_data.get("plantuml", ""),
             })
+        # Normalize: generate_er_plantuml may return a string or a list of strings (pages)
+        if isinstance(er_plantuml, str):
+            er_plantuml = [er_plantuml]
+
+        print("===== ER PLANTUML =====")
+        for i, pu in enumerate(er_plantuml):
+            print(f"--- Page {i+1} ---")
+            print(pu)
+        print("=======================")
             
-        er_url = render_png(er_plantuml, "er", "er_diagram")
+        if len(er_plantuml) == 1:
+            er_url = render_png(er_plantuml[0], "er", "er_diagram")
+        else:
+            er_url = [
+                render_png(pu, "er", f"er_diagram_p{i+1}")
+                for i, pu in enumerate(er_plantuml)
+            ]
 
         result = {
             "structured_data": parsed_json,
@@ -296,6 +327,77 @@ class UMLService:
         return result
 
     @staticmethod
+    def _run_and_persist_evaluation(
+        *,
+        result: dict,
+        requirements_text: str,
+        requirement_ids: list[str],
+        project_id: int | None = None,
+        generation_run_id: int | None = None,
+        candidate_id: int | None = None,
+    ):
+        import json
+        from evaluation.evaluator import Evaluator
+        from evaluation.reference_loader import ReferenceLoader
+        from evaluation.report_generator import EvaluationReportGenerator
+        from database import SessionLocal
+        from models.evaluation import Evaluation
+
+        # 1. Load Reference Case ONLY if a matching reference directory exists
+        loader = ReferenceLoader()
+        ref_data = {}
+        target_case = None
+
+        if project_id:
+            possible_cases = [f"project_{project_id}", f"case_{project_id:03d}"]
+            for candidate_case in possible_cases:
+                if (loader.references_dir / candidate_case).exists():
+                    target_case = candidate_case
+                    break
+
+        if target_case and (loader.references_dir / target_case).exists():
+            try:
+                ref_data = loader.load_case(target_case)
+            except Exception as ref_err:
+                logger.warning("failed_to_load_reference_case", extra={"target_case": target_case, "error": str(ref_err)})
+        else:
+            logger.info("no_matching_reference_case_found_skipping_reference_eval", extra={"project_id": project_id})
+
+        # 2. Prepare evaluation input with actual requirement content
+        if ref_data and "requirements" in ref_data and "requirements" in ref_data["requirements"]:
+            req_list = ref_data["requirements"]["requirements"]
+        else:
+            req_list = [{"id": req_id, "text": f"Requirement {req_id}"} for req_id in (requirement_ids or [])]
+
+        eval_input = {
+            "ir": result.get("structured_data", {}),
+            "diagrams": result.get("plantuml", {}),
+        }
+
+        evaluator = Evaluator()
+        eval_result = evaluator.evaluate(
+            generated=eval_input,
+            reference=ref_data,
+            requirements=req_list,
+        )
+
+        report_gen = EvaluationReportGenerator()
+        report = report_gen.generate(eval_result)
+
+        # Attach in-memory evaluation results to response dictionary
+        result["evaluation"] = report
+        result["eval_result"] = eval_result
+
+        # Database persistence disabled as per user request for in-memory research testing
+        logger.info(
+            "evaluation_in_memory_completed",
+            extra={
+                "project_id": project_id,
+                "heuristic_overall_score": report.get("summary", {}).get("heuristic_overall_score"),
+            },
+        )
+
+    @staticmethod
     def _persist_diagrams(project_id: int, diagram_urls: dict, plantuml: dict):
         from database import SessionLocal
         from models.diagram import Diagram
@@ -316,12 +418,22 @@ class UMLService:
                     "plantuml_code": sequence.get("plantuml", ""),
                     "cloudinary_url": seq_url,
                 })
-            er_url = diagram_urls.get("er", "")
-            records.append({
-                "diagram_type": "er",
-                "plantuml_code": plantuml.get("er", ""),
-                "cloudinary_url": er_url,
-            })
+            er_data = diagram_urls.get("er", "")
+            er_pus = plantuml.get("er", "")
+            if isinstance(er_data, list):
+                for i, url in enumerate(er_data):
+                    pu_code = er_pus[i] if isinstance(er_pus, list) and i < len(er_pus) else ""
+                    records.append({
+                        "diagram_type": "er",
+                        "plantuml_code": pu_code,
+                        "cloudinary_url": url,
+                    })
+            else:
+                records.append({
+                    "diagram_type": "er",
+                    "plantuml_code": er_pus if isinstance(er_pus, str) else (er_pus[0] if er_pus else ""),
+                    "cloudinary_url": er_data,
+                })
 
             for record in records:
                 if not record["cloudinary_url"]:
@@ -335,9 +447,8 @@ class UMLService:
 
             session.commit()
             logger.info("diagram_database_save_successful", extra={"project_id": project_id, "record_count": len(records)})
-        except Exception:
-            logger.exception("diagram_database_save_failed", extra={"project_id": project_id})
-            raise
+        except Exception as exc:
+            logger.warning("diagram_database_save_failed_continuing", extra={"project_id": project_id, "error": str(exc)})
         finally:
             if session is not None:
                 session.close()
