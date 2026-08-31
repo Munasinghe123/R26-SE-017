@@ -197,24 +197,7 @@ def _load_winner_for_run() -> dict:
                 "selected_by_user": True
             }
 
-    return {
-        "model": MODELS[0],
-        "architecture": {
-            "architecture_style": "Layered Architecture",
-            "layers": [{"name": "Presentation", "order": 1}, {"name": "Business Logic", "order": 2}, {"name": "Data Access", "order": 3}],
-            "components": [
-                {"name": "AppointmentController", "layer": "Presentation", "boundary": "presentation", "element_type": "controller", "responsibilities": ["Handles HTTP requests"]},
-                {"name": "AppointmentService", "layer": "Business Logic", "boundary": "business_logic", "element_type": "service", "responsibilities": ["Business logic"]},
-                {"name": "AppointmentRepository", "layer": "Data Access", "boundary": "data_access", "element_type": "repository", "responsibilities": ["Database operations"]}
-            ],
-            "connectors": [
-                {"from_component": "AppointmentController", "to_component": "AppointmentService", "connector_type": "sync_call"},
-                {"from_component": "AppointmentService", "to_component": "AppointmentRepository", "connector_type": "sync_call"}
-            ]
-        },
-        "scores": {"CAS": 0.80},
-        "selected_by_user": True
-    }
+    return {}
 
 
 @app.post("/api/runs/{run_id}/select")

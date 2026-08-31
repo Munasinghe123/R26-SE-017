@@ -162,16 +162,21 @@ def _build_plantuml_from_architecture(architecture: dict, title: str = "Architec
 
     # Draw interactions
     if interactions:
-        lines.append("' === Interactions ===")
+        lines.append("' === Component Interactions ===")
     for inter in interactions:
-        src = (inter.get("from") or inter.get("source") or "").strip()
-        tgt = (inter.get("to") or inter.get("target") or "").strip()
-        label = (inter.get("type") or inter.get("protocol") or "").strip()
+        src = (inter.get("from") or inter.get("source") or inter.get("from_component") or "").strip()
+        tgt = (inter.get("to") or inter.get("target") or inter.get("to_component") or "").strip()
+        label = (inter.get("type") or inter.get("protocol") or inter.get("connector_type") or "").strip()
         if not src or not tgt:
             continue
         src_alias = alias_map.get(src, re.sub(r"[^a-zA-Z0-9_]", "_", src))
         tgt_alias = alias_map.get(tgt, re.sub(r"[^a-zA-Z0-9_]", "_", tgt))
-        arrow = f"{src_alias} --> {tgt_alias}"
+        if src_alias == tgt_alias:
+            continue
+        if label.lower() in {"async_message", "async", "event"}:
+            arrow = f"{src_alias} ..> {tgt_alias}"
+        else:
+            arrow = f"{src_alias} --> {tgt_alias}"
         if label:
             arrow += f" : {label}"
         lines.append(arrow)
@@ -207,15 +212,18 @@ def _build_mermaid_from_architecture(architecture: dict, title: str = "Architect
         lines.append("  end")
 
     for inter in interactions:
-        src = (inter.get("from") or inter.get("source") or "").strip()
-        tgt = (inter.get("to") or inter.get("target") or "").strip()
-        label = (inter.get("type") or inter.get("protocol") or "").strip()
+        src = (inter.get("from") or inter.get("source") or inter.get("from_component") or "").strip()
+        tgt = (inter.get("to") or inter.get("target") or inter.get("to_component") or "").strip()
+        label = (inter.get("type") or inter.get("protocol") or inter.get("connector_type") or "").strip()
         if not src or not tgt:
             continue
         sa = alias_map.get(src, re.sub(r"[^a-zA-Z0-9_]", "_", src))
         ta = alias_map.get(tgt, re.sub(r"[^a-zA-Z0-9_]", "_", tgt))
+        if sa == ta:
+            continue
         if label:
-            lines.append(f"  {sa} -->|{label}| {ta}")
+            clean_label = label.replace('"', '').replace('|', '').strip()
+            lines.append(f"  {sa} -->|{clean_label}| {ta}")
         else:
             lines.append(f"  {sa} --> {ta}")
 
