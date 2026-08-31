@@ -102,10 +102,18 @@ async def _fetch_requirements(meeting_id: str) -> dict:
         from db.config import pool
         if pool:
             async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT requirements FROM meetings WHERE id = $1",
-                    meeting_id,
-                )
+                m_uuid = None
+                try:
+                    m_uuid = uuid.UUID(meeting_id)
+                except Exception:
+                    pass
+                
+                row = None
+                if m_uuid:
+                    row = await conn.fetchrow(
+                        "SELECT requirements FROM meetings WHERE id = $1 OR project_id = $1 ORDER BY updated_at DESC LIMIT 1",
+                        m_uuid,
+                    )
                 if row and row["requirements"]:
                     import json
                     data = row["requirements"]

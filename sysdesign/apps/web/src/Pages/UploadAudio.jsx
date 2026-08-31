@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
 import audio from "../Images/audio.png";
 
 function UploadAudio() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const projectId = location.state?.projectId || new URLSearchParams(location.search).get("projectId");
+
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
@@ -18,6 +21,9 @@ function UploadAudio() {
 
     const formData = new FormData();
     formData.append("file", file);
+    if (projectId) {
+      formData.append("projectId", projectId);
+    }
 
     try {
       const res = await axios.post(
@@ -34,6 +40,9 @@ function UploadAudio() {
       if (data?.meeting_id) {
         localStorage.setItem("lastMeetingId", data.meeting_id);
         localStorage.setItem("lastMeetingTime", new Date().toISOString());
+        if (projectId) {
+          localStorage.setItem(`project_${projectId}_meetingId`, data.meeting_id);
+        }
         setStatusText("Extraction Complete! Redirecting to Requirements Review...");
         setTimeout(() => {
           navigate(`/requirements-review/${data.meeting_id}`);

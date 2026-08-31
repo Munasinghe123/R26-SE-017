@@ -26,11 +26,20 @@ export default function RequirementReview() {
   const [loading, setLoading] = useState(false);
   const [feedBackModal, setFeedBackModal] = useState(false);
 
+  console.log("meeting id", meetingId)
+
   const fetchRequirements = async () => {
     try {
-      const res = await axios.get(`${AGENT1}/requirements/${meetingId}`);
-      setRequirements(res.data.requirements);
-      if (res.data.version) setVersion(res.data.version);
+      let res;
+      try {
+        res = await axios.get(`${AGENT1}/requirements/${meetingId}`);
+      } catch (e1) {
+        res = await axios.get(`/requirements/${meetingId}`);
+      }
+      if (res?.data) {
+        setRequirements(res.data.requirements || { functional: [], non_functional: [] });
+        if (res.data.version) setVersion(res.data.version);
+      }
     } catch (err) {
       console.error(err);
       setRequirements({ functional: [], non_functional: [] });
@@ -305,12 +314,12 @@ export default function RequirementReview() {
           </div>
 
           <div className="flex items-center gap-4 w-full sm:w-auto">
-            <button
+            {/* <button
               onClick={() => setFeedBackModal(true)}
               className="flex-1 sm:flex-none px-6 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 rounded-full font-semibold text-xs uppercase tracking-wider transition duration-300 cursor-pointer"
             >
               Refine Requirements
-            </button>
+            </button> */}
 
             <button
               onClick={handleApprove}

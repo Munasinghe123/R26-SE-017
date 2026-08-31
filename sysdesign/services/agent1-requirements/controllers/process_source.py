@@ -6,15 +6,15 @@ audio_extensions = (".mp3", ".wav", ".m4a")
 
 document_extensions = (".pdf", ".txt")
 
-async def process_source(file):
+async def process_source(file, project_id=None):
 
     filename = file.filename.lower()
 
     if filename.endswith(audio_extensions):
-        return await handle_audio_upload(file)
+        return await handle_audio_upload(file, project_id=project_id)
 
     elif filename.endswith(document_extensions):
-        return await handle_document_upload(file)
+        return await handle_document_upload(file, project_id=project_id)
 
     else:
         raise Exception("Unsupported file type")

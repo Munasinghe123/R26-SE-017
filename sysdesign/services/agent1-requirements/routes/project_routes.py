@@ -24,8 +24,10 @@ async def create_project(
     )
 
 
+from typing import Optional
+
 @project_routes.get("/projects")
 async def get_projects(
-    userId: UUID
+    userId: Optional[str] = None
 ):
     return await get_projects_by_user_service(userId)
