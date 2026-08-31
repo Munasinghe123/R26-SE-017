@@ -110,7 +110,11 @@ class EntityAttribute:
 @dataclass
 class EntityRelationship:
 	target: str
+	name: str = ""
+	source: str = ""
 	rel_type: str = "one-to-many"
+	source_multiplicity: str = ""
+	target_multiplicity: str = ""
 
 
 @dataclass

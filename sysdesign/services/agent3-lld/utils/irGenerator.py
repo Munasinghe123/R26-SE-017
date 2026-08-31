@@ -342,6 +342,23 @@ def generate_sequence_plantuml(sequence_diagram):
     return plantuml
 
 
+INVALID_RELATIONSHIP_NAMES = {
+    "one-to-one", "one_to_one", "1:1",
+    "one-to-many", "one_to_many", "1:n", "1:m", "1..*", "0..*",
+    "many-to-one", "many_to_one", "n:1", "m:1",
+    "many-to-many", "many_to_many", "n:m", "m:n",
+    "has-many", "has_many", "has-one", "has_one",
+    "1", "0..1", "n", "m", "many"
+}
+
+
+def is_invalid_relationship_name(name: str | None) -> bool:
+    if not name:
+        return True
+    cleaned = str(name).strip().lower().replace(" ", "-")
+    return cleaned in INVALID_RELATIONSHIP_NAMES or cleaned.replace("-", "_") in INVALID_RELATIONSHIP_NAMES
+
+
 # ====================================
 # ER DIAGRAM GENERATOR (CHEN STYLE)
 # ====================================
@@ -465,7 +482,12 @@ def generate_er_plantuml(er_diagram):
             continue
 
         rel_type = rel.get("type", "one-to-many")
-        semantic_name = str(rel.get("name", "")).strip() or str(rel_type)
+        rel_name = str(rel.get("name", "")).strip()
+
+        if not is_invalid_relationship_name(rel_name):
+            semantic_name = rel_name
+        else:
+            semantic_name = "RELATIONSHIP"
 
         # ----------------------------
         # CREATE RELATIONSHIP ENTITY

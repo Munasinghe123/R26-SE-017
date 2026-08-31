@@ -55,9 +55,13 @@ REQUIRED JSON OUTPUT SCHEMA:
     ],
     "relationships": [
       {{
+        "name": "OWNS",
         "source": "string",
         "target": "string",
-        "type": "one-to-many"
+        "type": "one-to-many",
+        "source_multiplicity": "1",
+        "target_multiplicity": "0..*",
+        "evidence": "string"
       }}
     ]
   }},
@@ -166,15 +170,19 @@ OUTPUT SCHEMA
     ],
     "relationships": [
       {{
+        "name": "semantic relationship verb or verb phrase (e.g. OWNS, CONTAINS)",
         "source": "string",
         "target": "string",
-        "type": "one-to-many"
+        "type": "one-to-many",
+        "source_multiplicity": "1 | 0..1 | 0..* | 1..*",
+        "target_multiplicity": "1 | 0..1 | 0..* | 1..*",
+        "evidence": "string"
       }}
     ]
   }}
 }}
 
-Supported relationship types: "one-to-one", "one-to-many", "many-to-one", "many-to-many".
+Relationship names MUST be semantic business/domain verbs (e.g. OWNS, CONTAINS, PLACES). NEVER use cardinality labels (e.g. one-to-many, 1:N) as relationship names. Supported relationship types: "one-to-one", "one-to-many", "many-to-one", "many-to-many".
 
 INPUT
 Requirements:

@@ -309,13 +309,20 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
             continue
 
         rel_type = str(rel.get("type", "one-to-many"))
+        rel_name = str(rel.get("name", "")).strip()
+        source_mult = str(rel.get("source_multiplicity", "")).strip()
+        target_mult = str(rel.get("target_multiplicity", "")).strip()
         entity = _ensure_entity(entity_index, source)
         if entity not in entities:
             entities.append(entity)
 
         entity.relationships.append(EntityRelationship(
             target=target,
+            name=rel_name,
+            source=source,
             rel_type=rel_type,
+            source_multiplicity=source_mult,
+            target_multiplicity=target_mult,
         ))
 
     return IntermediateRepresentation(
