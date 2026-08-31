@@ -41,26 +41,54 @@ def _extract_architecture_from_diagram(diagram: str, kind: str, original_archite
         "connectors": [],
     }
     
-    # Extract components from diagram
+def _extract_architecture_from_diagram(diagram: str, kind: str, original_architecture: dict) -> dict:
+    """Reverse-engineer architecture structure from diagram source.
+    
+    This allows us to validate if the diagram faithfully represents the architecture.
+    """
+    import re
+    
+    extracted = {
+        "architecture_style": original_architecture.get("architecture_style", ""),
+        "layers": original_architecture.get("layers", []),
+        "components": [],
+        "connectors": [],
+    }
+    
+    orig_comps = original_architecture.get("components", [])
+
     if kind == "plantuml":
-        # Match: [ComponentName] as alias
-        comp_pattern = r'\[([^\]]+)\](?:\s+as\s+(\w+))?'
-        for match in re.finditer(comp_pattern, diagram):
-            comp_name = match.group(1).strip()
-            # Find original component for responsibility
-            orig_comp = next((c for c in original_architecture.get("components", []) 
-                            if c.get("name", "") == comp_name), None)
-            if orig_comp:
-                extracted["components"].append(orig_comp)
+        # Match [ComponentName], component [ComponentName], database "Name", queue "Name", etc.
+        comp_pattern = r'(?:\[([^\]\n]+)\]|(?:component|database|queue|storage|node|actor|cloud|rectangle|frame|package)\s+["\']?([^"\'\n\\[]+)["\']?)\s*(?:as\s+(\w+))?'
         
-        # Extract connectors: component1 --> component2 : label
-        inter_pattern = r'(\w+)\s*(-+>|\.\.>)\s*(\w+)(?:\s*:\s*([^\n]+))?'
+        seen_names = set()
+        for match in re.finditer(comp_pattern, diagram, re.IGNORECASE):
+            raw_name = (match.group(1) or match.group(2) or "").strip()
+            alias = (match.group(3) or "").strip()
+            if not raw_name or raw_name.startswith("@"):
+                continue
+            
+            # Resolve to original component
+            orig_comp = next((c for c in orig_comps if c.get("name", "").strip() in {raw_name, alias} or c.get("name", "").replace(" ", "_") in {raw_name, alias}), None)
+            if not orig_comp and raw_name:
+                orig_comp = next((c for c in orig_comps if raw_name.lower() in c.get("name", "").lower()), None)
+
+            if orig_comp:
+                c_name = orig_comp.get("name")
+                if c_name not in seen_names:
+                    seen_names.add(c_name)
+                    extracted["components"].append(orig_comp)
+        
+        # Connectors: handles "A" -> "B", A --> B, A -[down]-> B, A ..> B, A ==> B with optional labels : label
+        inter_pattern = r'["\']?([\w\s]+)["\']?\s*(?:-\[\w+\]->|-+>|\.\.>|==>|->)\s*["\']?([\w\s]+)["\']?(?:\s*:\s*([^\n]+))?'
         for match in re.finditer(inter_pattern, diagram):
             from_comp = match.group(1).strip()
-            to_comp = match.group(3).strip()
-            label = (match.group(4) or "").strip()
+            to_comp = match.group(2).strip()
+            label = (match.group(3) or "").strip()
             
-            # Map aliases back to component names
+            if from_comp.startswith("@") or to_comp.startswith("@"):
+                continue
+
             from_name = _resolve_component_name(from_comp, diagram, original_architecture)
             to_name = _resolve_component_name(to_comp, diagram, original_architecture)
             
@@ -73,19 +101,21 @@ def _extract_architecture_from_diagram(diagram: str, kind: str, original_archite
                 })
     
     elif kind == "mermaid":
-        # Match: ComponentName["Label"] or ComponentName
-        comp_pattern = r'(\w+)\[([^\]]+)\]'
+        # Matches Mermaid shapes: [...] [(...)] (...) {{...}} ([...])
+        comp_pattern = r'(\w+)(?:\[|\[\(|\(|\{\{|\(\[)([^\]\)\}\n]+)(?:\]|\)\]|\)|\}\}|\]\))'
+        seen_names = set()
         for match in re.finditer(comp_pattern, diagram):
             comp_id = match.group(1).strip()
-            comp_label = match.group(2).strip().strip('"')
+            comp_label = match.group(2).strip().strip('"').strip("'")
             
-            orig_comp = next((c for c in original_architecture.get("components", []) 
-                            if c.get("name", "") == comp_label or 
-                            c.get("name", "").replace(" ", "_") == comp_id), None)
+            orig_comp = next((c for c in orig_comps if c.get("name", "") in {comp_label, comp_id} or c.get("name", "").replace(" ", "_") == comp_id), None)
             if orig_comp:
-                extracted["components"].append(orig_comp)
+                c_name = orig_comp.get("name")
+                if c_name not in seen_names:
+                    seen_names.add(c_name)
+                    extracted["components"].append(orig_comp)
         
-        # Extract connectors: A -->|label| B
+        # Connectors: A -->|label| B or A --> B
         inter_pattern = r'(\w+)\s*--+>(?:\|"?([^"|]+)"?\|)?\s*(\w+)'
         for match in re.finditer(inter_pattern, diagram):
             from_id = match.group(1).strip()
@@ -108,22 +138,27 @@ def _extract_architecture_from_diagram(diagram: str, kind: str, original_archite
 
 def _resolve_component_name(identifier: str, diagram: str, architecture: dict) -> Optional[str]:
     """Resolve component identifier/alias to actual component name."""
+    clean_id = identifier.strip().strip('"').strip("'")
+    
     # Direct match
     for comp in architecture.get("components", []):
-        name = comp.get("name", "")
-        if name == identifier or name.replace(" ", "_") == identifier:
+        name = comp.get("name", "").strip()
+        if name in {identifier, clean_id} or name.replace(" ", "_") in {identifier, clean_id}:
             return name
     
-    # Fuzzy match on diagram declarations
+    # Fuzzy match on diagram declarations (both PlantUML & Mermaid)
     import re
     if "plantuml" in diagram.lower() or "@startuml" in diagram.lower():
-        # Look for [Name] as identifier
-        pattern = rf'\[([^\]]+)\]\s+as\s+{re.escape(identifier)}\b'
-        match = re.search(pattern, diagram)
+        pattern = rf'(?:\[([^\]]+)\]|(?:component|database|queue|storage|node|actor|cloud|rectangle)\s+["\']?([^"\'\n\\[]+)["\']?)\s+as\s+{re.escape(clean_id)}\b'
+        match = re.search(pattern, diagram, re.IGNORECASE)
         if match:
-            return match.group(1).strip()
-    
-    return identifier  # Fallback to identifier itself
+            found = (match.group(1) or match.group(2) or "").strip()
+            for comp in architecture.get("components", []):
+                if comp.get("name", "").strip() == found or found.lower() in comp.get("name", "").lower():
+                    return comp.get("name")
+            return found
+            
+    return clean_id
 
 
 def evaluate_diagram_with_metrics(
