@@ -45,7 +45,7 @@ def encode_plantuml(plantuml_str):
         str.maketrans(standard_alphabet, plantuml_alphabet)
     )
 
-    return result
+    return result.replace("=", "0")
 
 
 class UMLService:
@@ -74,24 +74,25 @@ class UMLService:
         )
 
     @staticmethod
-    def generate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    def generate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         return UMLService._generate_uml_multi_agent(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
     @staticmethod
-    async def agenerate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    async def agenerate_uml(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         return await UMLService._agenerate_uml_multi_agent(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
-
     @staticmethod
-    def _generate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    def _generate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         multi_agent_result = UMLService.generate_multi_agent_internal(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
@@ -101,10 +102,11 @@ class UMLService:
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
     @staticmethod
-    async def _agenerate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None):
+    async def _agenerate_uml_multi_agent(requirements: str, requirement_ids: list[str] | None = None, project_id: int | None = None, generation_run_id: int | None = None):
         multi_agent_result = await UMLService.agenerate_multi_agent_internal(
             requirements=requirements,
             requirement_ids=requirement_ids or [],
@@ -114,6 +116,7 @@ class UMLService:
             requirements=requirements,
             requirement_ids=requirement_ids or [],
             project_id=project_id,
+            generation_run_id=generation_run_id,
         )
 
     @staticmethod
@@ -123,6 +126,7 @@ class UMLService:
         requirements: str,
         requirement_ids: list[str],
         project_id: int | None = None,
+        generation_run_id: int | None = None,
     ):
         selected_candidate = multi_agent_result.selected_candidate
 
@@ -200,6 +204,22 @@ class UMLService:
                 "total_latency_ms": multi_agent_result.orchestration.total_latency_ms,
             },
         }
+
+        # =========================================================
+        # RESEARCH EVALUATION PIPELINE (POST-REFINEMENT & RENDER)
+        # =========================================================
+        try:
+            UMLService._run_and_print_evaluation(
+                result=result,
+                requirements_text=requirements,
+                requirement_ids=requirement_ids or [],
+                project_id=project_id,
+                generation_run_id=generation_run_id,
+                candidate_id=selected_candidate.candidate_id if selected_candidate else None,
+            )
+        except Exception as eval_exc:
+            logger.exception("research_evaluation_execution_failed", extra={"error": str(eval_exc)})
+
         return result
 
     @staticmethod
@@ -219,29 +239,30 @@ class UMLService:
         er_plantuml = generate_er_plantuml(parsed_json.get("er_diagram", {}))
 
         def render_png(plantuml_code: str, diagram_type: str, name: str | None = None):
-            if not plantuml_code:
-                return ""
+            logger.info("plantuml_render_started", extra={"diagram_type": diagram_type})
+            encoded = encode_plantuml(plantuml_code)
             try:
-                encoded = encode_plantuml(plantuml_code)
-                png_url = f"https://www.plantuml.com/plantuml/png/~1{encoded}"
-                resp = requests.get(png_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
-                if resp.status_code == 200 and resp.content:
-                    c_url = upload_png_to_cloudinary(
-                        resp.content,
-                        project_id=project_id,
-                        diagram_type=diagram_type,
-                        public_id=f"{diagram_type}_{name or 'diagram'}"
-                    )
-                    if c_url:
-                        return c_url
-                return f"https://www.plantuml.com/plantuml/svg/~1{encoded}"
-            except Exception as e:
-                logger.warning(f"PlantUML Cloudinary render/upload warning: {e}")
-                try:
-                    encoded = encode_plantuml(plantuml_code)
-                    return f"https://www.plantuml.com/plantuml/svg/~1{encoded}"
-                except Exception:
-                    return ""
+                plantuml_response = requests.get(
+                    f"https://www.plantuml.com/plantuml/png/{encoded}",
+                    timeout=30,
+                )
+
+                if plantuml_response.status_code != 200:
+                    logger.error("plantuml_render_failed", extra={"diagram_type": diagram_type, "status_code": plantuml_response.status_code})
+                    return f"https://www.plantuml.com/plantuml/png/{encoded}"
+
+                logger.info("plantuml_render_successful", extra={"diagram_type": diagram_type, "bytes": len(plantuml_response.content)})
+                public_id = f"{name or diagram_type}_{uuid.uuid4().hex[:8]}"
+                cloudinary_url = upload_png_to_cloudinary(
+                    png_bytes=plantuml_response.content,
+                    project_id=project_id,
+                    diagram_type=diagram_type,
+                    public_id=public_id,
+                )
+                return cloudinary_url
+            except Exception as exc:
+                logger.warning(f"PlantUML render fallback used due to: {exc}")
+                return f"https://www.plantuml.com/plantuml/png/{encoded}"
 
         class_url = render_png(class_plantuml, "class", "class_diagram")
 
@@ -252,10 +273,24 @@ class UMLService:
             sequence_outputs.append({
                 "name": sequence_data["name"],
                 "cloudinary_url": sequence_url,
-                "plantuml": sequence_data.get("plantuml", ""),
             })
+        # Normalize: generate_er_plantuml may return a string or a list of strings (pages)
+        if isinstance(er_plantuml, str):
+            er_plantuml = [er_plantuml]
+
+        print("===== ER PLANTUML =====")
+        for i, pu in enumerate(er_plantuml):
+            print(f"--- Page {i+1} ---")
+            print(pu)
+        print("=======================")
             
-        er_url = render_png(er_plantuml, "er", "er_diagram")
+        if len(er_plantuml) == 1:
+            er_url = render_png(er_plantuml[0], "er", "er_diagram")
+        else:
+            er_url = [
+                render_png(pu, "er", f"er_diagram_p{i+1}")
+                for i, pu in enumerate(er_plantuml)
+            ]
 
         result = {
             "structured_data": parsed_json,
@@ -296,6 +331,223 @@ class UMLService:
         return result
 
     @staticmethod
+    def _run_and_print_evaluation(
+        *,
+        result: dict,
+        requirements_text: str,
+        requirement_ids: list[str],
+        project_id: int | str | None = None,
+        generation_run_id: int | None = None,
+        candidate_id: int | None = None,
+    ):
+        import dataclasses
+        from evaluation.evaluator import Evaluator
+        from utils.irMapper import convert_to_ir
+
+        req_list = UMLService._extract_requirements_from_input(requirements_text, requirement_ids or [])
+
+        # Normalize post-refinement IR
+        final_ir_dict = result.get("structured_data", {})
+        if final_ir_dict:
+            try:
+                ir_obj = convert_to_ir(final_ir_dict)
+                normalized_ir = dataclasses.asdict(ir_obj)
+            except Exception:
+                normalized_ir = final_ir_dict
+        else:
+            normalized_ir = {}
+
+        eval_input = {
+            "ir": normalized_ir,
+            "diagrams": result.get("plantuml", {}),
+        }
+
+        evaluator = Evaluator()
+        ref_data = {}
+        has_reference = False
+        target_case = None
+
+        try:
+            import re
+            from evaluation.reference_loader import ReferenceLoader
+
+            def _norm(s: str) -> str:
+                cleaned = UMLService._clean_requirement_text(s)
+                return cleaned.lower()
+
+            input_req_ids = {r["id"].strip().upper() for r in req_list if r.get("id")}
+            input_req_texts = {_norm(r["text"]) for r in req_list if r.get("text")}
+
+            loader = ReferenceLoader()
+            if loader.references_dir.exists():
+                for case_dir in loader.references_dir.iterdir():
+                    if not case_dir.is_dir():
+                        continue
+                    case_id = case_dir.name
+                    try:
+                        case_ref = loader.load_case(case_id)
+                        ref_reqs = case_ref.get("requirements", {}).get("requirements", []) or []
+                        ref_req_ids = {r["id"].strip().upper() for r in ref_reqs if r.get("id")}
+                        ref_req_texts = {_norm(r["text"]) for r in ref_reqs if r.get("text")}
+
+                        # Priority 1: Complete requirement ID set equality
+                        id_match = bool(input_req_ids and ref_req_ids and input_req_ids == ref_req_ids)
+
+                        # Priority 2: Complete requirement text set equality
+                        text_match = bool(input_req_texts and ref_req_texts and input_req_texts == ref_req_texts)
+
+                        if id_match or text_match:
+                            ref_data = case_ref
+                            has_reference = True
+                            target_case = case_id
+                            break
+                    except Exception:
+                        continue
+        except Exception as ref_err:
+            logger.warning(f"Could not load reference case for evaluation: {ref_err}")
+
+        eval_result = evaluator.evaluate(
+            generated=eval_input,
+            reference=ref_data,
+            requirements=req_list,
+        )
+
+        UMLService._print_research_evaluation_summary(
+            eval_result=eval_result,
+            has_reference=has_reference,
+            target_case=target_case,
+        )
+
+    @staticmethod
+    def _clean_requirement_text(raw_text: str) -> str:
+        import re
+        s = str(raw_text or "").strip()
+        # Extract content after "Description:" if present
+        desc_match = re.search(r"description\s*:\s*(.+)$", s, flags=re.IGNORECASE)
+        if desc_match:
+            s = desc_match.group(1).strip()
+        # Remove leading bullets, numbering
+        s = re.sub(r"^[-*•\d.]+\s*", "", s)
+        # Remove bracketed IDs (e.g. [FR-1], [REQ-001])
+        s = re.sub(r"^\[[A-Za-z0-9_-]+\]\s*[:|-]?\s*", "", s)
+        # Remove unbracketed IDs starting with FR/REQ/NFR/R followed by digits (e.g. FR-1:, REQ-001:, FR1)
+        s = re.sub(r"^(?:FR|REQ|NFR|R)[-_.]?\d+\w*\s*[:|-]?\s*", "", s, flags=re.IGNORECASE)
+        # Remove leftover "Description:" prefix if present
+        s = re.sub(r"^(?:description|desc)\s*:\s*", "", s, flags=re.IGNORECASE)
+        # Collapse whitespace
+        return re.sub(r"\s+", " ", s).strip()
+
+    @staticmethod
+    def _extract_requirements_from_input(requirements_text: str, requirement_ids: list[str]) -> list[dict]:
+        import re
+        req_list = []
+        if requirement_ids:
+            req_text_map = {}
+            if requirements_text:
+                current_id = None
+                for line in requirements_text.splitlines():
+                    sline = line.strip()
+                    matched_id = None
+                    for rid in requirement_ids:
+                        if f"[{rid}]" in sline or sline.startswith(f"{rid}:") or sline.startswith(f"{rid} "):
+                            matched_id = rid
+                            break
+                    if matched_id:
+                        current_id = matched_id
+                        req_text_map[current_id] = sline
+                    elif current_id and sline:
+                        req_text_map[current_id] += " " + sline
+
+            for req_id in requirement_ids:
+                raw_text = req_text_map.get(req_id, requirements_text.strip() if requirements_text else f"{req_id}")
+                cleaned_text = UMLService._clean_requirement_text(raw_text)
+                req_list.append({"id": req_id, "text": cleaned_text or raw_text})
+        elif requirements_text and requirements_text.strip():
+            lines = [l.strip() for l in requirements_text.splitlines() if l.strip()]
+            req_items = []
+            for line in lines:
+                match = re.match(r"^[-*]?\s*\[?([A-Za-z0-9_-]+)\]?\s*[:|-]?\s*(.+)", line)
+                if match and ("REQ" in match.group(1).upper() or "FR" in match.group(1).upper() or "R" in match.group(1).upper()):
+                    cleaned_line = UMLService._clean_requirement_text(match.group(2))
+                    req_items.append({"id": match.group(1), "text": cleaned_line or match.group(2)})
+            if req_items:
+                req_list = req_items
+            else:
+                cleaned_full = UMLService._clean_requirement_text(requirements_text)
+                req_list = [{"id": "REQ-1", "text": cleaned_full or requirements_text.strip()}]
+        return req_list
+
+    @staticmethod
+    def _print_research_evaluation_summary(*, eval_result: dict, has_reference: bool, target_case: str | None = None):
+        class_res = eval_result.get("class", {})
+        seq_res = eval_result.get("sequence", {})
+        er_res = eval_result.get("er", {})
+        req_res = eval_result.get("requirements", {})
+        syntax_res = eval_result.get("syntax", {})
+
+        req_cov = req_res.get("coverage_score", 0.0) * 100.0
+        syntax_score = syntax_res.get("overall_score", 0.0) * 100.0
+
+        def extract_p_r(res_dict, keys):
+            if not has_reference or not res_dict:
+                return None, None
+            p_list = [res_dict.get(k, {}).get("precision", 0.0) for k in keys if k in res_dict]
+            r_list = [res_dict.get(k, {}).get("recall", 0.0) for k in keys if k in res_dict]
+            p = (sum(p_list) / len(p_list)) if p_list else 0.0
+            r = (sum(r_list) / len(r_list)) if r_list else 0.0
+            return p, r
+
+        c_p, c_r = extract_p_r(class_res, ["classes", "attributes", "methods", "relationships"])
+        c_f1 = class_res.get("overall_f1") if has_reference else None
+
+        s_p, s_r = extract_p_r(seq_res, ["participants", "messages"])
+        s_f1 = seq_res.get("overall_f1") if has_reference else None
+        s_order = seq_res.get("message_order", {}).get("score") if has_reference else None
+
+        e_p, e_r = extract_p_r(er_res, ["entities", "attributes", "relationships"])
+        e_f1 = er_res.get("overall_f1") if has_reference else None
+
+        def fmt_val(val):
+            if not has_reference or val is None:
+                return "N/A"
+            return f"{val * 100.0:.2f}%"
+
+        ref_block = (
+            f"Reference Used: YES\nReference Case: {target_case}\n========================"
+            if has_reference
+            else "Reference Used: NO\n=================="
+        )
+
+        summary_text = f"""
+        ============================================================
+        RESEARCH DIAGRAM EVALUATION
+        ===========================
+
+        Class Diagram
+        Precision : {fmt_val(c_p)}
+        Recall    : {fmt_val(c_r)}
+        F1        : {fmt_val(c_f1)}
+
+        Sequence Diagram
+        Precision : {fmt_val(s_p)}
+        Recall    : {fmt_val(s_r)}
+        F1        : {fmt_val(s_f1)}
+        Order     : {fmt_val(s_order)}
+
+        ER Diagram
+        Precision : {fmt_val(e_p)}
+        Recall    : {fmt_val(e_r)}
+        F1        : {fmt_val(e_f1)}
+
+        Requirement Coverage  : {req_cov:.2f}%
+        Syntax / Renderability: {syntax_score:.2f}%
+
+        {ref_block}
+        """
+        print(summary_text, flush=True)
+        logger.info("research_diagram_evaluation_completed\n" + summary_text)
+
+    @staticmethod
     def _persist_diagrams(project_id: int, diagram_urls: dict, plantuml: dict):
         from database import SessionLocal
         from models.diagram import Diagram
@@ -316,12 +568,22 @@ class UMLService:
                     "plantuml_code": sequence.get("plantuml", ""),
                     "cloudinary_url": seq_url,
                 })
-            er_url = diagram_urls.get("er", "")
-            records.append({
-                "diagram_type": "er",
-                "plantuml_code": plantuml.get("er", ""),
-                "cloudinary_url": er_url,
-            })
+            er_data = diagram_urls.get("er", "")
+            er_pus = plantuml.get("er", "")
+            if isinstance(er_data, list):
+                for i, url in enumerate(er_data):
+                    pu_code = er_pus[i] if isinstance(er_pus, list) and i < len(er_pus) else ""
+                    records.append({
+                        "diagram_type": "er",
+                        "plantuml_code": pu_code,
+                        "cloudinary_url": url,
+                    })
+            else:
+                records.append({
+                    "diagram_type": "er",
+                    "plantuml_code": er_pus if isinstance(er_pus, str) else (er_pus[0] if er_pus else ""),
+                    "cloudinary_url": er_data,
+                })
 
             for record in records:
                 if not record["cloudinary_url"]:
@@ -335,9 +597,8 @@ class UMLService:
 
             session.commit()
             logger.info("diagram_database_save_successful", extra={"project_id": project_id, "record_count": len(records)})
-        except Exception:
-            logger.exception("diagram_database_save_failed", extra={"project_id": project_id})
-            raise
+        except Exception as exc:
+            logger.warning("diagram_database_save_failed_continuing", extra={"project_id": project_id, "error": str(exc)})
         finally:
             if session is not None:
                 session.close()

@@ -106,3 +106,6 @@ class LLDPackage(BaseModel):
     diagrams: dict = Field(default_factory=dict)
     plantuml: dict = Field(default_factory=dict)
     artifact_uris: dict = Field(default_factory=dict)
+    validation_report: dict = Field(default_factory=dict)
+    validation_issues: List[dict] = Field(default_factory=list)
+    naming_violations: List[dict] = Field(default_factory=list)

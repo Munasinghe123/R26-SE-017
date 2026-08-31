@@ -70,23 +70,15 @@ class Evaluator:
             else 0.0
         )
 
-        # =========================================================
-        # 2. CLASS DIAGRAM
-        # =========================================================
+        # Extract IR dict
+        ir_data = (
+            generated.get("ir", {})
+            if isinstance(generated.get("ir"), dict)
+            else {}
+        )
 
         class_result = self.class_evaluator.evaluate(
-            generated.get("ir", {}).get(
-                "classes",
-                []
-            )
-            if isinstance(
-                generated.get("ir"),
-                dict
-            )
-            else {
-                "classes": []
-            },
-
+            ir_data,
             reference.get(
                 "class",
                 {}

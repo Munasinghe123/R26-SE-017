@@ -25,6 +25,24 @@ def _escape_name(name):
     return escaped
 
 
+def _to_chen_cardinality(value):
+    cardinality = str(value).strip()
+    mapping = {
+        "1": "1",
+        "0..1": "(0,1)",
+        "0..*": "(0,N)",
+        "1..*": "(1,N)",
+        "N": "N",
+    }
+
+    if cardinality in mapping:
+        return mapping[cardinality]
+
+    raise ValueError(
+        f"Unsupported ER multiplicity for Chen PlantUML rendering: {value!r}"
+    )
+
+
 # ====================================
 # CLASS DIAGRAM GENERATOR
 # ====================================
@@ -157,6 +175,10 @@ def generate_class_plantuml(class_diagram):
 # ====================================
 
 def generate_sequence_plantuml(sequence_diagram):
+    from utils.sequence_normalizer import normalize_sequence_diagram, ROLE_TO_PLANTUML
+
+    # 1. Normalize sequence data first
+    sequence_diagram = normalize_sequence_diagram(sequence_diagram)
 
     diagram_name = sequence_diagram.get(
         "name",
@@ -164,18 +186,15 @@ def generate_sequence_plantuml(sequence_diagram):
     )
 
     plantuml = "@startuml\n\n"
-
+    plantuml += "hide footbox\n\n"
     plantuml += "skinparam linetype ortho\n\n"
-
     plantuml += f"title {diagram_name}\n\n"
 
     def _participant_type_name(value):
         if hasattr(value, "value"):
             value = value.value
         normalized = str(value).strip().lower()
-        if normalized in {"actor", "boundary", "control", "database"}:
-            return normalized
-        return "participant"
+        return ROLE_TO_PLANTUML.get(normalized, "participant")
 
     def _sequence_participant_alias(participant_name, used_aliases):
         alias = re.sub(r"[^A-Za-z0-9_]+", "", str(participant_name))
@@ -204,7 +223,11 @@ def generate_sequence_plantuml(sequence_diagram):
         if not sender or not receiver:
             return ""
 
-        parts = [f"{indent}{sender} -> {receiver}: {text}\n"]
+        # Requirement 7: Return arrows must be determined by structured message type
+        raw_type = str(message.get("type", "call")).strip().lower()
+        arrow = "-->" if raw_type == "return" else "->"
+
+        parts = [f"{indent}{sender} {arrow} {receiver}: {text}\n"]
         activates = bool(message.get("activate", message.get("activates_target", False)))
         deactivates = bool(message.get("deactivate", message.get("deactivates_target", False)))
 
@@ -217,12 +240,6 @@ def generate_sequence_plantuml(sequence_diagram):
             parts.append(f"{indent}deactivate {receiver}\n")
 
         return "".join(parts)
-
-    def _render_message_tree(message, alias_lookup, indent=""):
-        rendered = render_message(message, alias_lookup, indent=indent)
-        if not rendered:
-            return ""
-        return rendered
 
     def render_logic_block(block, alias_lookup, indent=""):
         block_type_value = block.get("block_type", block.get("type", "alt"))
@@ -237,19 +254,34 @@ def generate_sequence_plantuml(sequence_diagram):
             header = f"{indent}else {condition}".rstrip()
         elif block_type == "end":
             header = f"{indent}end"
+        elif block_type == "loop":
+            header = f"{indent}loop [{condition}]".rstrip() if condition else f"{indent}loop"
+        elif block_type == "opt":
+            header = f"{indent}opt [{condition}]".rstrip() if condition else f"{indent}opt"
         else:
-            header = f"{indent}alt {condition}".rstrip()
+            header = f"{indent}alt [{condition}]".rstrip() if condition else f"{indent}alt"
 
         rendered = [f"{header}\n"]
-        for message in messages:
-            if isinstance(message, dict):
-                rendered.append(_render_message_tree(message, alias_lookup, indent=indent + "  "))
 
-        for nested_block in nested_blocks:
-            if isinstance(nested_block, dict):
-                rendered.append(render_logic_block(nested_block, alias_lookup, indent=indent + "  "))
+        # Render items inside block in exact order
+        block_items = block.get("items", []) or []
+        if block_items:
+            for item in block_items:
+                if isinstance(item, dict):
+                    if "block_type" in item or ("type" in item and str(item.get("type")).lower() in {"loop", "alt", "opt", "else"}):
+                        rendered.append(render_logic_block(item, alias_lookup, indent=indent + "  "))
+                    else:
+                        rendered.append(render_message(item, alias_lookup, indent=indent + "  "))
+        else:
+            for message in messages:
+                if isinstance(message, dict):
+                    rendered.append(render_message(message, alias_lookup, indent=indent + "  "))
 
-        if block_type == "alt" and not any(str(item.get("block_type", item.get("type", ""))).strip().lower() == "else" for item in nested_blocks if isinstance(item, dict)):
+            for nested_block in nested_blocks:
+                if isinstance(nested_block, dict):
+                    rendered.append(render_logic_block(nested_block, alias_lookup, indent=indent + "  "))
+
+        if block_type in {"alt", "loop", "opt"} and not any(str(item.get("block_type", item.get("type", ""))).strip().lower() == "else" for item in nested_blocks if isinstance(item, dict)):
             rendered.append(f"{indent}end\n")
 
         return "".join(rendered)
@@ -267,7 +299,6 @@ def generate_sequence_plantuml(sequence_diagram):
     alias_lookup = {}
 
     for participant in participants:
-
         safe_participant = _escape_name(participant)
         participant_type = _participant_type_name(participant_types.get(participant, "participant"))
         alias = _sequence_participant_alias(participant, used_aliases)
@@ -282,21 +313,26 @@ def generate_sequence_plantuml(sequence_diagram):
     plantuml += "\n"
 
     # ====================================
-    # MESSAGES
+    # MESSAGES & LOGIC BLOCKS (CAUSAL ORDER)
     # ====================================
 
-    messages = sequence_diagram.get(
-        "messages",
-        []
-    )
+    raw_items = sequence_diagram.get("items", sequence_diagram.get("interactions", [])) or []
 
-    for message in messages:
-        if isinstance(message, dict):
-            plantuml += _render_message_tree(message, alias_lookup)
+    if raw_items:
+        for item in raw_items:
+            if isinstance(item, dict):
+                if "block_type" in item or ("type" in item and str(item.get("type")).lower() in {"loop", "alt", "opt", "else"}):
+                    plantuml += render_logic_block(item, alias_lookup)
+                else:
+                    plantuml += render_message(item, alias_lookup)
+    else:
+        # Fallback: render top-level messages first, then logic blocks
+        messages = sequence_diagram.get("messages", []) or []
+        for message in messages:
+            if isinstance(message, dict):
+                plantuml += render_message(message, alias_lookup)
 
-    logic_blocks = sequence_diagram.get("logic_blocks", []) or []
-    if logic_blocks:
-        plantuml += "\n"
+        logic_blocks = sequence_diagram.get("logic_blocks", []) or []
         for block in logic_blocks:
             if isinstance(block, dict):
                 plantuml += render_logic_block(block, alias_lookup)
@@ -304,6 +340,23 @@ def generate_sequence_plantuml(sequence_diagram):
     plantuml += "\n@enduml"
 
     return plantuml
+
+
+INVALID_RELATIONSHIP_NAMES = {
+    "one-to-one", "one_to_one", "1:1",
+    "one-to-many", "one_to_many", "1:n", "1:m", "1..*", "0..*",
+    "many-to-one", "many_to_one", "n:1", "m:1",
+    "many-to-many", "many_to_many", "n:m", "m:n",
+    "has-many", "has_many", "has-one", "has_one",
+    "1", "0..1", "n", "m", "many"
+}
+
+
+def is_invalid_relationship_name(name: str | None) -> bool:
+    if not name:
+        return True
+    cleaned = str(name).strip().lower().replace(" ", "-")
+    return cleaned in INVALID_RELATIONSHIP_NAMES or cleaned.replace("-", "_") in INVALID_RELATIONSHIP_NAMES
 
 
 # ====================================
@@ -428,10 +481,13 @@ def generate_er_plantuml(er_diagram):
         if source not in entity_aliases or target not in entity_aliases:
             continue
 
-        rel_type = rel.get(
-            "type",
-            "one-to-many"
-        )
+        rel_type = rel.get("type", "one-to-many")
+        rel_name = str(rel.get("name", "")).strip()
+
+        if not is_invalid_relationship_name(rel_name):
+            semantic_name = rel_name
+        else:
+            semantic_name = "RELATIONSHIP"
 
         # ----------------------------
         # CREATE RELATIONSHIP ENTITY
@@ -442,7 +498,7 @@ def generate_er_plantuml(er_diagram):
         )
 
         plantuml += (
-            f'relationship "{rel_type}" '
+            f'relationship "{semantic_name}" '
             f'as {relationship_name} {{\n'
             f'}}\n\n'
         )
@@ -451,7 +507,13 @@ def generate_er_plantuml(er_diagram):
         # CARDINALITIES
         # ----------------------------
 
-        if rel_type == "one-to-one":
+        source_multiplicity = str(rel.get("source_multiplicity", "")).strip()
+        target_multiplicity = str(rel.get("target_multiplicity", "")).strip()
+
+        if source_multiplicity or target_multiplicity:
+            left = _to_chen_cardinality(source_multiplicity or "1")
+            right = _to_chen_cardinality(target_multiplicity or "1")
+        elif rel_type == "one-to-one":
 
             left = "1"
             right = "1"

@@ -36,12 +36,12 @@ const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:
 
 export default function LLDReview() {
   const { jobId } = useParams();
-  const navigate  = useNavigate();
+  const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("expert"); // expert, class, sequence, er
-  const [lld, setLld]             = useState(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
+  const [lld, setLld] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [selectedCandidate, setSelectedCandidate] = useState(1);
   const [openSourceCode, setOpenSourceCode] = useState({ class: false, er: false });
 
@@ -181,37 +181,69 @@ export default function LLDReview() {
   const candidatesList = lld?.candidates?.length > 0
     ? lld.candidates
     : [
-        {
-          id: 1,
-          name: "Candidate 1 (Qwen 32B Coder)",
-          model: "qwen/qwen-2.5-coder-32b-instruct",
-          score: 0.88,
-          strengths: "Object-oriented class hierarchy & method signatures",
-          class_count: lld?.classes?.length || 5,
-          sequence_count: lld?.sequences?.length || 2,
-        },
-        {
-          id: 2,
-          name: "Candidate 2 (Llama 3.3 70B)",
-          model: "meta-llama/llama-3.3-70b-instruct",
-          score: 0.95,
-          winning: true,
-          strengths: "High consistency, complete sequence interactions & entity schemas",
-          class_count: lld?.classes?.length || 6,
-          sequence_count: lld?.sequences?.length || 3,
-        },
-        {
-          id: 3,
-          name: "Candidate 3 (Qwen 72B)",
-          model: "qwen/qwen-2.5-72b-instruct",
-          score: 0.89,
-          strengths: "Relational integrity and database table definitions",
-          class_count: lld?.classes?.length || 5,
-          sequence_count: lld?.sequences?.length || 2,
-        },
-      ];
+      {
+        id: 1,
+        name: "Candidate 1 (Qwen 32B Coder)",
+        model: "qwen/qwen-2.5-coder-32b-instruct",
+        score: 0.88,
+        strengths: "Object-oriented class hierarchy & method signatures",
+        class_count: lld?.classes?.length || 5,
+        sequence_count: lld?.sequences?.length || 2,
+      },
+      {
+        id: 2,
+        name: "Candidate 2 (Llama 3.3 70B)",
+        model: "meta-llama/llama-3.3-70b-instruct",
+        score: 0.95,
+        winning: true,
+        strengths: "High consistency, complete sequence interactions & entity schemas",
+        class_count: lld?.classes?.length || 6,
+        sequence_count: lld?.sequences?.length || 3,
+      },
+      {
+        id: 3,
+        name: "Candidate 3 (Qwen 72B)",
+        model: "qwen/qwen-2.5-72b-instruct",
+        score: 0.89,
+        strengths: "Relational integrity and database table definitions",
+        class_count: lld?.classes?.length || 5,
+        sequence_count: lld?.sequences?.length || 2,
+      },
+    ];
 
   const winningCand = candidatesList.find((c) => c.winning) || candidatesList[1] || candidatesList[0];
+
+  const hasValidationData = Boolean(
+    lld?.validation_report ||
+    lld?.validation_issues?.length > 0 ||
+    lld?.naming_violations?.length > 0 ||
+    lld?.errors?.length > 0
+  );
+
+  const rawValidationIssues = lld?.validation_issues || lld?.validation_report?.errors || lld?.errors || [];
+  const validationIssues = rawValidationIssues.map((err, idx) => ({
+    id: idx + 1,
+    severity: (err.severity || "MEDIUM").toUpperCase(),
+    message: err.message || "",
+    suggestion: err.suggestion || "",
+    educational_feedback: err.educational_feedback || "",
+  }));
+
+  const rawNamingViolations = lld?.naming_violations || lld?.validation_report?.naming_violations || [];
+  const namingViolations = rawNamingViolations.map((item, idx) => {
+    const isFixed = item.status === "FIXED" || item.auto_fixed;
+    const location = item.location ? (item.location.startsWith("Location:") ? item.location : `Location: ${item.location}`) : `Location: Entity: ${item.current_name || 'Unknown'}`;
+    const issue = item.issue ? (item.issue.startsWith("Issue:") ? item.issue : `Issue: ${item.issue}`) : `Issue: ${item.current_name} → ${item.expected_name}`;
+    const convention = item.convention ? (item.convention.startsWith("Convention:") ? item.convention : `Convention: ${item.convention}`) : `Convention: snake_case`;
+
+    return {
+      id: idx + 1,
+      status: isFixed ? "FIXED" : "UNFIXED",
+      location,
+      issue,
+      convention,
+    };
+  });
 
   const toggleSource = (key) => {
     setOpenSourceCode((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -275,22 +307,24 @@ REL_CONTAINS -N- ORDER_ITEMS
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* 
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-400/10 border border-green-400/30 text-green-400 text-xs font-bold rounded-full">
               <ShieldCheck size={14} /> Consistency: {(consistencyScore * 100).toFixed(0)}%
             </span>
             <span className="text-xs font-mono px-3 py-1 bg-pink-500/10 border border-pink-500/30 text-pink-300 rounded-full">
               Expert: {lld?.expert_model || "meta-llama/llama-3.3-70b"}
-            </span>
+            </span> */}
           </div>
         </div>
 
         {/* ── Navigation Tabs ────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-2 border-b border-white/10 pb-3">
           {[
-            { id: "expert",   label: "Multi-Model & Expert Review", icon: Bot },
-            { id: "class",    label: "Class Diagram & Methods",    icon: Code2 },
-            { id: "sequence", label: "Sequence Interactions",      icon: GitBranch },
-            { id: "er",       label: "ER Schema & Database Tables", icon: Database },
+            { id: "expert", label: "Multi-Model & Expert Review", icon: Bot },
+            { id: "class", label: "Class Diagram & Methods", icon: Code2 },
+            { id: "sequence", label: "Sequence Interactions", icon: GitBranch },
+            { id: "er", label: "ER Schema & Database Tables", icon: Database },
+            { id: "validation", label: "Validation", icon: ShieldCheck },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -318,7 +352,7 @@ REL_CONTAINS -N- ORDER_ITEMS
         {/* ───────────────────────────────────────────────────────────── */}
         {activeTab === "expert" && (
           <div className="space-y-6">
-            
+
             {/* DeepSeek Expert Decision Card */}
             <div className="p-6 rounded-2xl border border-pink-500/30 bg-gradient-to-br from-pink-950/30 via-purple-950/20 to-black space-y-4">
               <div className="flex items-center justify-between">
@@ -726,6 +760,137 @@ OrderController -> DatabaseRepository: save()
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* TAB 5: VALIDATION & NAMING VIOLATIONS                         */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        {(activeTab === "validation" || activeTab === "validations") && (
+          <div className="space-y-8 font-sans">
+            {!hasValidationData ? (
+              <div className="p-8 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-yellow-400/20 text-yellow-400 flex items-center justify-center mx-auto text-2xl font-bold">
+                  ℹ
+                </div>
+                <h3 className="text-base font-bold text-yellow-300">
+                  Validation Data Unavailable
+                </h3>
+                <p className="text-xs text-white/60 max-w-md mx-auto">
+                  Validation reports were not generated or stored for this LLD job state. Re-run the pipeline to capture full architectural validation metrics.
+                </p>
+              </div>
+            ) : validationIssues.length === 0 && namingViolations.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-400/20 text-emerald-400 flex items-center justify-center mx-auto text-2xl font-bold">
+                  ✓
+                </div>
+                <h3 className="text-base font-bold text-emerald-300">
+                  Zero Validation Errors or Naming Violations
+                </h3>
+                <p className="text-xs text-white/60 max-w-md mx-auto">
+                  The Low-Level Design passed all backend architectural consistency checks, requirement mapping, and naming conventions.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* ── Validation Issues Section ───────────────────────────── */}
+                {validationIssues.length > 0 && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">⚠️</span>
+                      <h3 className="text-lg font-bold text-white tracking-wide">
+                        Validation Issues ({validationIssues.length})
+                      </h3>
+                    </div>
+
+                    <div className="space-y-5 pl-1">
+                      {validationIssues.map((issue, idx) => {
+                        const severity = (issue.severity || "MEDIUM").toUpperCase();
+                        let severityColor = "text-yellow-400";
+                        if (severity === "CRITICAL") severityColor = "text-pink-500";
+                        else if (severity === "HIGH") severityColor = "text-amber-400";
+                        else if (severity === "MEDIUM") severityColor = "text-yellow-400";
+
+                        return (
+                          <div key={idx} className="space-y-2 text-sm leading-relaxed">
+                            {/* Severity & Issue Message */}
+                            <div className="flex items-start gap-3">
+                              <span className={`font-black tracking-wider text-xs uppercase min-w-[75px] pt-0.5 ${severityColor}`}>
+                                {severity}
+                              </span>
+                              <span className="font-semibold text-white/95">
+                                {issue.message}
+                              </span>
+                            </div>
+
+                            {/* Suggestion / Hint line */}
+                            {issue.suggestion && (
+                              <div className="flex items-start gap-2 pl-[87px] text-xs text-white/90">
+                                <span className="text-base leading-none">💡</span>
+                                <span>{issue.suggestion}</span>
+                              </div>
+                            )}
+
+                            {/* Educational Feedback line */}
+                            {issue.educational_feedback && (
+                              <div className="flex items-start gap-2 pl-[87px] text-xs text-white/50 italic leading-normal">
+                                <span className="text-base leading-none not-italic">📖 🎓</span>
+                                <span>{issue.educational_feedback}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Naming Violations Section ───────────────────────────── */}
+                {namingViolations.length > 0 && (
+                  <div className="space-y-6 pt-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📛</span>
+                      <h3 className="text-lg font-bold text-white tracking-wide">
+                        Naming Violations ({namingViolations.length})
+                      </h3>
+                    </div>
+
+                    <div className="space-y-5 pl-1">
+                      {namingViolations.map((item, idx) => {
+                        const isFixed = item.status === "FIXED" || item.auto_fixed;
+                        const statusLabel = isFixed ? "FIXED" : "UNFIXED";
+                        const statusColor = isFixed ? "text-emerald-400" : "text-pink-500";
+
+                        return (
+                          <div key={idx} className="space-y-1 text-sm font-sans">
+                            {/* Status & Location */}
+                            <div className="flex items-center gap-3">
+                              <span className={`font-black tracking-wider text-xs uppercase min-w-[75px] ${statusColor}`}>
+                                {statusLabel}
+                              </span>
+                              <span className="text-white/90">
+                                {item.location.startsWith("Location:") ? item.location : `Location: ${item.location}`}
+                              </span>
+                            </div>
+
+                            {/* Issue */}
+                            <div className="pl-[87px] text-xs text-white/70">
+                              {item.issue.startsWith("Issue:") ? item.issue : `Issue: ${item.issue}`}
+                            </div>
+
+                            {/* Convention */}
+                            <div className="pl-[87px] text-xs text-white/40 font-mono">
+                              {item.convention.startsWith("Convention:") ? item.convention : `Convention: ${item.convention}`}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
