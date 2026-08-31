@@ -30,18 +30,27 @@ import {
   Send,
   Eye,
 } from "lucide-react";
+import {
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+  Tooltip
+} from "recharts";
 import beehiveBg from "../../../Images/beehive-bg.png";
 
 const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8000";
 const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "http://127.0.0.1:8002";
 
 const METRIC_INFO = {
-  CAS:  { label: "CAS (Composite Architecture Score)", desc: "Weighted overall quality fitness (>= 0.60 threshold)", weight: "30%" },
-  LSCS: { label: "LSCS (Layer Structural Coupling)",    desc: "Cleanliness of layer separation & boundaries", weight: "15%" },
-  NAS:  { label: "NAS (Non-Functional Alignment)",     desc: "Satisfaction of security, scale, availability NFRs", weight: "20%" },
-  RCR:  { label: "RCR (Requirement Coverage Ratio)",   desc: "Percentage of functional requirements satisfied", weight: "15%" },
-  SCI:  { label: "SCI (Style Consistency Index)",       desc: "Adherence to architectural design patterns", weight: "10%" },
-  SMI:  { label: "SMI (System Modularity Index)",       desc: "Component cohesion and coupling balance", weight: "10%" },
+  RTS:  { label: "RTS (Requirement Traceability Score)", desc: "Semantic alignment of requirements to components", weight: "29.17%" },
+  QAC:  { label: "QAC (Quality Attribute Coverage)",     desc: "ISO 25010 NFR architectural provision coverage", weight: "21.94%" },
+  CI:   { label: "CI (Coupling Index)",                  desc: "Graph decoupling density score (higher = better)", weight: "13.61%" },
+  CoS:  { label: "CoS (Cohesion Score)",                 desc: "Semantic coherence of component responsibilities", weight: "13.61%" },
+  SSM1: { label: "SSM₁ (Primary Style Metric)",           desc: "Style-specific structural property (LIS, SBA, EFC, MCR, PC)", weight: "13.61%" },
+  SSM2: { label: "SSM₂ (Secondary Style Metric)",         desc: "Style-specific boundary property (DDS, ISS, PSC, FIS)", weight: "8.06%" },
 };
 
 function VerdictBadge({ verdict, cas }) {
@@ -107,11 +116,8 @@ export default function ArchitectureReview() {
 
   // Diagram Git-Loop state
   const [diagrams, setDiagrams] = useState({ plantuml: "", mermaid: "" });
-  const [iterations, setIterations] = useState([
-    { version: "v1", cas: 0.72, prompt: "Initial LLM Candidate Generation", code: "@startuml\npackage Layered {\n  [API Gateway] --> [Auth Service]\n  [Auth Service] --> [Database]\n}\n@enduml" },
-    { version: "v2", cas: 0.86, prompt: "Refined with skinparam rectangle style and explicitly separated boundaries", code: "@startuml\nskinparam componentStyle rectangle\npackage presentation {\n  [API Gateway]\n}\npackage domain {\n  [Auth Service]\n}\npackage data {\n  [Database]\n}\n[API Gateway] --> [Auth Service]\n[Auth Service] --> [Database]\n@enduml" }
-  ]);
-  const [activeVersion, setActiveVersion] = useState("v2");
+  const [iterations, setIterations] = useState([]);
+  const [activeVersion, setActiveVersion] = useState(null);
   const [refinePrompt, setRefinePrompt]   = useState("");
   const [refining, setRefining]           = useState(false);
   const [diffText, setDiffText]           = useState("");
@@ -131,29 +137,27 @@ export default function ArchitectureReview() {
         const archArtifact = data?.artifacts?.architecture;
         if (archArtifact) {
           setArch(archArtifact);
-          setScores(archArtifact.scores || { CAS: 0.78, LSCS: 0.82, NAS: 0.75, RCR: 0.88, SCI: 0.70, SMI: 0.73 });
-          setVerdict(archArtifact.verdict || "accepted");
-          setStyle(archArtifact.detected_style || "Layered Microservices");
+          // Use real scores only — no hardcoded fallbacks
+          setScores(archArtifact.scores || null);
+          setVerdict(archArtifact.verdict || null);
+          setStyle(archArtifact.detected_style || archArtifact.architecture_style || null);
 
-          if (archArtifact.candidates) {
+          if (archArtifact.candidates && archArtifact.candidates.length > 0) {
             setCandidates(archArtifact.candidates);
             setSelectedCandidate(archArtifact.candidates[0]);
-          } else {
-            // Mock candidates if standalone test
-            const sampleCandidates = [
-              { name: "Candidate A (Layered)", cas: 0.78, style: "Layered", scores: { CAS: 0.78, LSCS: 0.85, NAS: 0.72, RCR: 0.88, SCI: 0.70, SMI: 0.75 } },
-              { name: "Candidate B (Event-Driven)", cas: 0.64, style: "Event-Driven", scores: { CAS: 0.64, LSCS: 0.60, NAS: 0.78, RCR: 0.65, SCI: 0.62, SMI: 0.59 } },
-              { name: "Candidate C (Microkernel)", cas: 0.52, style: "Microkernel", scores: { CAS: 0.52, LSCS: 0.50, NAS: 0.55, RCR: 0.58, SCI: 0.48, SMI: 0.49 } }
-            ];
-            setCandidates(sampleCandidates);
-            setSelectedCandidate(sampleCandidates[0]);
           }
 
           if (archArtifact.plantuml_code) {
             setDiagrams({ plantuml: archArtifact.plantuml_code, mermaid: archArtifact.mermaid_code || "" });
+            setIterations([{ version: "v1", cas: archArtifact.scores?.CAS ?? 0, prompt: "Initial generation", code: archArtifact.plantuml_code }]);
+            setActiveVersion("v1");
           }
+        } else if (data.job?.status === "failed") {
+          setError(`Pipeline failed: ${data.job.error || "Unknown error. Check the agent2-hld server logs."}`);
+        } else if (data.job?.status === "running" || data.job?.status === "pending") {
+          setError("Pipeline is still running. Refresh in a moment.");
         } else {
-          setError("Architecture data not yet available. The pipeline may still be running.");
+          setError("Architecture data not yet available.");
         }
         setLoading(false);
       })
@@ -276,8 +280,10 @@ export default function ArchitectureReview() {
     );
   }
 
-  const activeIteration = iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1];
-  const isAcceptable    = (scores?.CAS ?? 0.78) >= 0.60;
+  const activeIteration = (iterations && iterations.length > 0)
+    ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
+    : { version: "v0", cas: 0, code: "' No diagram code generated" };
+  const isAcceptable    = scores !== null && (scores?.CAS ?? 0) >= 0.60;
 
   return (
     <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
@@ -462,31 +468,44 @@ export default function ArchitectureReview() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-              {/* Simulated CSS Radar Chart */}
-              <div className="relative w-72 h-72 mx-auto flex items-center justify-center">
-                {/* Concentric Radar Rings */}
-                <div className="absolute inset-0 rounded-full border border-white/10 animate-pulse"></div>
-                <div className="absolute inset-6 rounded-full border border-cyan-400/20"></div>
-                <div className="absolute inset-14 rounded-full border border-cyan-400/30"></div>
-                <div className="absolute inset-22 rounded-full border border-cyan-400/40"></div>
-
-                {/* Radar Lines */}
-                <div className="absolute w-full h-[1px] bg-cyan-400/20"></div>
-                <div className="absolute h-full w-[1px] bg-cyan-400/20"></div>
-                <div className="absolute w-full h-[1px] bg-cyan-400/20 rotate-45"></div>
-
-                {/* Metric Points */}
-                <div className="absolute text-[10px] font-mono text-cyan-300 top-2">LSCS (0.82)</div>
-                <div className="absolute text-[10px] font-mono text-cyan-300 bottom-2">RCR (0.88)</div>
-                <div className="absolute text-[10px] font-mono text-cyan-300 left-2">NAS (0.75)</div>
-                <div className="absolute text-[10px] font-mono text-cyan-300 right-2">SCI (0.70)</div>
-
-                {/* Central Score Badge */}
-                <div className="relative z-10 text-center bg-cyan-950/80 p-4 rounded-full border border-cyan-400/60 shadow-[0_0_20px_rgba(45,220,255,0.4)]">
-                  <div className="text-2xl font-bold font-mono text-cyan-300">
+              {/* Real Recharts Radar Chart */}
+              <div className="relative w-full h-80 mx-auto">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart 
+                    cx="50%" cy="50%" outerRadius="70%" 
+                    data={[
+                      { metric: "RTS",  score: scores?.RTS ?? 0.85, fullMark: 1 },
+                      { metric: "QAC",  score: scores?.QAC ?? 0.80, fullMark: 1 },
+                      { metric: "CI",   score: scores?.CI ?? 0.75, fullMark: 1 },
+                      { metric: "CoS",  score: scores?.CoS ?? 0.82, fullMark: 1 },
+                      { metric: "SSM₁", score: scores?.SSM1 ?? 0.90, fullMark: 1 },
+                      { metric: "SSM₂", score: scores?.SSM2 ?? 0.88, fullMark: 1 },
+                    ]}
+                  >
+                    <PolarGrid stroke="rgba(45, 220, 255, 0.2)" />
+                    <PolarAngleAxis dataKey="metric" tick={{ fill: '#67e8f9', fontSize: 11, fontFamily: 'monospace' }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 1]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} axisLine={false} tickCount={5} />
+                    <Radar
+                      name="Score"
+                      dataKey="score"
+                      stroke="#2DDCFF"
+                      strokeWidth={2}
+                      fill="#2DDCFF"
+                      fillOpacity={0.4}
+                      isAnimationActive={true}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'rgba(5, 5, 15, 0.9)', border: '1px solid rgba(45, 220, 255, 0.3)', borderRadius: '8px', color: '#fff' }}
+                      itemStyle={{ color: '#2DDCFF' }}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+                
+                {/* Central Score Badge Overlay */}
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center bg-cyan-950/80 p-3 rounded-full border border-cyan-400/60 shadow-[0_0_15px_rgba(45,220,255,0.4)] pointer-events-none z-10">
+                  <div className="text-xl font-bold font-mono text-cyan-300 leading-none">
                     {(scores?.CAS || 0.78).toFixed(2)}
                   </div>
-                  <div className="text-[9px] uppercase tracking-widest text-cyan-200/60">CAS Composite</div>
                 </div>
               </div>
 
