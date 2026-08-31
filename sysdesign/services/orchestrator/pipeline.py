@@ -249,6 +249,9 @@ async def run_stage_requirements(job_id: str) -> None:
         logger.warning(f"[req] HTTP call failed ({exc}), using local adapter.")
         reqs = req_to_hld_adapt(initial_input)
 
+    # Force job_id alignment to prevent foreign key violations on Neon PG
+    reqs.job_id = job_id
+
     dur_req = int((datetime.utcnow() - t0).total_seconds() * 1000)
     JOB_ARTIFACTS[job_id]["requirements"] = reqs
     update_stage_status(job_id, "requirements", "complete", duration_ms=dur_req)

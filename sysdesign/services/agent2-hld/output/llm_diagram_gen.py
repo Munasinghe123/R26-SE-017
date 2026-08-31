@@ -175,6 +175,34 @@ def _compute_style_alignment(diagram: str, architecture: dict, kind: str) -> tup
 
         return min(1.0, score), issues
 
+    if "modular" in style or "monolith" in style:
+        score = 0.0
+        if has_any("module", "context", "facade", "package") or find_component_like(["module", "facade", "package", "bounded"]):
+            score += 0.5
+        else:
+            issues.append("Modular Monolith style: show distinct module/package boundaries")
+
+        if has_any("internal", "api", "facade", "service") or find_component_like(["facade", "service", "api"]):
+            score += 0.5
+        else:
+            issues.append("Modular Monolith style: include clear module facades/interfaces")
+
+        return score, issues
+
+    if "pipe" in style or "filter" in style:
+        score = 0.0
+        if has_any("filter", "processor", "stage", "transformer") or find_component_like(["filter", "processor", "stage", "transformer"]):
+            score += 0.6
+        else:
+            issues.append("Pipe-and-Filter style: include Filter/Processor stage components")
+
+        if any(k in d for k in ["->", "-->", "|>"]):
+            score += 0.4
+        else:
+            issues.append("Pipe-and-Filter style: show sequential data flow between pipeline stages")
+
+        return min(1.0, score), issues
+
     if "microkernel" in style:
         score = 0.0
         if has_any("core", "kernel") or find_component_like(["core", "kernel"]):
