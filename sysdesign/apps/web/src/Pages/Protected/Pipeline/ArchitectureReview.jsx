@@ -53,6 +53,50 @@ const METRIC_INFO = {
   SSM2: { label: "SSM₂ (Secondary Style Metric)",         desc: "Style-specific boundary property (DDS, ISS, PSC, FIS)", weight: "8.06%" },
 };
 
+function generateFallbackMermaidCode(architecture) {
+  if (!architecture) return "graph TD\n    A[Client] --> B[API Gateway]";
+  const comps = architecture.components || [];
+  const conns = architecture.connectors || architecture.interactions || [];
+
+  let lines = ["graph TD"];
+  const layers = architecture.layers || [];
+
+  if (layers.length > 0) {
+    layers.forEach(layer => {
+      const layerComps = comps.filter(c => (c.layer || "").toLowerCase() === (layer.name || "").toLowerCase());
+      if (layerComps.length > 0) {
+        const subId = (layer.name || "Layer").replace(/[^a-zA-Z0-9]/g, "_");
+        lines.push(`    subgraph ${subId} ["${layer.name}"]`);
+        layerComps.forEach(c => {
+          const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
+          lines.push(`        ${cId}["${c.name}"]`);
+        });
+        lines.push("    end");
+      }
+    });
+  } else {
+    comps.forEach(c => {
+      const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
+      lines.push(`    ${cId}["${c.name}"]`);
+    });
+  }
+
+  conns.forEach(conn => {
+    const fromId = (conn.from_component || conn.from || "").replace(/[^a-zA-Z0-9]/g, "_");
+    const toId = (conn.to_component || conn.to || "").replace(/[^a-zA-Z0-9]/g, "_");
+    const label = conn.connector_type || conn.type || "";
+    if (fromId && toId) {
+      if (label) {
+        lines.push(`    ${fromId} -->|"${label}"| ${toId}`);
+      } else {
+        lines.push(`    ${fromId} --> ${toId}`);
+      }
+    }
+  });
+
+  return lines.join("\n");
+}
+
 function VerdictBadge({ verdict, cas }) {
   const cfg = {
     accepted:     { text: "ACCEPTED",     cls: "text-green-900 bg-green-400",  Icon: CheckCircle2 },
@@ -366,7 +410,7 @@ export default function ArchitectureReview() {
               Architecture <span className="text-cyan-400">Review Suite</span>
             </h1>
             <p className="text-xs text-white/50 mt-1">
-              ATAM Trade-off Evaluation · Radar Metrics · Git-like PlantUML Refinement Loop
+              ATAM Trade-off Evaluation · Radar Metrics · Interactive Diagram Studio & Revision Control
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -380,13 +424,14 @@ export default function ArchitectureReview() {
           </div>
         </div>
 
-        {/* ── Navigation Tabs ────────────────────────────────────────── */}
+        {/* ── Navigation Tabs (Production Enterprise Terminology) ───────── */}
         <div className="flex flex-wrap gap-2 border-b border-white/10 pb-3">
           {[
-            { id: "overview", label: "ATAM Tradeoff & Winner", icon: Award },
-            { id: "radar",    label: "Quality Metrics Radar",  icon: BarChart2 },
-            { id: "git_loop", label: "Git-Like Refinement Loop", icon: GitBranch },
-            { id: "diff",     label: "Side-by-Side Diff",       icon: FileDiff },
+            { id: "overview",       label: "Architecture Evaluation & Selection", icon: Award },
+            { id: "radar",          label: "Quality Metrics Radar",               icon: BarChart2 },
+            { id: "visual_studio",  label: "Diagram Studio & Visual Canvas",      icon: Eye },
+            { id: "git_loop",       label: "Interactive Refinement Engine",       icon: GitBranch },
+            { id: "diff",           label: "Revision Control & Code Diff",        icon: FileDiff },
           ].map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -743,7 +788,90 @@ export default function ArchitectureReview() {
         )}
 
         {/* ───────────────────────────────────────────────────────────── */}
-        {/* TAB 3: GIT-LIKE DIAGRAM REFINEMENT LOOP                      */}
+        {/* TAB 3: INTERACTIVE DIAGRAM STUDIO & VISUAL CANVAS             */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        {activeTab === "visual_studio" && (
+          <div className="space-y-6">
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Eye className="text-cyan-400" size={20} />
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
+                    High-Resolution Visual Diagram & Native Git Exporter
+                  </h3>
+                  <p className="text-[11px] text-white/50">
+                    Live vector SVG rendering. Copy native Mermaid code directly into client GitHub README.md files.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture);
+                  navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
+                  alert("Copied Mermaid Markdown to Clipboard! Ready to paste into GitHub README.md");
+                }}
+                className="px-4 py-2 rounded-xl bg-cyan-400 text-black font-bold text-xs flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(45,220,255,0.4)] hover:bg-cyan-300 transition-all"
+              >
+                Copy Mermaid for Git README
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Visual SVG Render Canvas */}
+              <div className="lg:col-span-2 p-6 rounded-2xl border border-cyan-400/30 bg-[#070919] min-h-[460px] flex flex-col justify-between items-center relative shadow-2xl">
+                <div className="w-full flex justify-between items-center border-b border-white/10 pb-3 mb-4">
+                  <span className="text-xs font-bold text-white/70 uppercase font-mono">
+                    Live Vector Graphic Canvas (PlantUML / Mermaid Engine)
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-300 font-mono">
+                    SVG Vector High-Res
+                  </span>
+                </div>
+
+                <div className="w-full h-full flex items-center justify-center p-6 bg-[#0a0c24] rounded-xl border border-white/5 overflow-auto">
+                  <img 
+                    src={`https://kroki.io/plantuml/svg/${encodeURIComponent(btoa((activeIteration?.code || "").replace(/\\n/g, "\n")))}`} 
+                    onError={(e) => {
+                      // Fallback to text diagram if offline
+                      e.target.style.display = 'none';
+                    }}
+                    alt="Visual Architecture Diagram" 
+                    className="max-h-[400px] object-contain" 
+                  />
+                </div>
+              </div>
+
+              {/* Git README Copyable Code Box */}
+              <div className="p-6 rounded-2xl border border-white/10 bg-white/5 space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono block">
+                    Copyable Mermaid Code (Git README)
+                  </span>
+                  <p className="text-[11px] text-white/60">
+                    Paste this snippet into your client's <code className="text-cyan-300 font-mono">README.md</code> for native GitHub diagram rendering:
+                  </p>
+                  <div className="p-3 rounded-xl bg-black/90 font-mono text-[11px] text-cyan-200 border border-white/10 max-h-72 overflow-y-auto whitespace-pre">
+                    {`\`\`\`mermaid\n${generateFallbackMermaidCode(selectedCandidate?.architecture)}\n\`\`\``}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture);
+                    navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
+                    alert("Copied Mermaid Code to Clipboard!");
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-cyan-400 text-black font-bold text-xs cursor-pointer hover:bg-cyan-300 transition-all text-center"
+                >
+                  Copy Mermaid Code
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* TAB 4: INTERACTIVE REFINEMENT ENGINE                         */}
         {/* ───────────────────────────────────────────────────────────── */}
         {activeTab === "git_loop" && (
           <div className="space-y-6">
