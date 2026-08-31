@@ -65,7 +65,7 @@ OUTPUT FORMAT: You MUST respond with ONLY a valid JSON object. No explanations, 
 The JSON MUST follow this EXACT schema:
 
 {
-  "architecture_style": "<one of: Layered Architecture, Event-Driven Architecture, Microkernel Architecture, Microservices Architecture, Space-Based Architecture>",
+  "architecture_style": "<one of: Layered Architecture, Event-Driven Architecture, Microservices Architecture, Modular Monolith, Pipe-and-Filter Architecture>",
   "pros_and_cons": "<2-3 sentence expert explanation of why this architecture is a good or bad fit for this SPECIFIC scenario, outlining its ATAM tradeoffs>",
   "layers": [
     {
@@ -77,15 +77,30 @@ The JSON MUST follow this EXACT schema:
     {
       "name": "<PascalCase name ending with a role suffix like Service, Controller, Repository, Gateway, Handler, Manager, Engine, etc.>",
       "layer": "<must match one of the layer names above>",
-      "responsibility": "<clear sentence of at least 8 words describing what this component does>"
+      "boundary": "<one of: presentation, business_logic, data_access, infrastructure, cross_cutting>",
+      "element_type": "<one of: service, module, handler, gateway, repository, broker, controller, client>",
+      "responsibilities": ["<responsibility 1: clear sentence of at least 8 words>", "<responsibility 2>"],
+      "provided_interfaces": ["<e.g., POST /orders, GET /orders/{id}>"],
+      "required_interfaces": ["<e.g., OrderRepository, PaymentGateway>"],
+      "requirement_ids": ["<FR-1>", "<FR-2>"]
     }
   ],
-  "interactions": [
+  "connectors": [
     {
-      "from": "<component name (must match a component above)>",
-      "to": "<component name (must match a component above)>",
-      "type": "<one of: REST, gRPC, Event, Message Queue, Database, WebSocket, Direct Call>",
-      "direction": "<one of: down, up, lateral>"
+      "from_component": "<component name (must match a component above)>",
+      "to_component": "<component name (must match a component above)>",
+      "connector_type": "<one of: sync_call, async_message, event_publish, data_flow, shared_data>",
+      "protocol": "<e.g., REST, gRPC, AMQP, Kafka>",
+      "data_transferred": "<e.g., OrderRequest, PaymentResponse>"
+    }
+  ],
+  "quality_provisions": [
+    {
+      "nfr_id": "<NFR-1>",
+      "iso_characteristic": "<e.g., performance_efficiency, reliability, security, maintainability>",
+      "responsible_component": "<component name>",
+      "mechanism": "<e.g., Redis read-through cache, Circuit breaker with Resilience4j>",
+      "evidence_strength": "<one of: high, medium, low>"
     }
   ]
 }
@@ -94,30 +109,30 @@ The JSON MUST follow this EXACT schema:
     # ── Layer 4: Constraint Specification ─────────────────
     constraint_layer = """
 ARCHITECTURE STYLE SELECTION — evaluate requirements FIRST, then choose:
-Use ONLY the canonical style options from Software Architecture Patterns, 2nd Edition (Mark Richards):
-Layered, Event-Driven, Microkernel, Microservices, Space-Based.
+Use ONLY these 5 canonical styles (Richards & Ford 2020; Newman 2019):
+Layered, Event-Driven, Microservices, Modular Monolith, Pipe-and-Filter.
 - **Layered Architecture**: Best for systems with clear separation of concerns, moderate scale, CRUD-heavy workflows. DEFAULT choice unless requirements clearly demand otherwise.
 - **Event-Driven Architecture**: Best when requirements emphasize real-time notifications, async workflows, data streaming, or loosely coupled producers/consumers.
-- **Microkernel Architecture**: Best for extensible applications, product-based applications needing 3rd party plugins, or systems requiring isolated execution of dynamic rules.
 - **Microservices Architecture**: ONLY for systems with multiple independent business domains, teams working independently, or extreme horizontal scaling (>50k concurrent users across distinct services).
-- **Space-Based Architecture**: Best for systems requiring extremely high scalability and unpredictable concurrent user volumes, mitigating database bottlenecks via in-memory data grids.
+- **Modular Monolith**: Best for systems needing strong module boundaries within a single deployment unit, clear bounded contexts, and incremental scalability without distributed complexity.
+- **Pipe-and-Filter Architecture**: Best for data transformation pipelines, ETL workflows, stream processing, or systems where data flows sequentially through independent processing stages.
 
-⚠️ DO NOT default to Microservices. For systems with fewer than 5 truly independent domains, prefer Layered or Microkernel. Simpler is better when requirements allow it.
+⚠️ DO NOT default to Microservices. For systems with fewer than 5 truly independent domains, prefer Layered or Modular Monolith. Simpler is better when requirements allow it.
 
 STRUCTURAL CONSTRAINTS — follow these strictly:
 1. Choose the SIMPLEST architecture style that fully satisfies ALL requirements.
 2. Define at least 3 distinct layers appropriate to your chosen style.
 3. Create at least 8 components distributed across layers.
 4. Every component name MUST end with a role suffix (Service, Controller, Repository, Gateway, Handler, Manager, Engine, Processor, etc.).
-5. Every component MUST have a clear, specific responsibility (at least 8 words).
-6. Define interactions that show how components communicate.
-7. Interactions should primarily flow DOWNWARD (higher layers call lower layers).
+5. Every component MUST have clear, specific responsibilities (provide a list of at least 2 responsibility statements).
+6. Define connectors that show how components communicate. Use connector_type from: sync_call, async_message, event_publish, data_flow, shared_data.
+7. Connectors should primarily flow DOWNWARD (higher layers call lower layers).
 8. Style-specific rules:
    - Layered Architecture: ensure strict layer separation, no skipping layers.
    - Event-Driven Architecture: include a Message Broker or Event Bus component.
-   - Microkernel Architecture: include a Core System and separate Plugin modules.
-   - Microservices Architecture: include API Gateway and Service Registry components.
-   - Space-Based Architecture: include Processing Unit and Virtualized Middleware components.
+   - Microservices Architecture: include API Gateway component.
+   - Modular Monolith: group components into distinct modules with clear boundaries.
+   - Pipe-and-Filter Architecture: define a sequential pipeline with filter/processor components.
 """
 
     # ── Layer 5: Quality Guardrails ───────────────────────
@@ -244,10 +259,10 @@ def build_diagram_prompt(
     style_rules = (
         "STYLE-SPECIFIC DIAGRAM ALIGNMENT RULES:\n"
         "- Layered Architecture: group components by layer and keep dependencies mostly downward between adjacent layers.\n"
-        "- Microservices Architecture: show an explicit API Gateway entry point and a Service Registry/Discovery; isolate services as separate groups/packages.\n"
+        "- Microservices Architecture: show an explicit API Gateway entry point; isolate services as separate groups/packages.\n"
         "- Event-Driven Architecture: show an explicit Event Bus/Broker; producers/consumers should connect via the broker (avoid direct service-to-service for events).\n"
-        "- Microkernel Architecture: show a Core/Kernel and separate Plugin/Extension modules; plugins depend on the core.\n"
-        "- Space-Based Architecture: show Processing Units and a shared Data Grid/Virtualized Middleware; discourage direct DB coupling in the main flow.\n"
+        "- Modular Monolith: group components into distinct module packages with clear boundaries; show internal components and external-facing facades.\n"
+        "- Pipe-and-Filter Architecture: arrange components left-to-right in a sequential pipeline; show data flowing through filter/processor stages.\n"
     )
 
     if diagram_kind not in {"mermaid", "plantuml"}:
@@ -303,7 +318,7 @@ def build_feedback_from_scores(scores: dict, thresholds: dict) -> str:
     Build a targeted feedback string from metric scores that fell below thresholds.
 
     Args:
-        scores: Dict of metric_name → score (e.g., {"RCR": 0.6, "NAS": 0.5, ...})
+        scores: Dict of metric_name → score (e.g., {"RTS": 0.6, "QAC": 0.5, ...})
         thresholds: Dict of metric_name → threshold
 
     Returns:
@@ -312,27 +327,35 @@ def build_feedback_from_scores(scores: dict, thresholds: dict) -> str:
     feedback_lines = []
 
     metric_advice = {
-        "RCR": (
-            "REQUIREMENT COVERAGE IS LOW. Ensure EVERY functional requirement is addressed "
-            "by at least one component. Add specific service components for uncovered requirements."
+        "RTS": (
+            "REQUIREMENT TRACEABILITY IS LOW. Ensure EVERY functional requirement is addressed "
+            "by at least one component. Add specific service components for uncovered requirements. "
+            "Use clear responsibility descriptions that semantically match the requirement text."
         ),
-        "NAS": (
-            "NFR ALIGNMENT IS WEAK. Add architectural elements that directly support non-functional "
-            "requirements: load balancers for scalability, caching for performance, auth services "
-            "for security, redundancy for availability."
+        "QAC": (
+            "QUALITY ATTRIBUTE COVERAGE IS WEAK. Add architectural elements that directly support "
+            "non-functional requirements: load balancers for scalability, caching for performance, "
+            "auth services for security, redundancy for availability. Add quality_provisions entries."
         ),
-        "SMI": (
-            "MODULARITY IS POOR. Reduce cross-layer dependencies. Keep components within the same "
-            "layer communicating internally. Minimize direct calls between distant layers."
+        "CI": (
+            "COUPLING IS TOO HIGH. Reduce the number of direct inter-component connections. "
+            "Use intermediary components (message brokers, event buses) to decouple services. "
+            "Minimize fan-out from individual components."
         ),
-        "LSCS": (
-            "LAYER SEPARATION IS VIOLATED. Ensure interactions flow DOWNWARD only. Lower layers "
-            "must NOT call higher layers. Remove any upward dependencies or circular calls."
+        "CoS": (
+            "COMPONENT COHESION IS POOR. Each component's responsibilities should be closely "
+            "related. Split components with mixed concerns into focused single-purpose components. "
+            "Avoid 'god components' that handle unrelated tasks."
         ),
-        "SCI": (
-            "STRUCTURAL CLARITY IS LOW. Use clear naming conventions: every component name must "
-            "end with Service, Controller, Repository, Gateway, Handler, etc. Every component "
-            "must have a detailed responsibility description (at least 8 words)."
+        "SSM1": (
+            "PRIMARY STYLE METRIC IS LOW. Ensure the architecture strongly conforms to its "
+            "declared style. For Layered: enforce strict layer ordering. For Microservices: "
+            "ensure clear service boundaries. For Event-Driven: route through the event bus."
+        ),
+        "SSM2": (
+            "SECONDARY STYLE METRIC IS LOW. Strengthen style-specific structural properties. "
+            "For Layered: ensure top-down dependency direction. For Microservices: define "
+            "explicit interfaces. For Event-Driven: maximize pub/sub coverage."
         ),
     }
 
@@ -348,3 +371,4 @@ def build_feedback_from_scores(scores: dict, thresholds: dict) -> str:
         return ""
 
     return "\n".join(feedback_lines)
+

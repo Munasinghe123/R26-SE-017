@@ -11,8 +11,9 @@ from typing import Optional
 
 from config import (
     MODELS,
-    CANDIDATES_PER_MODEL,
+    MAX_CANDIDATES_PER_MODEL,
     GENERATION_OPTIONS,
+    GENERATION_SEEDS,
     MAX_GENERATION_RETRIES,
 )
 from providers import get_provider_for_model
@@ -67,14 +68,15 @@ class GenerationResult:
         }
 
 
-def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationResult:
+def generate_single(model: str, prompt: str, candidate_num: int, options_override: dict | None = None) -> GenerationResult:
     """
     Generate a single architecture candidate from one model.
 
     Args:
-        model: Model name (e.g., "gemini-2.0-flash", "llama-3.3-70b-versatile")
+        model: Model name (e.g., "meta-llama/llama-3.1-8b-instruct:free")
         prompt: Full structured prompt
         candidate_num: Which candidate number this is (1-based)
+        options_override: Optional generation options (e.g., custom seed/temp)
 
     Returns:
         GenerationResult with raw text or error
@@ -83,11 +85,17 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
     last_error = "Unknown error"
     attempts = []
 
+    options = {**GENERATION_OPTIONS}
+    if candidate_num <= len(GENERATION_SEEDS):
+        options["seed"] = GENERATION_SEEDS[candidate_num - 1]
+    if options_override:
+        options.update(options_override)
+
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
         try:
             logger.info(
                 f"[{provider.provider_name}/{model}] Generating candidate {candidate_num}, "
-                f"attempt {attempt}/{MAX_GENERATION_RETRIES}..."
+                f"attempt {attempt}/{MAX_GENERATION_RETRIES} (seed={options.get('seed')})..."
             )
 
             start_time = time.time()
@@ -97,7 +105,7 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
                 "timestamp": time.time(),
             })
 
-            raw_text = provider.generate(prompt, model, GENERATION_OPTIONS)
+            raw_text = provider.generate(prompt, model, options)
 
             duration_ms = (time.time() - start_time) * 1000
 
@@ -160,14 +168,14 @@ def generate_all(requirements: dict, models: list = None,
     Args:
         requirements: Requirements dict
         models: List of model names (defaults to config.MODELS)
-        candidates_per_model: How many candidates per model (defaults to config)
+        candidates_per_model: How many candidates per model (defaults to config.MAX_CANDIDATES_PER_MODEL)
         progress_callback: Optional callback(model, candidate_num, total, status)
 
     Returns:
         List of GenerationResult objects
     """
     models = models or MODELS
-    candidates_per_model = candidates_per_model or CANDIDATES_PER_MODEL
+    candidates_per_model = candidates_per_model or MAX_CANDIDATES_PER_MODEL
 
     results = []
     total = len(models) * candidates_per_model
