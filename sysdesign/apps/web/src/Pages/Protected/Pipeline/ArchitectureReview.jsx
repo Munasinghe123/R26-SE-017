@@ -53,6 +53,29 @@ const METRIC_INFO = {
   SSM2: { label: "SSM₂ (Secondary Style Metric)",         desc: "Style-specific boundary property (DDS, ISS, PSC, FIS)", weight: "8.06%" },
 };
 
+/** Strip org prefix from model path: "meta-llama/llama-3.3-70b-instruct" → "llama-3.3-70b-instruct" */
+function getModelShortName(model) {
+  if (!model) return "Unknown Model";
+  return model.split("/").pop() || model;
+}
+
+/**
+ * Build a unique, human-readable label for a candidate card.
+ * Example: "llama-3.3-70b-instruct #2 · Microservices"
+ */
+function buildCandidateLabel(c, idx) {
+  const modelShort = getModelShortName(c.model) || `Candidate ${idx + 1}`;
+  const num = c.candidate_num ? `#${c.candidate_num}` : `#${idx + 1}`;
+  const style = (c.architecture?.architecture_style || c.scores?.detected_style || "").trim();
+  const styleTag = style ? ` · ${style}` : "";
+  return `${modelShort} ${num}${styleTag}`;
+}
+
+/** Composite unique ID: model + candidate_num + list index → guaranteed unique per card */
+function buildCandidateUid(c, idx) {
+  return `${c.model || "unknown"}::${c.candidate_num ?? idx}::${idx}`;
+}
+
 function generateFallbackMermaidCode(architecture) {
   if (!architecture) return "graph TD\n    A[Client] --> B[API Gateway]";
   const comps = architecture.components || [];
@@ -196,19 +219,23 @@ export default function ArchitectureReview() {
           if (archArtifact.candidates && archArtifact.candidates.length > 0) {
             mappedCandidates = archArtifact.candidates.map((c, idx) => ({
               ...c,
-              name: c.name || c.model || `Candidate ${c.candidate_num}`,
+              uid: buildCandidateUid(c, idx),
+              name: buildCandidateLabel(c, idx),
               cas: c.cas || c.scores?.CAS || 0,
               style: c.style || c.architecture?.architecture_style || c.scores?.detected_style || "unknown"
             }));
           } else {
-            // Synthesize from root winner
+            // Synthesize single-winner fallback
             mappedCandidates = [{
-              name: archArtifact.architecture_style || "Auto-Picked Winner",
+              uid: "winner::0::0",
+              name: buildCandidateLabel({ model: archArtifact.architecture_style, candidate_num: 1, architecture: archArtifact }, 0),
               model: archArtifact.architecture_style || "Auto-Picked Winner",
               cas: archArtifact.scores?.CAS || 0,
               style: archArtifact.detected_style || archArtifact.architecture_style || "unknown",
               scores: archArtifact.scores || {},
-              architecture: archArtifact
+              architecture: archArtifact,
+              candidate_num: 1,
+              rank: 1,
             }];
           }
           setCandidates(mappedCandidates);
@@ -626,37 +653,70 @@ export default function ArchitectureReview() {
                   </label>
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {candidates.map((cand, idx) => {
-                      const isSelected = selectedCandidate?.name === cand.name || selectedCandidate?.id === cand.id;
+                      // Use uid for guaranteed single-candidate selection
+                      const isSelected = selectedCandidate?.uid === cand.uid;
                       const styleName = cand.style || cand.architecture?.architecture_style || "Layered";
-                      const ssmTag = cand.scores?.ssm1_name && cand.scores?.ssm2_name 
+                      const rankLabel = cand.rank > 0 ? `#${cand.rank}` : cand.rank === 1 ? "#1" : "—";
+                      const ssmTag = cand.scores?.ssm1_name && cand.scores?.ssm2_name
                         ? `${cand.scores.ssm1_name}/${cand.scores.ssm2_name}`
                         : "SSM₁/SSM₂";
+                      const casPct = Math.round((cand.cas || 0) * 100);
+                      const casColor = casPct >= 80 ? "bg-green-400" : casPct >= 60 ? "bg-amber-400" : "bg-red-400";
+                      const modelShort = getModelShortName(cand.model);
 
                       return (
                         <button
-                          key={idx}
+                          key={cand.uid || idx}
                           onClick={() => setSelectedCandidate(cand)}
                           className={`
-                            w-full text-left p-3 rounded-xl border text-xs transition-all flex flex-col gap-1.5 cursor-pointer
+                            w-full text-left p-3 rounded-xl border text-xs transition-all flex flex-col gap-2 cursor-pointer
                             ${isSelected
-                              ? "border-amber-400 bg-amber-400/10 text-amber-200 font-semibold shadow-[0_0_10px_rgba(245,158,11,0.2)]"
-                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:border-white/20"
+                              ? "border-amber-400 bg-amber-400/10 shadow-[0_0_12px_rgba(245,158,11,0.25)]"
+                              : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"
                             }
                           `}
                         >
+                          {/* Row 1: Rank + CAS */}
                           <div className="flex justify-between items-center w-full">
-                            <span className="font-semibold text-white truncate max-w-[170px]">{cand.name}</span>
-                            <span className="font-mono font-bold text-amber-400">
+                            <div className="flex items-center gap-2">
+                              {cand.rank > 0 && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                                  cand.rank === 1
+                                    ? "bg-amber-400/20 text-amber-300 border border-amber-400/40"
+                                    : "bg-white/10 text-white/50 border border-white/10"
+                                }`}>
+                                  #{cand.rank}
+                                </span>
+                              )}
+                              <span className={`font-semibold truncate max-w-[150px] ${
+                                isSelected ? "text-amber-200" : "text-white"
+                              }`}>
+                                {modelShort} #{cand.candidate_num}
+                              </span>
+                            </div>
+                            <span className={`font-mono font-bold text-sm ${
+                              casPct >= 80 ? "text-green-400" : casPct >= 60 ? "text-amber-400" : "text-red-400"
+                            }`}>
                               {typeof cand.cas === 'number' ? cand.cas.toFixed(3) : cand.cas}
                             </span>
                           </div>
+
+                          {/* Row 2: Style tag + SSM tag */}
                           <div className="flex items-center justify-between text-[10px] text-white/50">
-                            <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-mono uppercase">
+                            <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-mono uppercase truncate max-w-[120px]">
                               {styleName}
                             </span>
-                            <span className="font-mono text-cyan-400/80 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20">
+                            <span className="font-mono text-cyan-400/80 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20 shrink-0">
                               {ssmTag}
                             </span>
+                          </div>
+
+                          {/* Row 3: CAS mini progress bar */}
+                          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${casColor}`}
+                              style={{ width: `${casPct}%` }}
+                            />
                           </div>
                         </button>
                       );
