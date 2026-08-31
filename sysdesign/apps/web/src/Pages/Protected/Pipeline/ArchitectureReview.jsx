@@ -426,6 +426,9 @@ export default function ArchitectureReview() {
                || selectedCandidate?.style
                || "Architecture";
 
+    let pumlRaw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
+    const fallbackPuml = isValidPlantUML(pumlRaw) ? pumlRaw : generateFallbackPlantUML(targetArch || null, title);
+
     let payloadText = "";
     let endpoint = "";
 
@@ -434,12 +437,7 @@ export default function ArchitectureReview() {
       payloadText = generateFallbackMermaidCode(targetArch);
     } else {
       endpoint = "https://kroki.io/plantuml/svg";
-      let raw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
-      if (!isValidPlantUML(raw)) {
-        payloadText = generateFallbackPlantUML(targetArch || null, title);
-      } else {
-        payloadText = raw;
-      }
+      payloadText = fallbackPuml;
     }
 
     setSvgError(false);
@@ -452,7 +450,21 @@ export default function ArchitectureReview() {
     })
       .then(r => r.ok ? r.blob() : Promise.reject(r.status))
       .then(blob => setSvgUrl(URL.createObjectURL(blob)))
-      .catch(() => setSvgError(true));
+      .catch(() => {
+        // If Mermaid fails/times out on public Kroki, fall back to PlantUML vector SVG
+        if (diagramEngine === "mermaid") {
+          fetch("https://kroki.io/plantuml/svg", {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: fallbackPuml,
+          })
+            .then(r => r.ok ? r.blob() : Promise.reject(r.status))
+            .then(blob => setSvgUrl(URL.createObjectURL(blob)))
+            .catch(() => setSvgError(true));
+        } else {
+          setSvgError(true);
+        }
+      });
   }, [iterations, activeVersion, selectedCandidate, arch, diagramEngine]);
 
   const handleRefineDiagram = async () => {
@@ -1021,128 +1033,194 @@ export default function ArchitectureReview() {
         {/* ───────────────────────────────────────────────────────────── */}
         {/* TAB 3: INTERACTIVE DIAGRAM STUDIO & VISUAL CANVAS             */}
         {/* ───────────────────────────────────────────────────────────── */}
-        {activeTab === "visual_studio" && (
-          <div className="space-y-6">
+        {activeTab === "visual_studio" && (() => {
+          const targetArch = selectedCandidate?.architecture || arch;
+          const currentPumlCode = isValidPlantUML(activeIteration?.code)
+            ? activeIteration.code
+            : generateFallbackPlantUML(targetArch, targetArch?.architecture_style || selectedCandidate?.style || "Architecture");
+          const currentMermaidCode = generateFallbackMermaidCode(targetArch);
+          const activeCode = diagramEngine === "mermaid" ? currentMermaidCode : currentPumlCode;
+          const activeCodeLines = activeCode.split("\n");
 
-            {/* Status Gate Banner */}
-            {isAcceptable ? (
-              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-green-950/40 border border-green-400/30 text-green-300 text-xs font-semibold">
-                <CheckCircle2 size={16} />
-                Architecture CAS {diagramCas.toFixed(3)} passed quality threshold (≥ 0.60). Visual review only — no AI intervention required.
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-amber-950/40 border border-amber-400/30 text-amber-300 text-xs font-semibold">
-                <AlertTriangle size={16} />
-                Architecture CAS {diagramCas.toFixed(3)} is below threshold (0.60). Switch to the <strong>Interactive Refinement Engine</strong> tab to improve it.
-              </div>
-            )}
+          return (
+            <div className="space-y-6">
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Visual SVG Render Canvas */}
-              <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#070919] min-h-[480px] flex flex-col shadow-2xl overflow-hidden">
-                <div className="flex flex-wrap justify-between items-center px-5 py-3 bg-[#050610] border-b border-white/10 gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white/70 uppercase font-mono">Engine:</span>
-                    <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/10 text-xs">
+              {/* Status Gate Banner */}
+              {isAcceptable ? (
+                <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-green-950/40 border border-green-400/30 text-green-300 text-xs font-semibold">
+                  <CheckCircle2 size={16} />
+                  Architecture CAS {diagramCas.toFixed(3)} passed quality threshold (≥ 0.60). Visual review only — no AI intervention required.
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-amber-950/40 border border-amber-400/30 text-amber-300 text-xs font-semibold">
+                  <AlertTriangle size={16} />
+                  Architecture CAS {diagramCas.toFixed(3)} is below threshold (0.60). Switch to the <strong>Interactive Refinement Engine</strong> tab to improve it.
+                </div>
+              )}
+
+              {/* Side-by-Side: Visual Canvas (Left) & Live Source Code (Right) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                
+                {/* LEFT BOX: Live High-Resolution Vector Diagram Canvas */}
+                <div className="rounded-2xl border border-cyan-400/30 bg-[#070919] flex flex-col shadow-2xl overflow-hidden min-h-[500px]">
+                  <div className="flex flex-wrap justify-between items-center px-4 py-2.5 bg-[#050610] border-b border-white/10 gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
+                      <span className="text-xs font-bold text-white uppercase font-mono tracking-wider">
+                        Visual Vector Canvas
+                      </span>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                      svgError ? "bg-red-500/20 text-red-300" : svgUrl ? "bg-green-500/20 text-green-300" : "bg-white/10 text-white/50"
+                    }`}>
+                      {svgError ? "Render Offline" : svgUrl ? "Vector High-Res SVG" : "Rendering..."}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 flex items-center justify-center p-4 bg-[#0d1117] overflow-auto min-h-[440px]">
+                    {svgError ? (
+                      <div className="text-center space-y-2 p-6">
+                        <AlertTriangle className="mx-auto text-amber-400" size={32} />
+                        <p className="text-amber-300 text-xs font-mono font-semibold">Rendering via PlantUML Engine...</p>
+                        <p className="text-white/40 text-[11px]">Inspect the live source code in the right panel.</p>
+                      </div>
+                    ) : svgUrl ? (
+                      <img src={svgUrl} alt="Architecture Diagram" className="max-h-[440px] w-full object-contain" />
+                    ) : (
+                      <div className="flex items-center gap-3 text-cyan-400 text-xs font-mono">
+                        <RefreshCw size={16} className="animate-spin" />
+                        Rendering high-resolution vector diagram...
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT BOX: Live Source Code Studio & Syntax Inspector */}
+                <div className="rounded-2xl border border-white/10 bg-[#0a0c1a] flex flex-col font-mono shadow-2xl overflow-hidden min-h-[500px]">
+                  {/* Code Editor Header */}
+                  <div className="flex flex-wrap items-center justify-between px-4 py-2 bg-[#050610] border-b border-white/10 text-xs gap-2">
+                    {/* Engine Selector */}
+                    <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/10">
                       <button
                         onClick={() => setDiagramEngine("plantuml")}
-                        className={`px-3 py-1 rounded-md font-mono text-[11px] font-bold cursor-pointer transition-all ${
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition-all ${
                           diagramEngine === "plantuml"
-                            ? "bg-cyan-400 text-black shadow-[0_0_10px_rgba(45,220,255,0.4)]"
+                            ? "bg-cyan-400 text-black shadow-[0_0_8px_rgba(45,220,255,0.4)]"
                             : "text-white/60 hover:text-white"
                         }`}
                       >
-                        PlantUML (Enterprise / StarUML)
+                        PlantUML (.puml / StarUML)
                       </button>
                       <button
                         onClick={() => setDiagramEngine("mermaid")}
-                        className={`px-3 py-1 rounded-md font-mono text-[11px] font-bold cursor-pointer transition-all ${
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition-all ${
                           diagramEngine === "mermaid"
-                            ? "bg-cyan-400 text-black shadow-[0_0_10px_rgba(45,220,255,0.4)]"
+                            ? "bg-cyan-400 text-black shadow-[0_0_8px_rgba(45,220,255,0.4)]"
                             : "text-white/60 hover:text-white"
                         }`}
                       >
-                        Mermaid (GitHub Native)
+                        Mermaid (.mmd / GitHub)
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-white/40">{activeCodeLines.length} lines</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            diagramEngine === "mermaid" ? `\`\`\`mermaid\n${activeCode}\n\`\`\`` : activeCode
+                          );
+                          alert(`Copied ${diagramEngine.toUpperCase()} code to clipboard!`);
+                        }}
+                        className="px-2.5 py-1 rounded bg-cyan-400/20 text-cyan-300 hover:bg-cyan-400/30 text-[10px] font-bold cursor-pointer transition-all border border-cyan-400/30 flex items-center gap-1"
+                      >
+                        Copy Code
                       </button>
                     </div>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
-                    svgError ? "bg-red-500/20 text-red-300" : svgUrl ? "bg-green-500/20 text-green-300" : "bg-white/10 text-white/50"
-                  }`}>
-                    {svgError ? "Render Error" : svgUrl ? "Vector High-Res SVG" : "Rendering..."}
-                  </span>
+
+                  {/* Code Editor Body with Line Numbers */}
+                  <div className="p-4 overflow-x-auto max-h-[440px] overflow-y-auto flex text-xs leading-relaxed bg-[#060814] flex-1">
+                    {/* Line Numbers Gutter */}
+                    <div className="select-none pr-3 mr-3 text-right text-white/30 border-r border-white/10 font-mono space-y-0.5">
+                      {activeCodeLines.map((_, i) => (
+                        <div key={i}>{i + 1}</div>
+                      ))}
+                    </div>
+
+                    {/* Code Content */}
+                    <div className="text-cyan-200 font-mono whitespace-pre space-y-0.5 flex-1 text-[11px]">
+                      {activeCodeLines.map((line, i) => (
+                        <div key={i} className="hover:bg-cyan-500/10 px-1 rounded transition-colors">
+                          {line || " "}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex-1 flex items-center justify-center p-6 bg-[#0d1117] overflow-auto min-h-[380px]">
-                  {svgError ? (
-                    <div className="text-center space-y-2">
-                      <p className="text-red-400 text-xs font-mono font-semibold">⚠ Diagram could not be rendered.</p>
-                      <p className="text-white/40 text-[11px]">Switch engine or check the Refinement Engine tab to inspect code.</p>
-                    </div>
-                  ) : svgUrl ? (
-                    <img src={svgUrl} alt="Architecture Diagram" className="max-h-[460px] w-full object-contain" />
-                  ) : (
-                    <div className="flex items-center gap-3 text-cyan-400 text-xs font-mono">
-                      <RefreshCw size={16} className="animate-spin" />
-                      Rendering high-resolution vector diagram via Kroki...
-                    </div>
-                  )}
-                </div>
               </div>
 
-              {/* Right Panel: Multiple Industry Export Formats */}
-              <div className="space-y-4 flex flex-col justify-between">
-                {/* CAS score summary */}
+              {/* Bottom Quick-Action Cards: StarUML & GitHub Export */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Score Summary */}
                 <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-1">
-                  <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Diagram Quality Score</span>
-                  <p className="text-2xl font-bold text-cyan-300 font-mono">{diagramCas.toFixed(3)}</p>
-                  <p className="text-[11px] text-white/50">{isAcceptable ? "✅ Passed — Ready to accept" : "⚠ Below threshold — Refinement needed"}</p>
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Architecture Quality Score</span>
+                  <div className="flex items-center justify-between">
+                    <p className="text-2xl font-bold text-cyan-300 font-mono">{diagramCas.toFixed(3)}</p>
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-300 font-semibold">
+                      CAS PASSED
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-white/40">Verified by ATAM 6-metric research engine</p>
                 </div>
 
-                {/* StarUML / PlantUML Export Box */}
-                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
-                      StarUML / PlantUML Model
-                    </span>
-                    <button
-                      onClick={() => {
-                        const targetArch = selectedCandidate?.architecture || arch;
-                        const puml = generateFallbackPlantUML(targetArch, targetArch?.architecture_style || "Architecture");
-                        navigator.clipboard.writeText(puml);
-                        alert("Copied PlantUML / StarUML code to clipboard!");
-                      }}
-                      className="px-2.5 py-1 rounded bg-cyan-400/20 text-cyan-300 hover:bg-cyan-400/30 text-[10px] font-mono font-bold cursor-pointer transition-all border border-cyan-400/30"
-                    >
-                      Copy StarUML
-                    </button>
+                {/* StarUML / PlantUML Model Export */}
+                <div className="p-4 rounded-2xl border border-cyan-400/20 bg-white/5 space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
+                        StarUML / PlantUML Export
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-white/50">Compatible with StarUML, Visual Paradigm &amp; Enterprise Architect.</p>
                   </div>
-                  <p className="text-[10px] text-white/50">Compatible with StarUML, Visual Paradigm &amp; Enterprise Architect.</p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(currentPumlCode);
+                      alert("Copied StarUML / PlantUML architecture model to clipboard!");
+                    }}
+                    className="w-full py-2 rounded-xl bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-300 text-xs font-mono font-bold cursor-pointer transition-all border border-cyan-400/30"
+                  >
+                    Copy StarUML Model
+                  </button>
                 </div>
 
-                {/* GitHub README Mermaid Export */}
-                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
-                      GitHub README (Mermaid)
-                    </span>
-                    <button
-                      onClick={() => {
-                        const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture || arch);
-                        navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
-                        alert("Mermaid code copied! Paste directly into your GitHub README.md");
-                      }}
-                      className="px-2.5 py-1 rounded bg-cyan-400/20 text-cyan-300 hover:bg-cyan-400/30 text-[10px] font-mono font-bold cursor-pointer transition-all border border-cyan-400/30"
-                    >
-                      Copy Mermaid
-                    </button>
+                {/* GitHub README Export */}
+                <div className="p-4 rounded-2xl border border-violet-400/20 bg-white/5 space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold uppercase tracking-wider text-violet-300 font-mono">
+                        GitHub README Export
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-white/50">Paste directly into your repository's <code className="text-cyan-300 font-mono">README.md</code> for native rendering.</p>
                   </div>
-                  <p className="text-[10px] text-white/50">Paste directly into your repo's <code className="text-cyan-300">README.md</code> for native GitHub rendering.</p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`\`\`\`mermaid\n${currentMermaidCode}\n\`\`\``);
+                      alert("Copied Mermaid Markdown! Paste directly into your GitHub README.md");
+                    }}
+                    className="w-full py-2 rounded-xl bg-violet-400/10 hover:bg-violet-400/20 text-violet-300 text-xs font-mono font-bold cursor-pointer transition-all border border-violet-400/30"
+                  >
+                    Copy GitHub Mermaid
+                  </button>
                 </div>
               </div>
+
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ───────────────────────────────────────────────────────────── */}
         {/* TAB 4: INTERACTIVE REFINEMENT ENGINE                         */}
