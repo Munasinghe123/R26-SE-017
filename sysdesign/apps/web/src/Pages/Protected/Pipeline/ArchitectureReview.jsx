@@ -782,47 +782,56 @@ export default function ArchitectureReview() {
               {/* VSCode / AntiGravity Style Code Editor */}
               <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#0a0c1a] overflow-hidden flex flex-col font-mono shadow-2xl">
                 {/* Editor Header Bar */}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-[#050610] border-b border-white/10 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
-                    <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
-                    <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
-                    <span className="ml-2 font-bold text-cyan-400 text-[11px] uppercase tracking-wider">
-                      architecture_diagram_{activeIteration.version}.puml
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-white/50 text-[11px]">
-                    <span className="px-2 py-0.5 rounded bg-cyan-400/10 text-cyan-300 font-semibold">
-                      CAS: {typeof activeIteration.cas === 'number' ? activeIteration.cas.toFixed(3) : activeIteration.cas}
-                    </span>
-                    <span>Lines: {(activeIteration.code || "").split("\n").length}</span>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(activeIteration.code)}
-                      className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold cursor-pointer transition-all"
-                    >
-                      Copy Code
-                    </button>
-                  </div>
-                </div>
+                {(() => {
+                  const formattedCode = (activeIteration.code || "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
+                  const codeLines = formattedCode.split("\n");
 
-                {/* Code Editor Body with Line Numbers */}
-                <div className="p-4 overflow-x-auto max-h-[500px] overflow-y-auto flex text-xs leading-relaxed bg-[#060814]">
-                  {/* Line Numbers Gutter */}
-                  <div className="select-none pr-4 mr-4 text-right text-white/30 border-r border-white/10 font-mono space-y-0.5">
-                    {(activeIteration.code || "").split("\n").map((_, i) => (
-                      <div key={i}>{i + 1}</div>
-                    ))}
-                  </div>
-
-                  {/* Code Text Content */}
-                  <div className="text-cyan-200 font-mono whitespace-pre space-y-0.5 flex-1">
-                    {(activeIteration.code || "").split("\n").map((line, i) => (
-                      <div key={i} className="hover:bg-cyan-500/10 px-1 rounded transition-colors">
-                        {line || " "}
+                  return (
+                    <>
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-[#050610] border-b border-white/10 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
+                          <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
+                          <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
+                          <span className="ml-2 font-bold text-cyan-400 text-[11px] uppercase tracking-wider">
+                            architecture_diagram_{activeIteration.version}.puml
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-white/50 text-[11px]">
+                          <span className="px-2 py-0.5 rounded bg-cyan-400/10 text-cyan-300 font-semibold">
+                            CAS: {typeof activeIteration.cas === 'number' ? activeIteration.cas.toFixed(3) : activeIteration.cas}
+                          </span>
+                          <span>Lines: {codeLines.length}</span>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(formattedCode)}
+                            className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold cursor-pointer transition-all"
+                          >
+                            Copy Code
+                          </button>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+
+                      {/* Code Editor Body with Line Numbers */}
+                      <div className="p-4 overflow-x-auto max-h-[500px] overflow-y-auto flex text-xs leading-relaxed bg-[#060814]">
+                        {/* Line Numbers Gutter */}
+                        <div className="select-none pr-4 mr-4 text-right text-white/30 border-r border-white/10 font-mono space-y-0.5">
+                          {codeLines.map((_, i) => (
+                            <div key={i}>{i + 1}</div>
+                          ))}
+                        </div>
+
+                        {/* Code Text Content */}
+                        <div className="text-cyan-200 font-mono whitespace-pre space-y-0.5 flex-1">
+                          {codeLines.map((line, i) => (
+                            <div key={i} className="hover:bg-cyan-500/10 px-1 rounded transition-colors">
+                              {line || " "}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* AI Prompt Refiner Card */}
