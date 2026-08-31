@@ -395,9 +395,33 @@ export default function ArchitectureReview() {
   const activeIteration = (iterations && iterations.length > 0)
     ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
     : { version: "v0", cas: 0, code: "' No diagram code generated" };
-  const isAcceptable    = selectedCandidate 
-    ? (selectedCandidate.cas >= 0.60) 
-    : (scores !== null && (scores?.CAS ?? 0) >= 0.60);
+
+  const diagramCas = activeIteration?.cas ?? selectedCandidate?.cas ?? (scores?.CAS ?? 0);
+  const isAcceptable = diagramCas >= 0.60;
+  // Only show AI refinement engine when diagram CAS is below threshold
+  const needsRefinement = diagramCas < 0.60;
+
+  // Kroki SVG rendering — POST the raw PlantUML text (avoids btoa UTF-8 breakage)
+  const [svgUrl, setSvgUrl] = useState(null);
+  const [svgError, setSvgError] = useState(false);
+  useEffect(() => {
+    const raw = (activeIteration?.code || "").replace(/\\n/g, "\n").trim();
+    if (!raw || raw.startsWith('{') || raw.startsWith('"')) {
+      setSvgError(true);
+      return;
+    }
+    setSvgError(false);
+    setSvgUrl(null);
+    // Use Kroki POST endpoint with plain text — avoids btoa encoding issues
+    fetch("https://kroki.io/plantuml/svg", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: raw,
+    })
+      .then(r => r.ok ? r.blob() : Promise.reject(r.status))
+      .then(blob => setSvgUrl(URL.createObjectURL(blob)))
+      .catch(() => setSvgError(true));
+  }, [activeIteration?.code]);
 
   return (
     <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
@@ -792,79 +816,77 @@ export default function ArchitectureReview() {
         {/* ───────────────────────────────────────────────────────────── */}
         {activeTab === "visual_studio" && (
           <div className="space-y-6">
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <Eye className="text-cyan-400" size={20} />
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
-                    High-Resolution Visual Diagram & Native Git Exporter
-                  </h3>
-                  <p className="text-[11px] text-white/50">
-                    Live vector SVG rendering. Copy native Mermaid code directly into client GitHub README.md files.
-                  </p>
-                </div>
+
+            {/* Status Gate Banner */}
+            {isAcceptable ? (
+              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-green-950/40 border border-green-400/30 text-green-300 text-xs font-semibold">
+                <CheckCircle2 size={16} />
+                Architecture CAS {diagramCas.toFixed(3)} passed quality threshold (≥ 0.60). Visual review only — no AI intervention required.
               </div>
-              <button
-                onClick={() => {
-                  const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture);
-                  navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
-                  alert("Copied Mermaid Markdown to Clipboard! Ready to paste into GitHub README.md");
-                }}
-                className="px-4 py-2 rounded-xl bg-cyan-400 text-black font-bold text-xs flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(45,220,255,0.4)] hover:bg-cyan-300 transition-all"
-              >
-                Copy Mermaid for Git README
-              </button>
-            </div>
+            ) : (
+              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-amber-950/40 border border-amber-400/30 text-amber-300 text-xs font-semibold">
+                <AlertTriangle size={16} />
+                Architecture CAS {diagramCas.toFixed(3)} is below threshold (0.60). Switch to the <strong>Interactive Refinement Engine</strong> tab to improve it.
+              </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Visual SVG Render Canvas */}
-              <div className="lg:col-span-2 p-6 rounded-2xl border border-cyan-400/30 bg-[#070919] min-h-[460px] flex flex-col justify-between items-center relative shadow-2xl">
-                <div className="w-full flex justify-between items-center border-b border-white/10 pb-3 mb-4">
-                  <span className="text-xs font-bold text-white/70 uppercase font-mono">
-                    Live Vector Graphic Canvas (PlantUML / Mermaid Engine)
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-300 font-mono">
-                    SVG Vector High-Res
+              <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#070919] min-h-[460px] flex flex-col shadow-2xl overflow-hidden">
+                <div className="flex justify-between items-center px-5 py-3 bg-[#050610] border-b border-white/10">
+                  <span className="text-xs font-bold text-white/70 uppercase font-mono">Live Vector Diagram Canvas — PlantUML Engine</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    svgError ? "bg-red-500/20 text-red-300" : svgUrl ? "bg-green-500/20 text-green-300" : "bg-white/10 text-white/50"
+                  }`}>
+                    {svgError ? "Render Error" : svgUrl ? "SVG Vector High-Res" : "Rendering..."}
                   </span>
                 </div>
-
-                <div className="w-full h-full flex items-center justify-center p-6 bg-[#0a0c24] rounded-xl border border-white/5 overflow-auto">
-                  <img 
-                    src={`https://kroki.io/plantuml/svg/${encodeURIComponent(btoa((activeIteration?.code || "").replace(/\\n/g, "\n")))}`} 
-                    onError={(e) => {
-                      // Fallback to text diagram if offline
-                      e.target.style.display = 'none';
-                    }}
-                    alt="Visual Architecture Diagram" 
-                    className="max-h-[400px] object-contain" 
-                  />
+                <div className="flex-1 flex items-center justify-center p-4 bg-white overflow-auto">
+                  {svgError ? (
+                    <div className="text-center space-y-2">
+                      <p className="text-red-500 text-xs font-mono font-semibold">⚠ PlantUML diagram could not render.</p>
+                      <p className="text-gray-500 text-[11px]">The LLM returned invalid PlantUML. Use Refinement Engine to regenerate.</p>
+                    </div>
+                  ) : svgUrl ? (
+                    <img src={svgUrl} alt="Architecture Diagram" className="max-h-[420px] w-full object-contain" />
+                  ) : (
+                    <div className="flex items-center gap-3 text-cyan-400 text-xs">
+                      <RefreshCw size={16} className="animate-spin" />
+                      Rendering architecture diagram via Kroki engine...
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Git README Copyable Code Box */}
-              <div className="p-6 rounded-2xl border border-white/10 bg-white/5 space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono block">
-                    Copyable Mermaid Code (Git README)
-                  </span>
-                  <p className="text-[11px] text-white/60">
-                    Paste this snippet into your client's <code className="text-cyan-300 font-mono">README.md</code> for native GitHub diagram rendering:
-                  </p>
-                  <div className="p-3 rounded-xl bg-black/90 font-mono text-[11px] text-cyan-200 border border-white/10 max-h-72 overflow-y-auto whitespace-pre">
-                    {`\`\`\`mermaid\n${generateFallbackMermaidCode(selectedCandidate?.architecture)}\n\`\`\``}
-                  </div>
+              {/* Right Panel: Mermaid Export */}
+              <div className="space-y-4 flex flex-col">
+                {/* CAS score summary */}
+                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-1">
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Diagram Quality Score</span>
+                  <p className="text-2xl font-bold text-cyan-300 font-mono">{diagramCas.toFixed(3)}</p>
+                  <p className="text-[11px] text-white/50">{isAcceptable ? "✅ Passed — Ready to accept" : "⚠ Below threshold — Refinement needed"}</p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture);
-                    navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
-                    alert("Copied Mermaid Code to Clipboard!");
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-cyan-400 text-black font-bold text-xs cursor-pointer hover:bg-cyan-300 transition-all text-center"
-                >
-                  Copy Mermaid Code
-                </button>
+                {/* Copyable Mermaid for GitHub README */}
+                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-3 flex-1 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono block">GitHub README Mermaid Export</span>
+                    <p className="text-[11px] text-white/60">Paste into <code className="text-cyan-300">README.md</code> for native rendering:</p>
+                    <div className="p-3 rounded-xl bg-black/90 font-mono text-[11px] text-cyan-200 border border-white/10 max-h-52 overflow-y-auto whitespace-pre">
+                      {`\`\`\`mermaid\n${generateFallbackMermaidCode(selectedCandidate?.architecture)}\n\`\`\``}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const mmd = generateFallbackMermaidCode(selectedCandidate?.architecture);
+                      navigator.clipboard.writeText(`\`\`\`mermaid\n${mmd}\n\`\`\``);
+                      alert("Mermaid code copied! Paste directly into your GitHub README.md");
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-cyan-400 text-black font-bold text-xs cursor-pointer hover:bg-cyan-300 transition-all"
+                  >
+                    Copy Mermaid Code
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -962,41 +984,82 @@ export default function ArchitectureReview() {
                 })()}
               </div>
 
-              {/* AI Prompt Refiner Card */}
-              <div className="p-6 rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-950/40 via-indigo-950/20 to-black space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-violet-300">
-                    <Sparkles size={18} />
-                    <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                      AI Refinement Engine
-                    </h4>
+              {/* Conditional Right Panel */}
+              {needsRefinement ? (
+                /* CAS BELOW THRESHOLD — Show AI Refinement Engine */
+                <div className="p-6 rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-950/30 via-orange-950/10 to-black space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-amber-300">
+                      <AlertTriangle size={16} />
+                      <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                        Quality Threshold Not Met
+                      </h4>
+                    </div>
+                    <div className="p-3 rounded-xl bg-black/40 border border-amber-400/10 space-y-1">
+                      <p className="text-[11px] text-white/60 font-mono">CAS Score: <span className="text-amber-300 font-bold">{diagramCas.toFixed(3)}</span> / Threshold: <span className="text-white/80">0.600</span></p>
+                      {activeIteration?.issues?.length > 0 && (
+                        <ul className="text-[10px] text-amber-200/70 space-y-0.5 mt-1">
+                          {activeIteration.issues.slice(0, 4).map((iss, i) => (
+                            <li key={i} className="flex gap-1"><span className="text-amber-400">›</span>{iss}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-white/50">
+                      Provide optional guidance for the AI Refinement Engine, or trigger automatic issue-based improvement:
+                    </p>
+                    <textarea
+                      rows={4}
+                      value={refinePrompt}
+                      onChange={e => setRefinePrompt(e.target.value)}
+                      placeholder="Optional: e.g. Add a Redis Caching Layer between API Gateway and DB..."
+                      className="w-full p-3 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder:text-white/30 focus:border-amber-400 outline-none"
+                    />
                   </div>
-                  <p className="text-xs text-white/50 leading-relaxed">
-                    Enter prompt instructions to refactor the PlantUML diagram using real LLM execution &amp; 6-metric research evaluation.
-                  </p>
-
-                  <textarea
-                    rows={5}
-                    value={refinePrompt}
-                    onChange={e => setRefinePrompt(e.target.value)}
-                    placeholder="e.g. Add a Redis Caching Layer between API Gateway and DB..."
-                    className="w-full p-3 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder:text-white/30 focus:border-cyan-400 outline-none"
-                  />
+                  <button
+                    onClick={handleRefineDiagram}
+                    disabled={refining}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-amber-400 text-black cursor-pointer hover:bg-amber-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Sparkles size={14} className={refining ? "animate-spin" : ""} />
+                    {refining ? "AI Refinement Running..." : "Run AI Improvement Pass"}
+                  </button>
                 </div>
-
-                <button
-                  onClick={handleRefineDiagram}
-                  disabled={refining || !refinePrompt.trim()}
-                  className="
-                    w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold uppercase tracking-wider
-                    bg-cyan-400 text-black cursor-pointer hover:bg-cyan-300 transition-all
-                    disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(45,220,255,0.3)]
-                  "
-                >
-                  <Send size={14} className={refining ? "animate-spin" : ""} />
-                  {refining ? "Evaluating with AI..." : "Generate New Iteration"}
-                </button>
-              </div>
+              ) : (
+                /* CAS PASSED THRESHOLD — Human Review Panel, no AI needed */
+                <div className="p-6 rounded-2xl border border-green-400/20 bg-gradient-to-br from-green-950/30 via-emerald-950/10 to-black space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-green-300">
+                      <CheckCircle2 size={16} />
+                      <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                        Human Review Gate
+                      </h4>
+                    </div>
+                    <div className="p-3 rounded-xl bg-black/40 border border-green-400/10 space-y-1">
+                      <p className="text-[11px] text-white/60 font-mono">CAS Score: <span className="text-green-300 font-bold">{diagramCas.toFixed(3)}</span> — <span className="text-green-400">PASSED ✓</span></p>
+                      <p className="text-[10px] text-white/40 mt-1">
+                        The evaluation engine determined this architecture meets all quality thresholds. No AI refinement is triggered.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-white/60 font-semibold">Your review checklist:</p>
+                      {[
+                        "Verify component layer separation is structurally sound",
+                        "Confirm all client-facing FRs are represented by named components",
+                        "Check that deployment boundaries match client infrastructure constraints",
+                      ].map((item, i) => (
+                        <label key={i} className="flex items-start gap-2 cursor-pointer">
+                          <input type="checkbox" className="mt-0.5 accent-cyan-400" />
+                          <span className="text-[11px] text-white/70">{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-white/30 text-center">
+                    Use <strong className="text-white/50">Accept & Proceed</strong> below when satisfied, or <strong className="text-white/50">Regenerate HLD</strong> to restart.
+                  </p>
+                </div>
+              )}
 
             </div>
 

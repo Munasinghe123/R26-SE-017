@@ -183,17 +183,26 @@ def build_diagram_prompt(
 
     if d_kind == "plantuml":
         schema_rule = (
-            "Output ONLY raw PlantUML code starting with @startuml and ending with @enduml.\n"
-            "Use package/rectangle groupings to visually group components by their layer.\n"
-            "Format line breaks properly using actual newlines."
+            "CRITICAL OUTPUT RULE: You MUST output ONLY raw PlantUML source code.\n"
+            "- Start your response with exactly: @startuml\n"
+            "- End your response with exactly: @enduml\n"
+            "- Do NOT output JSON, markdown, prose, explanations, or any text outside @startuml...@enduml.\n"
+            "- Do NOT wrap the diagram in code fences (no ```).\n"
+            "- Use 'package' or 'rectangle' blocks to group components by their layer.\n"
+            "- Include real arrow relationships between components (-->).\n"
         )
     else:
         schema_rule = (
-            "Output ONLY raw Mermaid code starting with graph TD.\n"
-            "Use subgraph groupings to visually group components by their layer."
+            "CRITICAL OUTPUT RULE: You MUST output ONLY raw Mermaid source code.\n"
+            "- Start your response with exactly: graph TD\n"
+            "- Do NOT output JSON, markdown, prose, or any text before 'graph TD'.\n"
+            "- Use 'subgraph' blocks to group components by their layer.\n"
         )
 
     return (
+        f"SYSTEM: You are a software architecture diagramming engine. "
+        f"You output ONLY valid {d_kind.upper()} diagram syntax. "
+        f"You NEVER output JSON. You NEVER explain. You ONLY output diagram code.\n\n"
         f"# DIAGRAM GENERATION TASK (Iteration {iteration})\n"
         f"Project: {project}\n"
         f"Architecture Style: {arch_style}\n\n"
@@ -203,7 +212,7 @@ def build_diagram_prompt(
         f"{prev_text}"
         f"{issues_text}"
         f"{user_req}\n\n"
-        f"INSTRUCTION: Refactor and optimize the {d_kind.upper()} diagram code based on the components, connectors, and instructions above.\n"
+        f"TASK: Generate a complete, valid {d_kind.upper()} architectural diagram for the system above.\n"
         f"{schema_rule}"
     )
 
