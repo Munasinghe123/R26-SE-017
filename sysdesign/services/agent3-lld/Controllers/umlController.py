@@ -173,7 +173,6 @@ class UMLController:
             requirements_text = file_handle.read().strip()
 
         result = UMLService.generate_uml(requirements_text)
-        print(result)
         validation_report = result.get("validation") or {}
         validation_report["errors"] = _upper_severity(validation_report.get("errors", []))
         validation_report["iteration"] = result.get("iterations_used", 1)

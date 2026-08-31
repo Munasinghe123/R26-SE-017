@@ -176,6 +176,7 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
             name=name,
             attributes=attributes,
             methods=methods,
+            requirement_ids=[str(rid) for rid in raw_cls.get("requirement_ids", []) or []],
         )
         classes.append(cls)
         class_index[name] = cls
@@ -255,6 +256,7 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
             logic_blocks=logic_blocks,
             messages=messages,
             items=items,
+            requirement_ids=[str(rid) for rid in raw_seq.get("requirement_ids", []) or []],
         ))
 
     # ------------------------------------
@@ -297,6 +299,7 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
         entity = EntityIR(
             name=name,
             attributes=attributes,
+            requirement_ids=[str(rid) for rid in raw_entity.get("requirement_ids", []) or []],
         )
         entities.append(entity)
         entity_index[name] = entity

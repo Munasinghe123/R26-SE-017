@@ -209,7 +209,7 @@ class UMLService:
         # RESEARCH EVALUATION PIPELINE (POST-REFINEMENT & RENDER)
         # =========================================================
         try:
-            UMLService._run_and_persist_evaluation(
+            UMLService._run_and_print_evaluation(
                 result=result,
                 requirements_text=requirements,
                 requirement_ids=requirement_ids or [],
@@ -241,24 +241,28 @@ class UMLService:
         def render_png(plantuml_code: str, diagram_type: str, name: str | None = None):
             logger.info("plantuml_render_started", extra={"diagram_type": diagram_type})
             encoded = encode_plantuml(plantuml_code)
-            plantuml_response = requests.get(
-                f"https://www.plantuml.com/plantuml/png/{encoded}",
-                timeout=30,
-            )
+            try:
+                plantuml_response = requests.get(
+                    f"https://www.plantuml.com/plantuml/png/{encoded}",
+                    timeout=30,
+                )
 
-            if plantuml_response.status_code != 200:
-                logger.error("plantuml_render_failed", extra={"diagram_type": diagram_type, "status_code": plantuml_response.status_code})
-                raise Exception("PlantUML server error")
+                if plantuml_response.status_code != 200:
+                    logger.error("plantuml_render_failed", extra={"diagram_type": diagram_type, "status_code": plantuml_response.status_code})
+                    return f"https://www.plantuml.com/plantuml/png/{encoded}"
 
-            logger.info("plantuml_render_successful", extra={"diagram_type": diagram_type, "bytes": len(plantuml_response.content)})
-            public_id = f"{name or diagram_type}_{uuid.uuid4().hex[:8]}"
-            cloudinary_url = upload_png_to_cloudinary(
-                png_bytes=plantuml_response.content,
-                project_id=project_id,
-                diagram_type=diagram_type,
-                public_id=public_id,
-            )
-            return cloudinary_url
+                logger.info("plantuml_render_successful", extra={"diagram_type": diagram_type, "bytes": len(plantuml_response.content)})
+                public_id = f"{name or diagram_type}_{uuid.uuid4().hex[:8]}"
+                cloudinary_url = upload_png_to_cloudinary(
+                    png_bytes=plantuml_response.content,
+                    project_id=project_id,
+                    diagram_type=diagram_type,
+                    public_id=public_id,
+                )
+                return cloudinary_url
+            except Exception as exc:
+                logger.warning(f"PlantUML render fallback used due to: {exc}")
+                return f"https://www.plantuml.com/plantuml/png/{encoded}"
 
         class_url = render_png(class_plantuml, "class", "class_diagram")
 
@@ -327,75 +331,198 @@ class UMLService:
         return result
 
     @staticmethod
-    def _run_and_persist_evaluation(
+    def _run_and_print_evaluation(
         *,
         result: dict,
         requirements_text: str,
         requirement_ids: list[str],
-        project_id: int | None = None,
+        project_id: int | str | None = None,
         generation_run_id: int | None = None,
         candidate_id: int | None = None,
     ):
-        import json
+        import dataclasses
         from evaluation.evaluator import Evaluator
-        from evaluation.reference_loader import ReferenceLoader
-        from evaluation.report_generator import EvaluationReportGenerator
-        from database import SessionLocal
-        from models.evaluation import Evaluation
+        from utils.irMapper import convert_to_ir
 
-        # 1. Load Reference Case ONLY if a matching reference directory exists
-        loader = ReferenceLoader()
-        ref_data = {}
-        target_case = None
+        req_list = UMLService._extract_requirements_from_input(requirements_text, requirement_ids or [])
 
-        if project_id:
-            possible_cases = [f"project_{project_id}", f"case_{project_id:03d}"]
-            for candidate_case in possible_cases:
-                if (loader.references_dir / candidate_case).exists():
-                    target_case = candidate_case
-                    break
-
-        if target_case and (loader.references_dir / target_case).exists():
+        # Normalize post-refinement IR
+        final_ir_dict = result.get("structured_data", {})
+        if final_ir_dict:
             try:
-                ref_data = loader.load_case(target_case)
-            except Exception as ref_err:
-                logger.warning("failed_to_load_reference_case", extra={"target_case": target_case, "error": str(ref_err)})
+                ir_obj = convert_to_ir(final_ir_dict)
+                normalized_ir = dataclasses.asdict(ir_obj)
+            except Exception:
+                normalized_ir = final_ir_dict
         else:
-            logger.info("no_matching_reference_case_found_skipping_reference_eval", extra={"project_id": project_id})
-
-        # 2. Prepare evaluation input with actual requirement content
-        if ref_data and "requirements" in ref_data and "requirements" in ref_data["requirements"]:
-            req_list = ref_data["requirements"]["requirements"]
-        else:
-            req_list = [{"id": req_id, "text": f"Requirement {req_id}"} for req_id in (requirement_ids or [])]
+            normalized_ir = {}
 
         eval_input = {
-            "ir": result.get("structured_data", {}),
+            "ir": normalized_ir,
             "diagrams": result.get("plantuml", {}),
         }
 
         evaluator = Evaluator()
+        ref_data = {}
+        has_reference = False
+        target_case = None
+
+        try:
+            import re
+            from evaluation.reference_loader import ReferenceLoader
+
+            def _norm(s: str) -> str:
+                return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+            input_req_ids = {r["id"].strip().upper() for r in req_list if r.get("id")}
+            input_req_texts = {_norm(r["text"]) for r in req_list if r.get("text")}
+
+            loader = ReferenceLoader()
+            if loader.references_dir.exists():
+                for case_dir in loader.references_dir.iterdir():
+                    if not case_dir.is_dir():
+                        continue
+                    case_id = case_dir.name
+                    try:
+                        case_ref = loader.load_case(case_id)
+                        ref_reqs = case_ref.get("requirements", {}).get("requirements", []) or []
+                        ref_req_ids = {r["id"].strip().upper() for r in ref_reqs if r.get("id")}
+                        ref_req_texts = {_norm(r["text"]) for r in ref_reqs if r.get("text")}
+
+                        # Priority 1: Complete requirement ID set equality
+                        id_match = bool(input_req_ids and ref_req_ids and input_req_ids == ref_req_ids)
+
+                        # Priority 2: Complete requirement text set equality
+                        text_match = bool(input_req_texts and ref_req_texts and input_req_texts == ref_req_texts)
+
+                        if id_match or text_match:
+                            ref_data = case_ref
+                            has_reference = True
+                            target_case = case_id
+                            break
+                    except Exception:
+                        continue
+        except Exception as ref_err:
+            logger.warning(f"Could not load reference case for evaluation: {ref_err}")
+
         eval_result = evaluator.evaluate(
             generated=eval_input,
             reference=ref_data,
             requirements=req_list,
         )
 
-        report_gen = EvaluationReportGenerator()
-        report = report_gen.generate(eval_result)
-
-        # Attach in-memory evaluation results to response dictionary
-        result["evaluation"] = report
-        result["eval_result"] = eval_result
-
-        # Database persistence disabled as per user request for in-memory research testing
-        logger.info(
-            "evaluation_in_memory_completed",
-            extra={
-                "project_id": project_id,
-                "heuristic_overall_score": report.get("summary", {}).get("heuristic_overall_score"),
-            },
+        UMLService._print_research_evaluation_summary(
+            eval_result=eval_result,
+            has_reference=has_reference,
+            target_case=target_case,
         )
+
+    @staticmethod
+    def _extract_requirements_from_input(requirements_text: str, requirement_ids: list[str]) -> list[dict]:
+        req_list = []
+        if requirement_ids:
+            req_text_map = {}
+            if requirements_text:
+                current_id = None
+                for line in requirements_text.splitlines():
+                    sline = line.strip()
+                    matched_id = None
+                    for rid in requirement_ids:
+                        if f"[{rid}]" in sline or sline.startswith(f"{rid}:") or sline.startswith(f"{rid} "):
+                            matched_id = rid
+                            break
+                    if matched_id:
+                        current_id = matched_id
+                        req_text_map[current_id] = sline
+                    elif current_id and sline:
+                        req_text_map[current_id] += " " + sline
+
+            for req_id in requirement_ids:
+                text = req_text_map.get(req_id, requirements_text.strip() if requirements_text else f"{req_id}")
+                req_list.append({"id": req_id, "text": text})
+        elif requirements_text and requirements_text.strip():
+            lines = [l.strip() for l in requirements_text.splitlines() if l.strip()]
+            req_items = []
+            import re
+            for line in lines:
+                match = re.match(r"^[-*]?\s*\[?([A-Za-z0-9_-]+)\]?\s*[:|-]?\s*(.+)", line)
+                if match and ("REQ" in match.group(1).upper() or "FR" in match.group(1).upper() or "R" in match.group(1).upper()):
+                    req_items.append({"id": match.group(1), "text": line})
+            if req_items:
+                req_list = req_items
+            else:
+                req_list = [{"id": "REQ-1", "text": requirements_text.strip()}]
+        return req_list
+
+    @staticmethod
+    def _print_research_evaluation_summary(*, eval_result: dict, has_reference: bool, target_case: str | None = None):
+        class_res = eval_result.get("class", {})
+        seq_res = eval_result.get("sequence", {})
+        er_res = eval_result.get("er", {})
+        req_res = eval_result.get("requirements", {})
+        syntax_res = eval_result.get("syntax", {})
+
+        req_cov = req_res.get("coverage_score", 0.0) * 100.0
+        syntax_score = syntax_res.get("overall_score", 0.0) * 100.0
+
+        def extract_p_r(res_dict, keys):
+            if not has_reference or not res_dict:
+                return None, None
+            p_list = [res_dict.get(k, {}).get("precision", 0.0) for k in keys if k in res_dict]
+            r_list = [res_dict.get(k, {}).get("recall", 0.0) for k in keys if k in res_dict]
+            p = (sum(p_list) / len(p_list)) if p_list else 0.0
+            r = (sum(r_list) / len(r_list)) if r_list else 0.0
+            return p, r
+
+        c_p, c_r = extract_p_r(class_res, ["classes", "attributes", "methods", "relationships"])
+        c_f1 = class_res.get("overall_f1") if has_reference else None
+
+        s_p, s_r = extract_p_r(seq_res, ["participants", "messages"])
+        s_f1 = seq_res.get("overall_f1") if has_reference else None
+        s_order = seq_res.get("message_order", {}).get("score") if has_reference else None
+
+        e_p, e_r = extract_p_r(er_res, ["entities", "attributes", "relationships"])
+        e_f1 = er_res.get("overall_f1") if has_reference else None
+
+        def fmt_val(val):
+            if not has_reference or val is None:
+                return "N/A"
+            return f"{val * 100.0:.2f}%"
+
+        ref_block = (
+            f"Reference Used: YES\nReference Case: {target_case}\n========================"
+            if has_reference
+            else "Reference Used: NO\n=================="
+        )
+
+        summary_text = f"""
+        ============================================================
+        RESEARCH DIAGRAM EVALUATION
+        ===========================
+
+        Class Diagram
+        Precision : {fmt_val(c_p)}
+        Recall    : {fmt_val(c_r)}
+        F1        : {fmt_val(c_f1)}
+
+        Sequence Diagram
+        Precision : {fmt_val(s_p)}
+        Recall    : {fmt_val(s_r)}
+        F1        : {fmt_val(s_f1)}
+        Order     : {fmt_val(s_order)}
+
+        ER Diagram
+        Precision : {fmt_val(e_p)}
+        Recall    : {fmt_val(e_r)}
+        F1        : {fmt_val(e_f1)}
+
+        Requirement Coverage  : {req_cov:.2f}%
+        Syntax / Renderability: {syntax_score:.2f}%
+
+        {ref_block}
+        """
+        print(summary_text, flush=True)
+        logger.info("research_diagram_evaluation_completed\n" + summary_text)
 
     @staticmethod
     def _persist_diagrams(project_id: int, diagram_urls: dict, plantuml: dict):
