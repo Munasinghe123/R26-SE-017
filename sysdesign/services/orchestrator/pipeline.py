@@ -677,7 +677,10 @@ async def refine_diagram(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]
     if updated_puml and isinstance(old_arch, ArchitecturePackage):
         old_arch.plantuml_code = updated_puml
         if updated_cas is not None:
-            old_arch.scores["CAS"] = updated_cas
+            if hasattr(old_arch.scores, "CAS"):
+                old_arch.scores.CAS = float(updated_cas)
+            elif isinstance(old_arch.scores, dict):
+                old_arch.scores["CAS"] = float(updated_cas)
         await _db_persist_stage(job_id, "hld", "complete", old_arch.model_dump(mode="json"), 0)
 
     return workflow_res
