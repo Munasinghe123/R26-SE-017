@@ -498,41 +498,95 @@ export default function ArchitectureReview() {
                 </div>
 
                 {selectedCandidate && (
-                  <div className="p-4 rounded-xl border border-amber-400/20 bg-amber-400/5 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-amber-200">{selectedCandidate.name}</span>
-                      <span className="text-xs font-mono font-bold text-amber-400">CAS {selectedCandidate.cas}</span>
+                  <div className="p-4 rounded-xl border border-amber-400/30 bg-amber-400/5 space-y-3">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-amber-200 block">{selectedCandidate.name}</span>
+                        <span className="text-[10px] text-white/50 block font-mono">
+                          Candidate #{selectedCandidate.candidate_num || 1}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30">
+                        CAS {typeof selectedCandidate.cas === 'number' ? selectedCandidate.cas.toFixed(4) : selectedCandidate.cas}
+                      </span>
                     </div>
-                    <p className="text-xs text-white/60">
-                      Style: <strong className="text-white">{selectedCandidate.style}</strong>
-                    </p>
-                    <div className="text-[11px] text-white/40 space-y-1">
-                      <p>✓ High Cohesion & Modular Isolation</p>
-                      <p>✓ Lowest Structural Coupling Risk</p>
+
+                    <div className="flex items-center justify-between text-xs border-t border-b border-white/10 py-2">
+                      <span className="text-white/60">Architecture Style:</span>
+                      <span className="font-bold text-cyan-300 uppercase tracking-wider font-mono">
+                        {selectedCandidate.style}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider block">
+                        Evaluated Style-Specific Metrics (SSM)
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="p-2 rounded bg-white/5 border border-white/10">
+                          <span className="text-white/50 block text-[10px]">
+                            {selectedCandidate?.scores?.ssm1_display || "SSM₁ Metric"}
+                          </span>
+                          <span className="font-mono font-bold text-cyan-400">
+                            {(selectedCandidate?.scores?.SSM1 ?? 0).toFixed(3)}
+                          </span>
+                        </div>
+                        <div className="p-2 rounded bg-white/5 border border-white/10">
+                          <span className="text-white/50 block text-[10px]">
+                            {selectedCandidate?.scores?.ssm2_display || "SSM₂ Metric"}
+                          </span>
+                          <span className="font-mono font-bold text-cyan-400">
+                            {(selectedCandidate?.scores?.SSM2 ?? 0).toFixed(3)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-xs text-white/50 uppercase tracking-wider block">
-                    All Evaluated Candidates
+                  <label className="text-xs text-white/50 uppercase tracking-wider flex justify-between items-center block">
+                    <span>All Evaluated Candidates ({candidates.length} Options)</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">3 LLMs x 2 Choices</span>
                   </label>
-                  {candidates.map((cand, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedCandidate(cand)}
-                      className={`
-                        w-full text-left p-3 rounded-xl border text-xs transition-all flex justify-between items-center cursor-pointer
-                        ${selectedCandidate?.name === cand.name
-                          ? "border-amber-400 bg-amber-400/10 text-amber-200 font-semibold"
-                          : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
-                        }
-                      `}
-                    >
-                      <span>{cand.name}</span>
-                      <span className="font-mono">{cand.cas}</span>
-                    </button>
-                  ))}
+                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                    {candidates.map((cand, idx) => {
+                      const isSelected = selectedCandidate?.name === cand.name || selectedCandidate?.id === cand.id;
+                      const styleName = cand.style || cand.architecture?.architecture_style || "Layered";
+                      const ssmTag = cand.scores?.ssm1_name && cand.scores?.ssm2_name 
+                        ? `${cand.scores.ssm1_name}/${cand.scores.ssm2_name}`
+                        : "SSM₁/SSM₂";
+
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedCandidate(cand)}
+                          className={`
+                            w-full text-left p-3 rounded-xl border text-xs transition-all flex flex-col gap-1.5 cursor-pointer
+                            ${isSelected
+                              ? "border-amber-400 bg-amber-400/10 text-amber-200 font-semibold shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:border-white/20"
+                            }
+                          `}
+                        >
+                          <div className="flex justify-between items-center w-full">
+                            <span className="font-semibold text-white truncate max-w-[170px]">{cand.name}</span>
+                            <span className="font-mono font-bold text-amber-400">
+                              {typeof cand.cas === 'number' ? cand.cas.toFixed(3) : cand.cas}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-white/50">
+                            <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-mono uppercase">
+                              {styleName}
+                            </span>
+                            <span className="font-mono text-cyan-400/80 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20">
+                              {ssmTag}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>

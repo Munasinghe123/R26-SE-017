@@ -34,15 +34,15 @@ def build_architecture_prompt(requirements: dict, feedback: Optional[str] = None
     # Common architecture review practice: to explore tradeoffs, ask for candidates
     # optimized for different quality attributes (NFR lenses).
     if candidate_num == 1:
-        priority_lens = "OPTIMIZE FOR SIMPLICITY: Your primary goal is to find the most balanced, maintainable, and simple architecture that meets the baseline requirements without over-engineering."
+        priority_lens = "PRIMARY BEST-FIT ARCHITECTURE: Objectively analyze all functional and non-functional requirements to select the single most optimal, natural architecture style (e.g. Microservices, Layered, Event-Driven, Modular Monolith, or Pipe-and-Filter) that best matches the workload."
     else:
-        priority_lens = "OPTIMIZE FOR SCALE & DECOUPLING: Your primary goal is to maximize scalability, performance, and independent deployability, prioritizing distributed patterns even if it introduces complexity."
+        priority_lens = "ALTERNATIVE TRADEOFF ARCHITECTURE: Explore a secondary, viable architectural style that provides a different structural perspective or tradeoff for these requirements (e.g. if Candidate 1 is Microservices, consider Event-Driven or Modular Monolith)."
 
     role_layer = (
         "You are a senior software architect with deep expertise across ALL architectural styles. "
         "You evaluate each project's requirements objectively. "
         f"For this specific candidate generation, {priority_lens} "
-        "You do NOT have a preference for any particular style — you choose based on the requirements and your assigned optimization goal."
+        "Do NOT output markdown commentary or preambles. Output ONLY the raw JSON object adhering to the required schema."
     )
 
     # ── Layer 2: Context Injection ────────────────────────
