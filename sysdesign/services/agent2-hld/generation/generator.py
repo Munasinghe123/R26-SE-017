@@ -177,27 +177,32 @@ def generate_all(requirements: dict, models: list = None,
     models = models or MODELS
     candidates_per_model = candidates_per_model or MAX_CANDIDATES_PER_MODEL
 
-    results = []
-    total = len(models) * candidates_per_model
-    current = 0
-
     from prompt.builder import build_architecture_prompt
+    from concurrent.futures import ThreadPoolExecutor
 
+    tasks = []
     for model in models:
         for candidate_num in range(1, candidates_per_model + 1):
-            current += 1
-
-            if progress_callback:
-                progress_callback(model, candidate_num, total, "generating")
-
-            # Dynamically build prompt per candidate_num for ATAM diversity
             prompt = build_architecture_prompt(requirements, candidate_num=candidate_num)
-            result = generate_single(model, prompt, candidate_num)
-            results.append(result)
+            tasks.append((model, prompt, candidate_num))
 
-            if progress_callback:
-                status = "success" if result.success else "failed"
-                progress_callback(model, candidate_num, total, status)
+    total = len(tasks)
+    logger.info(f"Triggering parallel candidate generation for {total} tasks...")
+
+    def run_task(task_args):
+        model, prompt, candidate_num = task_args
+        if progress_callback:
+            progress_callback(model, candidate_num, total, "generating")
+        
+        result = generate_single(model, prompt, candidate_num)
+        
+        if progress_callback:
+            status = "success" if result.success else "failed"
+            progress_callback(model, candidate_num, total, status)
+        return result
+
+    with ThreadPoolExecutor(max_workers=min(total, 8)) as executor:
+        results = list(executor.map(run_task, tasks))
 
     successful = sum(1 for r in results if r.success)
     logger.info(

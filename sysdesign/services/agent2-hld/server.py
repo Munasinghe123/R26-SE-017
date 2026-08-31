@@ -508,7 +508,7 @@ async def run_hld_generation(payload: dict):
     payload["project"] = project_name
 
     try:
-        from main import generate_and_rank
+        from main import generate_and_rank, elaborate_winner
         import tempfile
         
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
@@ -522,6 +522,30 @@ async def run_hld_generation(payload: dict):
         winner = candidates[0] if candidates else {}
         arch = winner.get("architecture", {})
         scores = winner.get("scores", {})
+
+        # Auto-elaborate the winner to generate initial PlantUML and mermaid diagram files
+        run_id = res.get("run_id")
+        elaborate_res = await loop.run_in_executor(
+            None, lambda: elaborate_winner(run_id, winner, temp_path)
+        )
+
+        # Read diagram code from generated output files
+        plantuml_code = None
+        mermaid_code = None
+        try:
+            puml_path_str = elaborate_res.get("outputs", {}).get("plantuml")
+            if puml_path_str:
+                puml_file = Path(puml_path_str)
+                if puml_file.exists():
+                    with open(puml_file, "r", encoding="utf-8") as f:
+                        plantuml_code = f.read()
+                
+                mmd_file = puml_file.parent / "diagram.mmd"
+                if mmd_file.exists():
+                    with open(mmd_file, "r", encoding="utf-8") as f:
+                        mermaid_code = f.read()
+        except Exception as e:
+            logger.warning(f"Failed to read auto-elaborated diagrams: {e}")
 
         components = []
         for idx, c in enumerate(arch.get("components", [])):
@@ -572,7 +596,10 @@ async def run_hld_generation(payload: dict):
             "scores": metric_scores,
             "verdict": verdict,
             "rejected_alternatives": candidates[1:] if len(candidates) > 1 else [],
-            "generation_metadata": {"run_id": res.get("run_id")},
+            "candidates": candidates,
+            "plantuml_code": plantuml_code,
+            "mermaid_code": mermaid_code,
+            "generation_metadata": {"run_id": run_id},
             "artifact_uris": {}
         }
     except Exception as e:

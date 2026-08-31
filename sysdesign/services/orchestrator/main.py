@@ -15,6 +15,7 @@ from pipeline import (
     run_stage_srs,
     get_job_state,
     restore_job_from_db,
+    select_candidate,
     JOB_STORE,
     JOB_ARTIFACTS,
     JOB_LISTENERS,
@@ -89,6 +90,17 @@ async def retry_hld(job_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="Job not found")
     background_tasks.add_task(run_stage_hld, job_id)
     return {"job_id": job_id, "status": "queued", "message": "HLD retry queued"}
+
+
+@app.post("/jobs/{job_id}/select-candidate")
+async def select_candidate_endpoint(job_id: str, payload: Dict[str, Any]):
+    try:
+        await select_candidate(job_id, payload)
+        return {"status": "success", "message": "Candidate selected and elaborated successfully"}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/jobs")

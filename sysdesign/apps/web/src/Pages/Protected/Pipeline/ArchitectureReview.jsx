@@ -113,6 +113,8 @@ export default function ArchitectureReview() {
   const [style, setStyle]       = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [compareRadar, setCompareRadar] = useState(false);
+  const [selecting, setSelecting]       = useState(false);
 
   // Diagram Git-Loop state
   const [diagrams, setDiagrams] = useState({ plantuml: "", mermaid: "" });
@@ -142,10 +144,27 @@ export default function ArchitectureReview() {
           setVerdict(archArtifact.verdict || null);
           setStyle(archArtifact.detected_style || archArtifact.architecture_style || null);
 
+          let mappedCandidates = [];
           if (archArtifact.candidates && archArtifact.candidates.length > 0) {
-            setCandidates(archArtifact.candidates);
-            setSelectedCandidate(archArtifact.candidates[0]);
+            mappedCandidates = archArtifact.candidates.map((c, idx) => ({
+              ...c,
+              name: c.name || c.model || `Candidate ${c.candidate_num}`,
+              cas: c.cas || c.scores?.CAS || 0,
+              style: c.style || c.architecture?.architecture_style || c.scores?.detected_style || "unknown"
+            }));
+          } else {
+            // Synthesize from root winner
+            mappedCandidates = [{
+              name: archArtifact.architecture_style || "Auto-Picked Winner",
+              model: archArtifact.architecture_style || "Auto-Picked Winner",
+              cas: archArtifact.scores?.CAS || 0,
+              style: archArtifact.detected_style || archArtifact.architecture_style || "unknown",
+              scores: archArtifact.scores || {},
+              architecture: archArtifact
+            }];
           }
+          setCandidates(mappedCandidates);
+          setSelectedCandidate(mappedCandidates[0]);
 
           if (archArtifact.plantuml_code) {
             setDiagrams({ plantuml: archArtifact.plantuml_code, mermaid: archArtifact.mermaid_code || "" });
@@ -233,6 +252,22 @@ export default function ArchitectureReview() {
   };
 
   const handleAccept = async () => {
+    if (!selectedCandidate) return;
+    setSelecting(true);
+    try {
+      await fetch(`${ORCHESTRATOR}/jobs/${jobId}/select-candidate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedCandidate.model,
+          architecture: selectedCandidate.architecture,
+          scores: selectedCandidate.scores
+        })
+      });
+    } catch (e) {
+      console.error("Failed to select candidate", e);
+    }
+
     if (jobStatus === "needs_review" || jobStatus === "waiting_for_lld_ui") {
       try {
         await fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-lld`, { method: "POST" });
@@ -240,6 +275,7 @@ export default function ArchitectureReview() {
         console.error("Failed to start LLD", e);
       }
     }
+    setSelecting(false);
     navigate(`/pipeline/${jobId}`);
   };
 
@@ -280,10 +316,32 @@ export default function ArchitectureReview() {
     );
   }
 
+  const getMetricLabel = (key) => {
+    if (key === "SSM1" && selectedCandidate?.scores?.ssm1_display) {
+      return `SSM₁: ${selectedCandidate.scores.ssm1_display} (${selectedCandidate.scores.ssm1_name})`;
+    }
+    if (key === "SSM2" && selectedCandidate?.scores?.ssm2_display) {
+      return `SSM₂: ${selectedCandidate.scores.ssm2_display} (${selectedCandidate.scores.ssm2_name})`;
+    }
+    return METRIC_INFO[key]?.label || key;
+  };
+
+  const getMetricDesc = (key) => {
+    if (key === "SSM1" && selectedCandidate?.scores?.ssm1_display) {
+      return `Style-specific structural property for ${selectedCandidate.style}`;
+    }
+    if (key === "SSM2" && selectedCandidate?.scores?.ssm2_display) {
+      return `Style-specific boundary property for ${selectedCandidate.style}`;
+    }
+    return METRIC_INFO[key]?.desc || "";
+  };
+
   const activeIteration = (iterations && iterations.length > 0)
     ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
     : { version: "v0", cas: 0, code: "' No diagram code generated" };
-  const isAcceptable    = scores !== null && (scores?.CAS ?? 0) >= 0.60;
+  const isAcceptable    = selectedCandidate 
+    ? (selectedCandidate.cas >= 0.60) 
+    : (scores !== null && (scores?.CAS ?? 0) >= 0.60);
 
   return (
     <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
@@ -300,9 +358,12 @@ export default function ArchitectureReview() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <VerdictBadge verdict={verdict} cas={scores?.CAS || 0.78} />
-            <span className="text-xs font-mono px-3 py-1 bg-violet-500/10 border border-violet-500/30 text-violet-300 rounded-full">
-              Style: {style}
+            <VerdictBadge 
+              verdict={selectedCandidate?.scores?.verdict || selectedCandidate?.verdict || verdict} 
+              cas={selectedCandidate?.cas || selectedCandidate?.scores?.CAS || 0.78} 
+            />
+            <span className="text-xs font-mono px-3 py-1 bg-violet-500/10 border border-violet-500/30 text-violet-300 rounded-full font-bold uppercase tracking-wider">
+              Style: {selectedCandidate?.style || selectedCandidate?.scores?.detected_style || selectedCandidate?.architecture?.architecture_style || style}
             </span>
           </div>
         </div>
@@ -358,9 +419,9 @@ export default function ArchitectureReview() {
                     <MetricBar
                       key={key}
                       metricKey={key}
-                      label={info.label}
-                      desc={info.desc}
-                      value={scores?.[key] ?? 0.75}
+                      label={getMetricLabel(key)}
+                      desc={getMetricDesc(key)}
+                      value={selectedCandidate?.scores?.[key] ?? 0.75}
                     />
                   ))}
                 </div>
@@ -372,8 +433,8 @@ export default function ArchitectureReview() {
                   Extracted Architecture Components
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
-                  {arch?.components?.length > 0 ? (
-                    arch.components.map((c, i) => (
+                  {(selectedCandidate?.architecture?.components || selectedCandidate?.components || arch?.components || []).length > 0 ? (
+                    (selectedCandidate?.architecture?.components || selectedCandidate?.components || arch?.components || []).map((c, i) => (
                       <div key={i} className="p-3 rounded-xl border border-white/10 bg-white/5 space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">{c.name}</span>
@@ -393,6 +454,23 @@ export default function ArchitectureReview() {
                       Component breakdown available once pipeline reaches complete state.
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Info Panel: Common vs Style-Specific Quality Attributes */}
+              <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs space-y-2">
+                <span className="font-bold text-cyan-400 block uppercase tracking-wider">
+                  Metric Analysis Guide
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-white/60">
+                  <div>
+                    <strong className="text-white block mb-0.5">Common Quality Attributes</strong>
+                    RTS, QAC, CI, and CoS are evaluated uniformly across all candidate architectures to measure requirements traceability, quality attribute coverage, graph coupling, and semantic cohesion.
+                  </div>
+                  <div>
+                    <strong className="text-white block mb-0.5">Style-Specific Metrics</strong>
+                    SSM₁ and SSM₂ dynamically adapt to evaluate the structural integrity unique to the selected architecture style (e.g., LIS/DDS for Layered, SBA/ISS for Microservices).
+                  </div>
                 </div>
               </div>
             </div>
@@ -462,9 +540,23 @@ export default function ArchitectureReview() {
                 </h3>
                 <p className="text-xs text-white/50">Visual metric balance across the 6 architectural dimensions</p>
               </div>
-              <span className="text-xs font-mono text-cyan-400 bg-cyan-400/10 px-3 py-1 rounded-full border border-cyan-400/30">
-                Target Score: 0.850+
-              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setCompareRadar(!compareRadar)}
+                  className={`
+                    px-4 py-1.5 rounded-full text-xs font-semibold tracking-wider transition-all cursor-pointer border
+                    ${compareRadar
+                      ? "bg-amber-400 text-black border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+                      : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                    }
+                  `}
+                >
+                  {compareRadar ? "Show Single Radar" : "Compare All LLMs Radar"}
+                </button>
+                <span className="text-xs font-mono text-cyan-400 bg-cyan-400/10 px-3 py-1 rounded-full border border-cyan-400/30">
+                  Target Score: 0.850+
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
@@ -473,27 +565,60 @@ export default function ArchitectureReview() {
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart 
                     cx="50%" cy="50%" outerRadius="70%" 
-                    data={[
-                      { metric: "RTS",  score: scores?.RTS ?? 0.85, fullMark: 1 },
-                      { metric: "QAC",  score: scores?.QAC ?? 0.80, fullMark: 1 },
-                      { metric: "CI",   score: scores?.CI ?? 0.75, fullMark: 1 },
-                      { metric: "CoS",  score: scores?.CoS ?? 0.82, fullMark: 1 },
-                      { metric: "SSM₁", score: scores?.SSM1 ?? 0.90, fullMark: 1 },
-                      { metric: "SSM₂", score: scores?.SSM2 ?? 0.88, fullMark: 1 },
-                    ]}
+                    data={(() => {
+                      const keys = ["RTS", "QAC", "CI", "CoS", "SSM1", "SSM2"];
+                      const keyLabels = { RTS: "RTS", QAC: "QAC", CI: "CI", CoS: "CoS", SSM1: "SSM₁", SSM2: "SSM₂" };
+                      if (compareRadar) {
+                        return keys.map(k => {
+                          const row = { metric: keyLabels[k], fullMark: 1 };
+                          candidates.forEach((cand, idx) => {
+                            const modelName = cand.name || cand.model || `Candidate ${idx + 1}`;
+                            row[modelName] = cand.scores?.[k] ?? 0;
+                          });
+                          return row;
+                        });
+                      } else {
+                        const activeScores = selectedCandidate?.scores || scores;
+                        return keys.map(k => ({
+                          metric: keyLabels[k],
+                          score: activeScores?.[k] ?? 0.75,
+                          fullMark: 1
+                        }));
+                      }
+                    })()}
                   >
                     <PolarGrid stroke="rgba(45, 220, 255, 0.2)" />
                     <PolarAngleAxis dataKey="metric" tick={{ fill: '#67e8f9', fontSize: 11, fontFamily: 'monospace' }} />
                     <PolarRadiusAxis angle={30} domain={[0, 1]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} axisLine={false} tickCount={5} />
-                    <Radar
-                      name="Score"
-                      dataKey="score"
-                      stroke="#2DDCFF"
-                      strokeWidth={2}
-                      fill="#2DDCFF"
-                      fillOpacity={0.4}
-                      isAnimationActive={true}
-                    />
+                    {compareRadar ? (
+                      candidates.map((cand, idx) => {
+                        const modelName = cand.name || cand.model || `Candidate ${idx + 1}`;
+                        const colors = ["#2DDCFF", "#A855F7", "#F59E0B", "#10B981", "#EF4444"];
+                        const strokeColor = colors[idx % colors.length];
+                        return (
+                          <Radar
+                            key={modelName}
+                            name={modelName}
+                            dataKey={modelName}
+                            stroke={strokeColor}
+                            strokeWidth={2}
+                            fill={strokeColor}
+                            fillOpacity={0.15}
+                            isAnimationActive={true}
+                          />
+                        );
+                      })
+                    ) : (
+                      <Radar
+                        name="Score"
+                        dataKey="score"
+                        stroke="#2DDCFF"
+                        strokeWidth={2}
+                        fill="#2DDCFF"
+                        fillOpacity={0.4}
+                        isAnimationActive={true}
+                      />
+                    )}
                     <Tooltip 
                       contentStyle={{ backgroundColor: 'rgba(5, 5, 15, 0.9)', border: '1px solid rgba(45, 220, 255, 0.3)', borderRadius: '8px', color: '#fff' }}
                       itemStyle={{ color: '#2DDCFF' }}
@@ -502,27 +627,50 @@ export default function ArchitectureReview() {
                 </ResponsiveContainer>
                 
                 {/* Central Score Badge Overlay */}
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center bg-cyan-950/80 p-3 rounded-full border border-cyan-400/60 shadow-[0_0_15px_rgba(45,220,255,0.4)] pointer-events-none z-10">
-                  <div className="text-xl font-bold font-mono text-cyan-300 leading-none">
-                    {(scores?.CAS || 0.78).toFixed(2)}
+                {!compareRadar && (
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center bg-cyan-950/80 p-3 rounded-full border border-cyan-400/60 shadow-[0_0_15px_rgba(45,220,255,0.4)] pointer-events-none z-10">
+                    <div className="text-xl font-bold font-mono text-cyan-300 leading-none">
+                      {(selectedCandidate?.cas || selectedCandidate?.scores?.CAS || scores?.CAS || 0.78).toFixed(2)}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Metric Legend Grid */}
               <div className="space-y-3">
                 {Object.entries(METRIC_INFO).map(([k, info]) => {
-                  const val = scores?.[k] ?? 0.75;
+                  const val = selectedCandidate?.scores?.[k] ?? scores?.[k] ?? 0.75;
                   return (
                     <div key={k} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
                       <div>
-                        <span className="text-xs font-bold text-white">{k} — {info.label}</span>
-                        <p className="text-[10px] text-white/40">{info.desc}</p>
+                        <span className="text-xs font-bold text-white">{k} — {getMetricLabel(k)}</span>
+                        <p className="text-[10px] text-white/40">{getMetricDesc(k)}</p>
                       </div>
-                      <span className="text-xs font-mono font-bold text-cyan-300">{val.toFixed(3)}</span>
+                      {!compareRadar && (
+                        <span className="text-xs font-mono font-bold text-cyan-300">{val.toFixed(3)}</span>
+                      )}
                     </div>
                   );
                 })}
+
+                {compareRadar && (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-2 mt-2">
+                    <span className="text-xs font-bold text-cyan-300 block uppercase tracking-wider">Comparison Legend</span>
+                    <div className="space-y-1.5">
+                      {candidates.map((cand, idx) => {
+                        const modelName = cand.name || cand.model || `Candidate ${idx + 1}`;
+                        const colors = ["#2DDCFF", "#A855F7", "#F59E0B", "#10B981", "#EF4444"];
+                        const strokeColor = colors[idx % colors.length];
+                        return (
+                          <div key={modelName} className="flex items-center gap-2 text-xs">
+                            <span className="w-3 h-3 rounded" style={{ backgroundColor: strokeColor }} />
+                            <span className="font-semibold text-white/80">{modelName} (CAS: {(cand.cas || cand.scores?.CAS || 0).toFixed(3)})</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -658,21 +806,22 @@ export default function ArchitectureReview() {
                 : "The architecture score requires manual review before proceeding."}
             </p>
             <p className="text-xs text-white/40 mt-0.5">
-              Current Verdict: <strong className="text-cyan-300 uppercase">{verdict}</strong>
+              Current Verdict: <strong className="text-cyan-300 uppercase">{selectedCandidate?.scores?.verdict || verdict}</strong>
             </p>
           </div>
 
           <div className="flex gap-3">
             <button
               onClick={handleAccept}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-black bg-cyan-400 hover:bg-cyan-300 cursor-pointer transition-all"
+              disabled={selecting}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-black bg-cyan-400 hover:bg-cyan-300 cursor-pointer transition-all disabled:opacity-50"
             >
-              <CheckCircle2 size={16} />
-              Accept &amp; Proceed
+              {selecting ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {selecting ? "Saving Selection..." : "Accept & Proceed"}
             </button>
             <button
               onClick={handleReject}
-              disabled={restarting}
+              disabled={restarting || selecting}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-white border border-red-400/50 hover:bg-red-900/30 cursor-pointer transition-all disabled:opacity-50"
             >
               <RefreshCw size={16} className={restarting ? "animate-spin" : ""} />

@@ -73,5 +73,8 @@ class ArchitecturePackage(BaseModel):
     scores: MetricScores
     verdict: Literal["accepted", "marginal", "rejected"]
     rejected_alternatives: List[Dict[str, Any]] = Field(default_factory=list)
+    candidates: List[Dict[str, Any]] = Field(default_factory=list)
+    plantuml_code: Optional[str] = None
+    mermaid_code: Optional[str] = None
     generation_metadata: Dict[str, Any] = Field(default_factory=dict)
     artifact_uris: Dict[str, str] = Field(default_factory=dict)
