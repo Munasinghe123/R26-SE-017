@@ -96,6 +96,10 @@ def normalize_element_type(name: str, element_type: Optional[str]) -> ElementTyp
         return ElementType.HANDLER
     elif "client" in type_str or "client" in name_str:
         return ElementType.CLIENT
+    elif "manager" in type_str or "manager" in name_str:
+        return ElementType.MANAGER
+    elif "engine" in type_str or "engine" in name_str:
+        return ElementType.ENGINE
     elif "module" in type_str:
         return ElementType.MODULE
     else:

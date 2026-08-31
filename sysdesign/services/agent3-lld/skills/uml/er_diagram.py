@@ -2,99 +2,192 @@ from __future__ import annotations
 
 from skills.uml.skill import Skill
 
-
 ER_GENERATION_SKILL = Skill(
     name="er_generation",
     instructions="""
 ROLE
 
-Generate the ER Diagram portion of the UML IR.
+Generate only the ER Diagram portion of the UML IR.
 
-The ER Diagram is the canonical persistent data model derived from requirements
-and from the validated Class Diagram.
-
+The ER Diagram represents the system's persistent logical data model.
+Model persistent entities, attributes, identifiers, foreign keys, and
+semantic relationships with accurate cardinality.
 
 SOURCE OF TRUTH
 
-- Requirements are the semantic source of truth.
-- The validated Class Diagram is the structural source of truth.
-- No existing database schema is supplied.
-- Design the persistent model implied by Requirements + validated Class Diagram.
+Use, in priority order:
 
+1. Requirements/domain entities and attributes
+2. Domain relationships and business rules
+3. Validated Class Diagram
+4. Database strategy, when supplied
 
-SCOPE
+Do not infer persistence from application architecture.
 
-- Generate only persistent entities, their attributes, primary keys, and
-    persistent relationships.
-- Exclude non-persistent runtime components.
+ENTITIES
 
+Include only concepts that represent persistent domain/data.
 
-ENTITY ELIGIBILITY
+Include examples such as:
+- Customer
+- Order
+- CartItem
 
-- Create entities only for persistent domain concepts.
-- Do not turn Controller, Service, Repository, Boundary/UI, external systems,
-    or utilities into entities merely because they exist in the Class Diagram.
-- Do not create bridge entities, lookup tables, or auxiliary entities unless
-    requirements or domain structure clearly justify them.
-- Generate the smallest complete persistent data model.
+Exclude:
+- UI/frontend
+- Controller
+- Service
+- Repository
+- API handlers
+- Actors
+- External services
+- Infrastructure components
 
-
-NAMING
-
-- Preserve canonical domain concept naming from the Class Diagram.
-- Use one canonical entity name per concept.
-- Do not introduce synonyms for concepts already represented.
-
-
-PRIMARY KEYS
-
-- Every persistent entity must have a primary key.
-- Primary keys must reference an attribute present on the same entity.
-- Avoid speculative surrogate keys when a clear requirement-backed key exists.
-
+Do not create an entity unless the supplied information supports it as persistent data.
 
 ATTRIBUTES
 
-- Attributes should originate from persistent domain state represented in the
-    Class Diagram and/or clearly required by requirements.
-- Do not invent unsupported attributes.
-- Do not include transient process state, UI-only fields, framework metadata,
-    or transport-specific fields unless explicitly persisted by requirements.
-- Keep attributes minimal but sufficient to support required behaviors.
+Include persistent attributes supported by the source information.
+Preserve canonical names exactly.
 
+Do not invent attributes such as:
+- created_at
+- updated_at
+- deleted
+- metadata
+- version
+
+unless explicitly supplied.
+
+PRIMARY KEYS
+
+Preserve explicit entity identifiers as primary keys.
+Do not invent alternative identifiers.
+
+FOREIGN KEYS
+
+Preserve explicitly supplied foreign-key attributes such as:
+- Order.customer_id
+- CartItem.order_id
+
+Do not invent foreign keys solely because two entities are related.
+
+CLASS VS ER
+
+ER contains persistent data only.
+
+Do NOT include Class Diagram methods or application behavior.
+
+For example:
+
+Class:
+    Order.calculateTotalPrice()
+
+ER:
+    Order
+        order_id
+        customer_id
+        total_price
+        status
 
 RELATIONSHIPS
 
-- ER relationships must be justified by requirements and structural
-    relationships.
-- Every relationship endpoint must reference a generated entity.
-- Use only supported relationship types:
-    one-to-one, one-to-many, many-to-one, many-to-many.
-- Do not create decorative or speculative relationships.
-- Do not force relationships between entities that only share naming similarity.
+Every relationship must represent business/domain meaning.
 
+Use semantic verbs or verb phrases derived from the requirements.
 
-CARDINALITY AND OWNERSHIP
+Good:
+    Customer PLACES Order
+    Order CONTAINS CartItem
+    Student ENROLLS_IN Course
 
-- Relationship multiplicity must be semantically justified.
-- Prefer conservative multiplicity when requirements are ambiguous.
-- Do not infer strong ownership/lifecycle semantics unless clearly supported.
+Never use cardinality as a relationship name.
 
+Invalid:
+    one-to-many
+    many-to-many
+    one-to-one
+    1:N
+    1:1
+
+CARDINALITY
+
+Derive both minimum and maximum participation from the requirements.
+
+Use only:
+    1       = exactly one
+    0..1    = zero or one
+    0..*    = zero or more
+    1..*    = one or more
+
+Preserve minimum participation.
+
+Interpret requirements carefully:
+
+"Each Order belongs to exactly one Customer"
+    Order -> Customer = 1
+
+"A Customer can have multiple Orders"
+    Customer -> Order = 0..*
+
+"An Order contains one or more CartItems"
+    Order -> CartItem = 1..*
+
+"Each CartItem belongs to exactly one Order"
+    CartItem -> Order = 1
+
+Do not change 1..* to 0..*.
+Do not make optional relationships mandatory.
+
+RELATIONSHIP CONSISTENCY
+
+Foreign keys, entities, and relationships must agree.
+
+Example:
+
+Order.customer_id -> Customer
+
+combined with:
+
+"Each Order belongs to exactly one Customer"
+
+must produce:
+
+Customer PLACES Order
+Customer -> Order = 0..*
+Order -> Customer = 1
+
+Do not generate contradictory relationship semantics.
 
 CROSS-DIAGRAM CONSISTENCY
 
-- Keep entity concepts consistent with Class Diagram domain entities.
-- Persistent structures should be suitable for repository-facing interactions
-    later referenced by Sequence generation.
-- If requirements imply persistence for a concept absent from Class Diagram,
-    still avoid speculative expansion beyond the minimum required model.
+Keep entity and attribute names consistent with the validated Class Diagram
+and supplied requirements.
 
+Do not rename:
+    Customer -> CustomerRecord
+    Order -> OrderTable
 
-QUALITY BAR
+Do not model application architecture or runtime behavior.
 
-- Prioritize correctness, traceability to requirements, naming consistency,
-    and minimum necessary complexity.
-- Do not create speculative database entities just to make the ER diagram look
-    complete.
+FINAL VALIDATION
+
+Before returning the ER IR, verify:
+
+- all entities are persistent domain data
+- no UI/controller/service/repository/API entity exists
+- no methods or behavioral flow are included
+- canonical attributes and identifiers are preserved
+- unsupported attributes/entities are not invented
+- semantic relationship names are used
+- cardinality contains correct minimum and maximum
+- exactly one = 1
+- zero or more = 0..*
+- one or more = 1..*
+- optional participation remains optional
+- foreign keys agree with relationships
+- business rules are not contradicted
+
+Return only the ER Diagram portion required by the UML IR schema.
 """.strip(),
 )

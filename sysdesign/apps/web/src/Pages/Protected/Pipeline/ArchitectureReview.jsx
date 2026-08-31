@@ -30,19 +30,207 @@ import {
   Send,
   Eye,
 } from "lucide-react";
+import {
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+  Tooltip
+} from "recharts";
 import beehiveBg from "../../../Images/beehive-bg.png";
 
 const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8000";
 const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "http://127.0.0.1:8002";
 
 const METRIC_INFO = {
-  CAS:  { label: "CAS (Composite Architecture Score)", desc: "Weighted overall quality fitness (>= 0.60 threshold)", weight: "30%" },
-  LSCS: { label: "LSCS (Layer Structural Coupling)",    desc: "Cleanliness of layer separation & boundaries", weight: "15%" },
-  NAS:  { label: "NAS (Non-Functional Alignment)",     desc: "Satisfaction of security, scale, availability NFRs", weight: "20%" },
-  RCR:  { label: "RCR (Requirement Coverage Ratio)",   desc: "Percentage of functional requirements satisfied", weight: "15%" },
-  SCI:  { label: "SCI (Style Consistency Index)",       desc: "Adherence to architectural design patterns", weight: "10%" },
-  SMI:  { label: "SMI (System Modularity Index)",       desc: "Component cohesion and coupling balance", weight: "10%" },
+  RTS:  { label: "RTS (Requirement Traceability Score)", desc: "Semantic alignment of requirements to components", weight: "29.17%" },
+  QAC:  { label: "QAC (Quality Attribute Coverage)",     desc: "ISO 25010 NFR architectural provision coverage", weight: "21.94%" },
+  CI:   { label: "CI (Coupling Index)",                  desc: "Graph decoupling density score (higher = better)", weight: "13.61%" },
+  CoS:  { label: "CoS (Cohesion Score)",                 desc: "Semantic coherence of component responsibilities", weight: "13.61%" },
+  SSM1: { label: "SSM₁ (Primary Style Metric)",           desc: "Style-specific structural property (LIS, SBA, EFC, MCR, PC)", weight: "13.61%" },
+  SSM2: { label: "SSM₂ (Secondary Style Metric)",         desc: "Style-specific boundary property (DDS, ISS, PSC, FIS)", weight: "8.06%" },
 };
+
+/** Strip org prefix from model path: "meta-llama/llama-3.3-70b-instruct" → "llama-3.3-70b-instruct" */
+function getModelShortName(model) {
+  if (!model) return "Unknown Model";
+  return model.split("/").pop() || model;
+}
+
+/**
+ * Build a unique, human-readable label for a candidate card.
+ * Example: "llama-3.3-70b-instruct #2 · Microservices"
+ */
+function buildCandidateLabel(c, idx) {
+  const modelShort = getModelShortName(c.model) || `Candidate ${idx + 1}`;
+  const num = c.candidate_num ? `#${c.candidate_num}` : `#${idx + 1}`;
+  const style = (c.architecture?.architecture_style || c.scores?.detected_style || "").trim();
+  const styleTag = style ? ` · ${style}` : "";
+  return `${modelShort} ${num}${styleTag}`;
+}
+
+/** Composite unique ID: model + candidate_num + list index → guaranteed unique per card */
+function buildCandidateUid(c, idx) {
+  return `${c.model || "unknown"}::${c.candidate_num ?? idx}::${idx}`;
+}
+
+function generateFallbackMermaidCode(architecture) {
+  if (!architecture) return "graph TD\n    A[Client] --> B[API Gateway]";
+  const comps = architecture.components || [];
+  const conns = (architecture.connectors?.length ? architecture.connectors : null)
+             || (architecture.interactions?.length ? architecture.interactions : null)
+             || [];
+
+  let lines = ["graph TD"];
+  const layers = architecture.layers || [];
+
+  if (layers.length > 0) {
+    layers.forEach(layer => {
+      const layerName = layer.name || layer.layer || "Layer";
+      const layerComps = comps.filter(c => (c.layer || c.boundary || "").toLowerCase() === layerName.toLowerCase());
+      if (layerComps.length > 0) {
+        const subId = layerName.replace(/[^a-zA-Z0-9]/g, "_");
+        lines.push(`    subgraph ${subId} ["${layerName}"]`);
+        layerComps.forEach(c => {
+          const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
+          lines.push(`        ${cId}["${c.name}"]`);
+        });
+        lines.push("    end");
+      }
+    });
+  } else {
+    const layerMap = {};
+    comps.forEach(c => {
+      const lName = c.layer || c.boundary || "Core";
+      if (!layerMap[lName]) layerMap[lName] = [];
+      layerMap[lName].push(c);
+    });
+    Object.entries(layerMap).forEach(([lName, lComps]) => {
+      const subId = lName.replace(/[^a-zA-Z0-9]/g, "_");
+      lines.push(`    subgraph ${subId} ["${lName}"]`);
+      lComps.forEach(c => {
+        const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
+        lines.push(`        ${cId}["${c.name}"]`);
+      });
+      lines.push("    end");
+    });
+  }
+
+  conns.forEach(conn => {
+    const fromId = (conn.from_component || conn.from || conn.source || "").replace(/[^a-zA-Z0-9]/g, "_");
+    const toId = (conn.to_component || conn.to || conn.target || "").replace(/[^a-zA-Z0-9]/g, "_");
+    const label = conn.connector_type || conn.type || conn.protocol || "";
+    if (fromId && toId) {
+      if (label) {
+        const cleanLabel = String(label).replace(/["|]/g, "").trim();
+        lines.push(`    ${fromId} -->|${cleanLabel}| ${toId}`);
+      } else {
+        lines.push(`    ${fromId} --> ${toId}`);
+      }
+    }
+  });
+
+  return lines.join("\n");
+}
+
+/**
+ * Client-side deterministic PlantUML generator.
+ * Fully extracts components, layers, and all interaction connections.
+ */
+function generateFallbackPlantUML(architecture, title = "Architecture") {
+  if (!architecture) {
+    return "@startuml\nskinparam componentStyle rectangle\nskinparam backgroundColor #0d1117\ntitle Architecture\n[System Core] as S\n@enduml\n";
+  }
+  const comps = architecture.components || [];
+  const conns = (architecture.connectors?.length ? architecture.connectors : null)
+             || (architecture.interactions?.length ? architecture.interactions : null)
+             || [];
+  const style = architecture.architecture_style || architecture.detected_style || "Layered Architecture";
+
+  const safeId = (s) => (s || "").replace(/[^a-zA-Z0-9_]/g, "_");
+
+  const lines = [
+    "@startuml",
+    `title ${title} — ${style}`,
+    "skinparam componentStyle rectangle",
+    "skinparam backgroundColor #0d1117",
+    "skinparam defaultFontColor #c9d1d9",
+    "skinparam package {",
+    "  BackgroundColor #161b22",
+    "  BorderColor #30363d",
+    "  FontColor #58a6ff",
+    "}",
+    "skinparam component {",
+    "  BackgroundColor #21262d",
+    "  BorderColor #58a6ff",
+    "  FontColor #f0f6fc",
+    "}",
+    "skinparam arrow {",
+    "  Color #2ddcff",
+    "  FontColor #8b949e",
+    "}",
+    "",
+  ];
+
+  // Group components by layer
+  const layerMap = {};
+  comps.forEach(c => {
+    const layer = (c.layer || c.boundary || "Core").trim();
+    if (!layerMap[layer]) layerMap[layer] = [];
+    layerMap[layer].push(c);
+  });
+
+  const aliasMap = {};
+  Object.entries(layerMap).forEach(([layer, cs]) => {
+    const safeLayer = safeId(layer) || "Layer";
+    lines.push(`package "${layer}" as ${safeLayer} {`);
+    cs.forEach(c => {
+      const rawName = (c.name || "").trim();
+      if (!rawName) return;
+      const cleanName = rawName.replace(/["\[\]]/g, "");
+      const alias = safeId(cleanName);
+      aliasMap[rawName] = alias;
+      aliasMap[cleanName] = alias;
+      lines.push(`  [${cleanName}] as ${alias}`);
+    });
+    lines.push("}");
+    lines.push("");
+  });
+
+  if (conns.length > 0) {
+    lines.push("' === Component Interactions ===");
+    conns.forEach(conn => {
+      const src = (conn.from_component || conn.from || conn.source || "").trim();
+      const tgt = (conn.to_component || conn.to || conn.target || "").trim();
+      const label = (conn.connector_type || conn.type || conn.protocol || "").trim().replace(/["\n\r]/g, "");
+      if (!src || !tgt) return;
+      const sa = aliasMap[src] || safeId(src);
+      const ta = aliasMap[tgt] || safeId(tgt);
+      if (sa && ta && sa !== ta) {
+        if (label === "async_message" || label.toLowerCase().includes("async")) {
+          lines.push(`${sa} ..> ${ta} : ${label}`);
+        } else {
+          lines.push(label ? `${sa} --> ${ta} : ${label}` : `${sa} --> ${ta}`);
+        }
+      }
+    });
+  }
+
+  lines.push("");
+  lines.push("@enduml");
+  return lines.join("\n") + "\n";
+}
+
+/** Returns true if the string is valid PlantUML (has @startuml/@enduml) */
+function isValidPlantUML(code) {
+  if (!code || typeof code !== "string") return false;
+  const t = code.trim();
+  if (t.startsWith("{") || t.startsWith("[")) return false;
+  if (t.includes('"error"') || t.includes('"message"')) return false;
+  return t.toLowerCase().includes("@startuml") && t.toLowerCase().includes("@enduml");
+}
 
 function VerdictBadge({ verdict, cas }) {
   const cfg = {
@@ -104,14 +292,13 @@ export default function ArchitectureReview() {
   const [style, setStyle]       = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [compareRadar, setCompareRadar] = useState(false);
+  const [selecting, setSelecting]       = useState(false);
 
   // Diagram Git-Loop state
   const [diagrams, setDiagrams] = useState({ plantuml: "", mermaid: "" });
-  const [iterations, setIterations] = useState([
-    { version: "v1", cas: 0.72, prompt: "Initial LLM Candidate Generation", code: "@startuml\npackage Layered {\n  [API Gateway] --> [Auth Service]\n  [Auth Service] --> [Database]\n}\n@enduml" },
-    { version: "v2", cas: 0.86, prompt: "Refined with skinparam rectangle style and explicitly separated boundaries", code: "@startuml\nskinparam componentStyle rectangle\npackage presentation {\n  [API Gateway]\n}\npackage domain {\n  [Auth Service]\n}\npackage data {\n  [Database]\n}\n[API Gateway] --> [Auth Service]\n[Auth Service] --> [Database]\n@enduml" }
-  ]);
-  const [activeVersion, setActiveVersion] = useState("v2");
+  const [iterations, setIterations] = useState([]);
+  const [activeVersion, setActiveVersion] = useState(null);
   const [refinePrompt, setRefinePrompt]   = useState("");
   const [refining, setRefining]           = useState(false);
   const [diffText, setDiffText]           = useState("");
@@ -120,6 +307,11 @@ export default function ArchitectureReview() {
   const [restarting, setRestarting] = useState(false);
   const [jobStatus, setJobStatus]   = useState(null);
   const [error, setError]           = useState(null);
+
+  // Kroki SVG render state — must be declared here (before any early returns)
+  const [diagramEngine, setDiagramEngine] = useState("plantuml"); // "plantuml" | "mermaid"
+  const [svgUrl, setSvgUrl] = useState(null);
+  const [svgError, setSvgError] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
@@ -131,29 +323,60 @@ export default function ArchitectureReview() {
         const archArtifact = data?.artifacts?.architecture;
         if (archArtifact) {
           setArch(archArtifact);
-          setScores(archArtifact.scores || { CAS: 0.78, LSCS: 0.82, NAS: 0.75, RCR: 0.88, SCI: 0.70, SMI: 0.73 });
-          setVerdict(archArtifact.verdict || "accepted");
-          setStyle(archArtifact.detected_style || "Layered Microservices");
+          // Use real scores only — no hardcoded fallbacks
+          setScores(archArtifact.scores || null);
+          setVerdict(archArtifact.verdict || null);
+          setStyle(archArtifact.detected_style || archArtifact.architecture_style || null);
 
-          if (archArtifact.candidates) {
-            setCandidates(archArtifact.candidates);
-            setSelectedCandidate(archArtifact.candidates[0]);
+          let mappedCandidates = [];
+          if (archArtifact.candidates && archArtifact.candidates.length > 0) {
+            mappedCandidates = archArtifact.candidates.map((c, idx) => ({
+              ...c,
+              uid: buildCandidateUid(c, idx),
+              name: buildCandidateLabel(c, idx),
+              cas: c.cas || c.scores?.CAS || 0,
+              style: c.style || c.architecture?.architecture_style || c.scores?.detected_style || "unknown"
+            }));
           } else {
-            // Mock candidates if standalone test
-            const sampleCandidates = [
-              { name: "Candidate A (Layered)", cas: 0.78, style: "Layered", scores: { CAS: 0.78, LSCS: 0.85, NAS: 0.72, RCR: 0.88, SCI: 0.70, SMI: 0.75 } },
-              { name: "Candidate B (Event-Driven)", cas: 0.64, style: "Event-Driven", scores: { CAS: 0.64, LSCS: 0.60, NAS: 0.78, RCR: 0.65, SCI: 0.62, SMI: 0.59 } },
-              { name: "Candidate C (Microkernel)", cas: 0.52, style: "Microkernel", scores: { CAS: 0.52, LSCS: 0.50, NAS: 0.55, RCR: 0.58, SCI: 0.48, SMI: 0.49 } }
-            ];
-            setCandidates(sampleCandidates);
-            setSelectedCandidate(sampleCandidates[0]);
+            // Synthesize single-winner fallback
+            mappedCandidates = [{
+              uid: "winner::0::0",
+              name: buildCandidateLabel({ model: archArtifact.architecture_style, candidate_num: 1, architecture: archArtifact }, 0),
+              model: archArtifact.architecture_style || "Auto-Picked Winner",
+              cas: archArtifact.scores?.CAS || 0,
+              style: archArtifact.detected_style || archArtifact.architecture_style || "unknown",
+              scores: archArtifact.scores || {},
+              architecture: archArtifact,
+              candidate_num: 1,
+              rank: 1,
+            }];
+          }
+          setCandidates(mappedCandidates);
+          setSelectedCandidate(mappedCandidates[0]);
+
+          // Ensure valid initial PlantUML diagram
+          let initialPuml = archArtifact.plantuml_code;
+          if (!isValidPlantUML(initialPuml)) {
+            initialPuml = generateFallbackPlantUML(
+              archArtifact,
+              archArtifact.architecture_style || "Architecture"
+            );
           }
 
-          if (archArtifact.plantuml_code) {
-            setDiagrams({ plantuml: archArtifact.plantuml_code, mermaid: archArtifact.mermaid_code || "" });
-          }
+          setDiagrams({ plantuml: initialPuml, mermaid: archArtifact.mermaid_code || "" });
+          setIterations([{
+            version: "v1",
+            cas: archArtifact.scores?.CAS ?? 0,
+            prompt: "Initial generation",
+            code: initialPuml
+          }]);
+          setActiveVersion("v1");
+        } else if (data.job?.status === "failed") {
+          setError(`Pipeline failed: ${data.job.error || "Unknown error. Check the agent2-hld server logs."}`);
+        } else if (data.job?.status === "running" || data.job?.status === "pending") {
+          setError("Pipeline is still running. Refresh in a moment.");
         } else {
-          setError("Architecture data not yet available. The pipeline may still be running.");
+          setError("Architecture data not yet available.");
         }
         setLoading(false);
       })
@@ -166,8 +389,10 @@ export default function ArchitectureReview() {
   // Compute diff text between v1 and v2
   useEffect(() => {
     if (iterations.length >= 2) {
-      const v1 = iterations[0].code.split("\n");
-      const v2 = iterations[1].code.split("\n");
+      const rawV1 = (iterations[0].code || "").replace(/\\n/g, "\n");
+      const rawV2 = (iterations[iterations.length - 1].code || "").replace(/\\n/g, "\n");
+      const v1 = rawV1.split("\n");
+      const v2 = rawV2.split("\n");
 
       let diffLines = [];
       let i = 0, j = 0;
@@ -190,38 +415,100 @@ export default function ArchitectureReview() {
     }
   }, [iterations]);
 
+  // Kroki SVG rendering — fetches live vector SVG based on selected engine
+  useEffect(() => {
+    const activeIt = (iterations && iterations.length > 0)
+      ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
+      : null;
+
+    const targetArch = selectedCandidate?.architecture || arch;
+    const title = targetArch?.architecture_style
+               || selectedCandidate?.style
+               || "Architecture";
+
+    let pumlRaw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
+    const fallbackPuml = isValidPlantUML(pumlRaw) ? pumlRaw : generateFallbackPlantUML(targetArch || null, title);
+
+    let payloadText = "";
+    let endpoint = "";
+
+    if (diagramEngine === "mermaid") {
+      endpoint = "https://kroki.io/mermaid/svg";
+      payloadText = generateFallbackMermaidCode(targetArch);
+    } else {
+      endpoint = "https://kroki.io/plantuml/svg";
+      payloadText = fallbackPuml;
+    }
+
+    setSvgError(false);
+    setSvgUrl(null);
+
+    fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: payloadText,
+    })
+      .then(r => r.ok ? r.blob() : Promise.reject(r.status))
+      .then(blob => setSvgUrl(URL.createObjectURL(blob)))
+      .catch(() => {
+        // If Mermaid fails/times out on public Kroki, fall back to PlantUML vector SVG
+        if (diagramEngine === "mermaid") {
+          fetch("https://kroki.io/plantuml/svg", {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: fallbackPuml,
+          })
+            .then(r => r.ok ? r.blob() : Promise.reject(r.status))
+            .then(blob => setSvgUrl(URL.createObjectURL(blob)))
+            .catch(() => setSvgError(true));
+        } else {
+          setSvgError(true);
+        }
+      });
+  }, [iterations, activeVersion, selectedCandidate, arch, diagramEngine]);
+
   const handleRefineDiagram = async () => {
     if (!refinePrompt.trim()) return;
     setRefining(true);
 
     try {
-      // Call Agent 2 endpoint
-      const res = await fetch(`${AGENT2_URL}/api/runs/${jobId}/diagram/plantuml/improve`, {
+      const res = await fetch(`${ORCHESTRATOR}/jobs/${jobId}/refine-diagram`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedback: refinePrompt, current_code: iterations[iterations.length - 1].code })
+        body: JSON.stringify({ prompt: refinePrompt })
       });
 
       if (res.ok) {
         const data = await res.json();
-        const nextVer = `v${iterations.length + 1}`;
-        setIterations([
-          ...iterations,
-          { version: nextVer, cas: data.new_cas || 0.91, prompt: refinePrompt, code: data.improved_code || iterations[1].code }
-        ]);
-        setActiveVersion(nextVer);
+        const pumlWorkflow = data.plantuml || {};
+        const history = pumlWorkflow.history || [];
+
+        if (history.length > 0) {
+          const newIterList = history.map((item, idx) => ({
+            version: `v${idx + 1}`,
+            cas: item.diagram_cas ?? 0,
+            prompt: item.source === "manual" ? "Manual Edit" : (item.llm_iteration > 1 ? refinePrompt : "Initial Generation"),
+            code: (item.diagram || "").replace(/\\n/g, "\n"),
+            breakdown: item.breakdown || {},
+            issues: item.issues || []
+          }));
+          setIterations(newIterList);
+          setActiveVersion(`v${newIterList.length}`);
+        } else if (data.plantuml_code) {
+          const nextVer = `v${iterations.length + 1}`;
+          setIterations([
+            ...iterations,
+            { version: nextVer, cas: data.new_cas || iterations[0].cas, prompt: refinePrompt, code: data.plantuml_code.replace(/\\n/g, "\n") }
+          ]);
+          setActiveVersion(nextVer);
+        }
       } else {
-        // Fallback simulation for offline testing
-        const nextVer = `v${iterations.length + 1}`;
-        const newCode = iterations[iterations.length - 1].code + `\n' Refined: ${refinePrompt}\n[Refined Module] --> [Database]`;
-        setIterations([
-          ...iterations,
-          { version: nextVer, cas: 0.92, prompt: refinePrompt, code: newCode }
-        ]);
-        setActiveVersion(nextVer);
+        const errData = await res.json().catch(() => ({}));
+        setError(`Refinement failed: ${errData.detail || res.statusText}`);
       }
     } catch (err) {
-      console.warn("Refine trigger failed, fallback applied:", err);
+      console.error("Refine trigger failed:", err);
+      setError("Failed to connect to the orchestrator for diagram refinement.");
     } finally {
       setRefining(false);
       setRefinePrompt("");
@@ -229,6 +516,22 @@ export default function ArchitectureReview() {
   };
 
   const handleAccept = async () => {
+    if (!selectedCandidate) return;
+    setSelecting(true);
+    try {
+      await fetch(`${ORCHESTRATOR}/jobs/${jobId}/select-candidate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedCandidate.model,
+          architecture: selectedCandidate.architecture,
+          scores: selectedCandidate.scores
+        })
+      });
+    } catch (e) {
+      console.error("Failed to select candidate", e);
+    }
+
     if (jobStatus === "needs_review" || jobStatus === "waiting_for_lld_ui") {
       try {
         await fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-lld`, { method: "POST" });
@@ -236,6 +539,7 @@ export default function ArchitectureReview() {
         console.error("Failed to start LLD", e);
       }
     }
+    setSelecting(false);
     navigate(`/pipeline/${jobId}`);
   };
 
@@ -276,8 +580,34 @@ export default function ArchitectureReview() {
     );
   }
 
-  const activeIteration = iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1];
-  const isAcceptable    = (scores?.CAS ?? 0.78) >= 0.60;
+  const getMetricLabel = (key) => {
+    if (key === "SSM1" && selectedCandidate?.scores?.ssm1_display) {
+      return `SSM₁: ${selectedCandidate.scores.ssm1_display} (${selectedCandidate.scores.ssm1_name})`;
+    }
+    if (key === "SSM2" && selectedCandidate?.scores?.ssm2_display) {
+      return `SSM₂: ${selectedCandidate.scores.ssm2_display} (${selectedCandidate.scores.ssm2_name})`;
+    }
+    return METRIC_INFO[key]?.label || key;
+  };
+
+  const getMetricDesc = (key) => {
+    if (key === "SSM1" && selectedCandidate?.scores?.ssm1_display) {
+      return `Style-specific structural property for ${selectedCandidate.style}`;
+    }
+    if (key === "SSM2" && selectedCandidate?.scores?.ssm2_display) {
+      return `Style-specific boundary property for ${selectedCandidate.style}`;
+    }
+    return METRIC_INFO[key]?.desc || "";
+  };
+
+  const activeIteration = (iterations && iterations.length > 0)
+    ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
+    : { version: "v0", cas: 0, code: "' No diagram code generated" };
+
+  const diagramCas = activeIteration?.cas ?? selectedCandidate?.cas ?? (scores?.CAS ?? 0);
+  const isAcceptable = diagramCas >= 0.60;
+  // Only show AI refinement engine when diagram CAS is below threshold
+  const needsRefinement = diagramCas < 0.60;
 
   return (
     <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
@@ -290,24 +620,28 @@ export default function ArchitectureReview() {
               Architecture <span className="text-cyan-400">Review Suite</span>
             </h1>
             <p className="text-xs text-white/50 mt-1">
-              ATAM Trade-off Evaluation · Radar Metrics · Git-like PlantUML Refinement Loop
+              ATAM Trade-off Evaluation · Radar Metrics · Interactive Diagram Studio & Revision Control
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <VerdictBadge verdict={verdict} cas={scores?.CAS || 0.78} />
-            <span className="text-xs font-mono px-3 py-1 bg-violet-500/10 border border-violet-500/30 text-violet-300 rounded-full">
-              Style: {style}
+            <VerdictBadge 
+              verdict={selectedCandidate?.scores?.verdict || selectedCandidate?.verdict || verdict} 
+              cas={selectedCandidate?.cas || selectedCandidate?.scores?.CAS || 0.78} 
+            />
+            <span className="text-xs font-mono px-3 py-1 bg-violet-500/10 border border-violet-500/30 text-violet-300 rounded-full font-bold uppercase tracking-wider">
+              Style: {selectedCandidate?.style || selectedCandidate?.scores?.detected_style || selectedCandidate?.architecture?.architecture_style || style}
             </span>
           </div>
         </div>
 
-        {/* ── Navigation Tabs ────────────────────────────────────────── */}
+        {/* ── Navigation Tabs (Production Enterprise Terminology) ───────── */}
         <div className="flex flex-wrap gap-2 border-b border-white/10 pb-3">
           {[
-            { id: "overview", label: "ATAM Tradeoff & Winner", icon: Award },
-            { id: "radar",    label: "Quality Metrics Radar",  icon: BarChart2 },
-            { id: "git_loop", label: "Git-Like Refinement Loop", icon: GitBranch },
-            { id: "diff",     label: "Side-by-Side Diff",       icon: FileDiff },
+            { id: "overview",       label: "Architecture Evaluation & Selection", icon: Award },
+            { id: "radar",          label: "Quality Metrics Radar",               icon: BarChart2 },
+            { id: "visual_studio",  label: "Diagram Studio & Visual Canvas",      icon: Eye },
+            { id: "git_loop",       label: "Interactive Refinement Engine",       icon: GitBranch },
+            { id: "diff",           label: "Revision Control & Code Diff",        icon: FileDiff },
           ].map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -352,9 +686,9 @@ export default function ArchitectureReview() {
                     <MetricBar
                       key={key}
                       metricKey={key}
-                      label={info.label}
-                      desc={info.desc}
-                      value={scores?.[key] ?? 0.75}
+                      label={getMetricLabel(key)}
+                      desc={getMetricDesc(key)}
+                      value={selectedCandidate?.scores?.[key] ?? 0.75}
                     />
                   ))}
                 </div>
@@ -366,8 +700,8 @@ export default function ArchitectureReview() {
                   Extracted Architecture Components
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
-                  {arch?.components?.length > 0 ? (
-                    arch.components.map((c, i) => (
+                  {(selectedCandidate?.architecture?.components || selectedCandidate?.components || arch?.components || []).length > 0 ? (
+                    (selectedCandidate?.architecture?.components || selectedCandidate?.components || arch?.components || []).map((c, i) => (
                       <div key={i} className="p-3 rounded-xl border border-white/10 bg-white/5 space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">{c.name}</span>
@@ -389,6 +723,23 @@ export default function ArchitectureReview() {
                   )}
                 </div>
               </div>
+
+              {/* Info Panel: Common vs Style-Specific Quality Attributes */}
+              <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs space-y-2">
+                <span className="font-bold text-cyan-400 block uppercase tracking-wider">
+                  Metric Analysis Guide
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-white/60">
+                  <div>
+                    <strong className="text-white block mb-0.5">Common Quality Attributes</strong>
+                    RTS, QAC, CI, and CoS are evaluated uniformly across all candidate architectures to measure requirements traceability, quality attribute coverage, graph coupling, and semantic cohesion.
+                  </div>
+                  <div>
+                    <strong className="text-white block mb-0.5">Style-Specific Metrics</strong>
+                    SSM₁ and SSM₂ dynamically adapt to evaluate the structural integrity unique to the selected architecture style (e.g., LIS/DDS for Layered, SBA/ISS for Microservices).
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Right Column: Candidate Selection & Winner Card */}
@@ -402,41 +753,128 @@ export default function ArchitectureReview() {
                 </div>
 
                 {selectedCandidate && (
-                  <div className="p-4 rounded-xl border border-amber-400/20 bg-amber-400/5 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-amber-200">{selectedCandidate.name}</span>
-                      <span className="text-xs font-mono font-bold text-amber-400">CAS {selectedCandidate.cas}</span>
+                  <div className="p-4 rounded-xl border border-amber-400/30 bg-amber-400/5 space-y-3">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-amber-200 block">{selectedCandidate.name}</span>
+                        <span className="text-[10px] text-white/50 block font-mono">
+                          Candidate #{selectedCandidate.candidate_num || 1}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30">
+                        CAS {typeof selectedCandidate.cas === 'number' ? selectedCandidate.cas.toFixed(4) : selectedCandidate.cas}
+                      </span>
                     </div>
-                    <p className="text-xs text-white/60">
-                      Style: <strong className="text-white">{selectedCandidate.style}</strong>
-                    </p>
-                    <div className="text-[11px] text-white/40 space-y-1">
-                      <p>✓ High Cohesion & Modular Isolation</p>
-                      <p>✓ Lowest Structural Coupling Risk</p>
+
+                    <div className="flex items-center justify-between text-xs border-t border-b border-white/10 py-2">
+                      <span className="text-white/60">Architecture Style:</span>
+                      <span className="font-bold text-cyan-300 uppercase tracking-wider font-mono">
+                        {selectedCandidate.style}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider block">
+                        Evaluated Style-Specific Metrics (SSM)
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="p-2 rounded bg-white/5 border border-white/10">
+                          <span className="text-white/50 block text-[10px]">
+                            {selectedCandidate?.scores?.ssm1_display || "SSM₁ Metric"}
+                          </span>
+                          <span className="font-mono font-bold text-cyan-400">
+                            {(selectedCandidate?.scores?.SSM1 ?? 0).toFixed(3)}
+                          </span>
+                        </div>
+                        <div className="p-2 rounded bg-white/5 border border-white/10">
+                          <span className="text-white/50 block text-[10px]">
+                            {selectedCandidate?.scores?.ssm2_display || "SSM₂ Metric"}
+                          </span>
+                          <span className="font-mono font-bold text-cyan-400">
+                            {(selectedCandidate?.scores?.SSM2 ?? 0).toFixed(3)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-xs text-white/50 uppercase tracking-wider block">
-                    All Evaluated Candidates
+                  <label className="text-xs text-white/50 uppercase tracking-wider flex justify-between items-center block">
+                    <span>All Evaluated Candidates ({candidates.length} Options)</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">3 LLMs x 2 Choices</span>
                   </label>
-                  {candidates.map((cand, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedCandidate(cand)}
-                      className={`
-                        w-full text-left p-3 rounded-xl border text-xs transition-all flex justify-between items-center cursor-pointer
-                        ${selectedCandidate?.name === cand.name
-                          ? "border-amber-400 bg-amber-400/10 text-amber-200 font-semibold"
-                          : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
-                        }
-                      `}
-                    >
-                      <span>{cand.name}</span>
-                      <span className="font-mono">{cand.cas}</span>
-                    </button>
-                  ))}
+                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                    {candidates.map((cand, idx) => {
+                      // Use uid for guaranteed single-candidate selection
+                      const isSelected = selectedCandidate?.uid === cand.uid;
+                      const styleName = cand.style || cand.architecture?.architecture_style || "Layered";
+                      const rankLabel = cand.rank > 0 ? `#${cand.rank}` : cand.rank === 1 ? "#1" : "—";
+                      const ssmTag = cand.scores?.ssm1_name && cand.scores?.ssm2_name
+                        ? `${cand.scores.ssm1_name}/${cand.scores.ssm2_name}`
+                        : "SSM₁/SSM₂";
+                      const casPct = Math.round((cand.cas || 0) * 100);
+                      const casColor = casPct >= 80 ? "bg-green-400" : casPct >= 60 ? "bg-amber-400" : "bg-red-400";
+                      const modelShort = getModelShortName(cand.model);
+
+                      return (
+                        <button
+                          key={cand.uid || idx}
+                          onClick={() => setSelectedCandidate(cand)}
+                          className={`
+                            w-full text-left p-3 rounded-xl border text-xs transition-all flex flex-col gap-2 cursor-pointer
+                            ${isSelected
+                              ? "border-amber-400 bg-amber-400/10 shadow-[0_0_12px_rgba(245,158,11,0.25)]"
+                              : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"
+                            }
+                          `}
+                        >
+                          {/* Row 1: Rank + CAS */}
+                          <div className="flex justify-between items-center w-full">
+                            <div className="flex items-center gap-2">
+                              {cand.rank > 0 && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                                  cand.rank === 1
+                                    ? "bg-amber-400/20 text-amber-300 border border-amber-400/40"
+                                    : "bg-white/10 text-white/50 border border-white/10"
+                                }`}>
+                                  #{cand.rank}
+                                </span>
+                              )}
+                              <span className={`font-semibold truncate max-w-[150px] ${
+                                isSelected ? "text-amber-200" : "text-white"
+                              }`}>
+                                {modelShort} #{cand.candidate_num}
+                              </span>
+                            </div>
+                            <span className={`font-mono font-bold text-sm ${
+                              casPct >= 80 ? "text-green-400" : casPct >= 60 ? "text-amber-400" : "text-red-400"
+                            }`}>
+                              {typeof cand.cas === 'number' ? cand.cas.toFixed(3) : cand.cas}
+                            </span>
+                          </div>
+
+                          {/* Row 2: Style tag + SSM tag */}
+                          <div className="flex items-center justify-between text-[10px] text-white/50">
+                            <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-mono uppercase truncate max-w-[120px]">
+                              {styleName}
+                            </span>
+                            <span className="font-mono text-cyan-400/80 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20 shrink-0">
+                              {ssmTag}
+                            </span>
+                          </div>
+
+                          {/* Row 3: CAS mini progress bar */}
+                          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${casColor}`}
+                              style={{ width: `${casPct}%` }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -456,61 +894,336 @@ export default function ArchitectureReview() {
                 </h3>
                 <p className="text-xs text-white/50">Visual metric balance across the 6 architectural dimensions</p>
               </div>
-              <span className="text-xs font-mono text-cyan-400 bg-cyan-400/10 px-3 py-1 rounded-full border border-cyan-400/30">
-                Target Score: 0.850+
-              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setCompareRadar(!compareRadar)}
+                  className={`
+                    px-4 py-1.5 rounded-full text-xs font-semibold tracking-wider transition-all cursor-pointer border
+                    ${compareRadar
+                      ? "bg-amber-400 text-black border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+                      : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                    }
+                  `}
+                >
+                  {compareRadar ? "Show Single Radar" : "Compare All LLMs Radar"}
+                </button>
+                <span className="text-xs font-mono text-cyan-400 bg-cyan-400/10 px-3 py-1 rounded-full border border-cyan-400/30">
+                  Target Score: 0.850+
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-              {/* Simulated CSS Radar Chart */}
-              <div className="relative w-72 h-72 mx-auto flex items-center justify-center">
-                {/* Concentric Radar Rings */}
-                <div className="absolute inset-0 rounded-full border border-white/10 animate-pulse"></div>
-                <div className="absolute inset-6 rounded-full border border-cyan-400/20"></div>
-                <div className="absolute inset-14 rounded-full border border-cyan-400/30"></div>
-                <div className="absolute inset-22 rounded-full border border-cyan-400/40"></div>
-
-                {/* Radar Lines */}
-                <div className="absolute w-full h-[1px] bg-cyan-400/20"></div>
-                <div className="absolute h-full w-[1px] bg-cyan-400/20"></div>
-                <div className="absolute w-full h-[1px] bg-cyan-400/20 rotate-45"></div>
-
-                {/* Metric Points */}
-                <div className="absolute text-[10px] font-mono text-cyan-300 top-2">LSCS (0.82)</div>
-                <div className="absolute text-[10px] font-mono text-cyan-300 bottom-2">RCR (0.88)</div>
-                <div className="absolute text-[10px] font-mono text-cyan-300 left-2">NAS (0.75)</div>
-                <div className="absolute text-[10px] font-mono text-cyan-300 right-2">SCI (0.70)</div>
-
-                {/* Central Score Badge */}
-                <div className="relative z-10 text-center bg-cyan-950/80 p-4 rounded-full border border-cyan-400/60 shadow-[0_0_20px_rgba(45,220,255,0.4)]">
-                  <div className="text-2xl font-bold font-mono text-cyan-300">
-                    {(scores?.CAS || 0.78).toFixed(2)}
+              {/* Real Recharts Radar Chart */}
+              <div className="relative w-full h-80 mx-auto">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart 
+                    cx="50%" cy="50%" outerRadius="70%" 
+                    data={(() => {
+                      const keys = ["RTS", "QAC", "CI", "CoS", "SSM1", "SSM2"];
+                      const keyLabels = { RTS: "RTS", QAC: "QAC", CI: "CI", CoS: "CoS", SSM1: "SSM₁", SSM2: "SSM₂" };
+                      if (compareRadar) {
+                        return keys.map(k => {
+                          const row = { metric: keyLabels[k], fullMark: 1 };
+                          candidates.forEach((cand, idx) => {
+                            const modelName = cand.name || cand.model || `Candidate ${idx + 1}`;
+                            row[modelName] = cand.scores?.[k] ?? 0;
+                          });
+                          return row;
+                        });
+                      } else {
+                        const activeScores = selectedCandidate?.scores || scores;
+                        return keys.map(k => ({
+                          metric: keyLabels[k],
+                          score: activeScores?.[k] ?? 0.75,
+                          fullMark: 1
+                        }));
+                      }
+                    })()}
+                  >
+                    <PolarGrid stroke="rgba(45, 220, 255, 0.2)" />
+                    <PolarAngleAxis dataKey="metric" tick={{ fill: '#67e8f9', fontSize: 11, fontFamily: 'monospace' }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 1]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} axisLine={false} tickCount={5} />
+                    {compareRadar ? (
+                      candidates.map((cand, idx) => {
+                        const modelName = cand.name || cand.model || `Candidate ${idx + 1}`;
+                        const colors = ["#2DDCFF", "#A855F7", "#F59E0B", "#10B981", "#EF4444"];
+                        const strokeColor = colors[idx % colors.length];
+                        return (
+                          <Radar
+                            key={modelName}
+                            name={modelName}
+                            dataKey={modelName}
+                            stroke={strokeColor}
+                            strokeWidth={2}
+                            fill={strokeColor}
+                            fillOpacity={0.15}
+                            isAnimationActive={true}
+                          />
+                        );
+                      })
+                    ) : (
+                      <Radar
+                        name="Score"
+                        dataKey="score"
+                        stroke="#2DDCFF"
+                        strokeWidth={2}
+                        fill="#2DDCFF"
+                        fillOpacity={0.4}
+                        isAnimationActive={true}
+                      />
+                    )}
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'rgba(5, 5, 15, 0.9)', border: '1px solid rgba(45, 220, 255, 0.3)', borderRadius: '8px', color: '#fff' }}
+                      itemStyle={{ color: '#2DDCFF' }}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+                
+                {/* Central Score Badge Overlay */}
+                {!compareRadar && (
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center bg-cyan-950/80 p-3 rounded-full border border-cyan-400/60 shadow-[0_0_15px_rgba(45,220,255,0.4)] pointer-events-none z-10">
+                    <div className="text-xl font-bold font-mono text-cyan-300 leading-none">
+                      {(selectedCandidate?.cas || selectedCandidate?.scores?.CAS || scores?.CAS || 0.78).toFixed(2)}
+                    </div>
                   </div>
-                  <div className="text-[9px] uppercase tracking-widest text-cyan-200/60">CAS Composite</div>
-                </div>
+                )}
               </div>
 
               {/* Metric Legend Grid */}
               <div className="space-y-3">
                 {Object.entries(METRIC_INFO).map(([k, info]) => {
-                  const val = scores?.[k] ?? 0.75;
+                  const val = selectedCandidate?.scores?.[k] ?? scores?.[k] ?? 0.75;
                   return (
                     <div key={k} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
                       <div>
-                        <span className="text-xs font-bold text-white">{k} — {info.label}</span>
-                        <p className="text-[10px] text-white/40">{info.desc}</p>
+                        <span className="text-xs font-bold text-white">{k} — {getMetricLabel(k)}</span>
+                        <p className="text-[10px] text-white/40">{getMetricDesc(k)}</p>
                       </div>
-                      <span className="text-xs font-mono font-bold text-cyan-300">{val.toFixed(3)}</span>
+                      {!compareRadar && (
+                        <span className="text-xs font-mono font-bold text-cyan-300">{val.toFixed(3)}</span>
+                      )}
                     </div>
                   );
                 })}
+
+                {compareRadar && (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-2 mt-2">
+                    <span className="text-xs font-bold text-cyan-300 block uppercase tracking-wider">Comparison Legend</span>
+                    <div className="space-y-1.5">
+                      {candidates.map((cand, idx) => {
+                        const modelName = cand.name || cand.model || `Candidate ${idx + 1}`;
+                        const colors = ["#2DDCFF", "#A855F7", "#F59E0B", "#10B981", "#EF4444"];
+                        const strokeColor = colors[idx % colors.length];
+                        return (
+                          <div key={modelName} className="flex items-center gap-2 text-xs">
+                            <span className="w-3 h-3 rounded" style={{ backgroundColor: strokeColor }} />
+                            <span className="font-semibold text-white/80">{modelName} (CAS: {(cand.cas || cand.scores?.CAS || 0).toFixed(3)})</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
 
         {/* ───────────────────────────────────────────────────────────── */}
-        {/* TAB 3: GIT-LIKE DIAGRAM REFINEMENT LOOP                      */}
+        {/* TAB 3: INTERACTIVE DIAGRAM STUDIO & VISUAL CANVAS             */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        {activeTab === "visual_studio" && (() => {
+          const targetArch = selectedCandidate?.architecture || arch;
+          const currentPumlCode = isValidPlantUML(activeIteration?.code)
+            ? activeIteration.code
+            : generateFallbackPlantUML(targetArch, targetArch?.architecture_style || selectedCandidate?.style || "Architecture");
+          const currentMermaidCode = generateFallbackMermaidCode(targetArch);
+          const activeCode = diagramEngine === "mermaid" ? currentMermaidCode : currentPumlCode;
+          const activeCodeLines = activeCode.split("\n");
+
+          return (
+            <div className="space-y-6">
+
+              {/* Status Gate Banner */}
+              {isAcceptable ? (
+                <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-green-950/40 border border-green-400/30 text-green-300 text-xs font-semibold">
+                  <CheckCircle2 size={16} />
+                  Architecture CAS {diagramCas.toFixed(3)} passed quality threshold (≥ 0.60). Visual review only — no AI intervention required.
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-amber-950/40 border border-amber-400/30 text-amber-300 text-xs font-semibold">
+                  <AlertTriangle size={16} />
+                  Architecture CAS {diagramCas.toFixed(3)} is below threshold (0.60). Switch to the <strong>Interactive Refinement Engine</strong> tab to improve it.
+                </div>
+              )}
+
+              {/* Side-by-Side: Visual Canvas (Left) & Live Source Code (Right) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                
+                {/* LEFT BOX: Live High-Resolution Vector Diagram Canvas */}
+                <div className="rounded-2xl border border-cyan-400/30 bg-[#070919] flex flex-col shadow-2xl overflow-hidden min-h-[500px]">
+                  <div className="flex flex-wrap justify-between items-center px-4 py-2.5 bg-[#050610] border-b border-white/10 gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
+                      <span className="text-xs font-bold text-white uppercase font-mono tracking-wider">
+                        Visual Vector Canvas
+                      </span>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                      svgError ? "bg-red-500/20 text-red-300" : svgUrl ? "bg-green-500/20 text-green-300" : "bg-white/10 text-white/50"
+                    }`}>
+                      {svgError ? "Render Offline" : svgUrl ? "Vector High-Res SVG" : "Rendering..."}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 flex items-center justify-center p-4 bg-[#0d1117] overflow-auto min-h-[440px]">
+                    {svgError ? (
+                      <div className="text-center space-y-2 p-6">
+                        <AlertTriangle className="mx-auto text-amber-400" size={32} />
+                        <p className="text-amber-300 text-xs font-mono font-semibold">Rendering via PlantUML Engine...</p>
+                        <p className="text-white/40 text-[11px]">Inspect the live source code in the right panel.</p>
+                      </div>
+                    ) : svgUrl ? (
+                      <img src={svgUrl} alt="Architecture Diagram" className="max-h-[440px] w-full object-contain" />
+                    ) : (
+                      <div className="flex items-center gap-3 text-cyan-400 text-xs font-mono">
+                        <RefreshCw size={16} className="animate-spin" />
+                        Rendering high-resolution vector diagram...
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT BOX: Live Source Code Studio & Syntax Inspector */}
+                <div className="rounded-2xl border border-white/10 bg-[#0a0c1a] flex flex-col font-mono shadow-2xl overflow-hidden min-h-[500px]">
+                  {/* Code Editor Header */}
+                  <div className="flex flex-wrap items-center justify-between px-4 py-2 bg-[#050610] border-b border-white/10 text-xs gap-2">
+                    {/* Engine Selector */}
+                    <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/10">
+                      <button
+                        onClick={() => setDiagramEngine("plantuml")}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                          diagramEngine === "plantuml"
+                            ? "bg-cyan-400 text-black shadow-[0_0_8px_rgba(45,220,255,0.4)]"
+                            : "text-white/60 hover:text-white"
+                        }`}
+                      >
+                        PlantUML (.puml / StarUML)
+                      </button>
+                      <button
+                        onClick={() => setDiagramEngine("mermaid")}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                          diagramEngine === "mermaid"
+                            ? "bg-cyan-400 text-black shadow-[0_0_8px_rgba(45,220,255,0.4)]"
+                            : "text-white/60 hover:text-white"
+                        }`}
+                      >
+                        Mermaid (.mmd / GitHub)
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-white/40">{activeCodeLines.length} lines</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            diagramEngine === "mermaid" ? `\`\`\`mermaid\n${activeCode}\n\`\`\`` : activeCode
+                          );
+                          alert(`Copied ${diagramEngine.toUpperCase()} code to clipboard!`);
+                        }}
+                        className="px-2.5 py-1 rounded bg-cyan-400/20 text-cyan-300 hover:bg-cyan-400/30 text-[10px] font-bold cursor-pointer transition-all border border-cyan-400/30 flex items-center gap-1"
+                      >
+                        Copy Code
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Code Editor Body with Line Numbers */}
+                  <div className="p-4 overflow-x-auto max-h-[440px] overflow-y-auto flex text-xs leading-relaxed bg-[#060814] flex-1">
+                    {/* Line Numbers Gutter */}
+                    <div className="select-none pr-3 mr-3 text-right text-white/30 border-r border-white/10 font-mono space-y-0.5">
+                      {activeCodeLines.map((_, i) => (
+                        <div key={i}>{i + 1}</div>
+                      ))}
+                    </div>
+
+                    {/* Code Content */}
+                    <div className="text-cyan-200 font-mono whitespace-pre space-y-0.5 flex-1 text-[11px]">
+                      {activeCodeLines.map((line, i) => (
+                        <div key={i} className="hover:bg-cyan-500/10 px-1 rounded transition-colors">
+                          {line || " "}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Bottom Quick-Action Cards: StarUML & GitHub Export */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Score Summary */}
+                <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-1">
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Architecture Quality Score</span>
+                  <div className="flex items-center justify-between">
+                    <p className="text-2xl font-bold text-cyan-300 font-mono">{diagramCas.toFixed(3)}</p>
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-300 font-semibold">
+                      CAS PASSED
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-white/40">Verified by ATAM 6-metric research engine</p>
+                </div>
+
+                {/* StarUML / PlantUML Model Export */}
+                <div className="p-4 rounded-2xl border border-cyan-400/20 bg-white/5 space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 font-mono">
+                        StarUML / PlantUML Export
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-white/50">Compatible with StarUML, Visual Paradigm &amp; Enterprise Architect.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(currentPumlCode);
+                      alert("Copied StarUML / PlantUML architecture model to clipboard!");
+                    }}
+                    className="w-full py-2 rounded-xl bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-300 text-xs font-mono font-bold cursor-pointer transition-all border border-cyan-400/30"
+                  >
+                    Copy StarUML Model
+                  </button>
+                </div>
+
+                {/* GitHub README Export */}
+                <div className="p-4 rounded-2xl border border-violet-400/20 bg-white/5 space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold uppercase tracking-wider text-violet-300 font-mono">
+                        GitHub README Export
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-white/50">Paste directly into your repository's <code className="text-cyan-300 font-mono">README.md</code> for native rendering.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`\`\`\`mermaid\n${currentMermaidCode}\n\`\`\``);
+                      alert("Copied Mermaid Markdown! Paste directly into your GitHub README.md");
+                    }}
+                    className="w-full py-2 rounded-xl bg-violet-400/10 hover:bg-violet-400/20 text-violet-300 text-xs font-mono font-bold cursor-pointer transition-all border border-violet-400/30"
+                  >
+                    Copy GitHub Mermaid
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          );
+        })()}
+
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* TAB 4: INTERACTIVE REFINEMENT ENGINE                         */}
         {/* ───────────────────────────────────────────────────────────── */}
         {activeTab === "git_loop" && (
           <div className="space-y-6">
@@ -523,7 +1236,7 @@ export default function ArchitectureReview() {
                   Diagram Iteration History (PlantUML)
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {iterations.map(it => (
                   <button
                     key={it.version}
@@ -537,7 +1250,7 @@ export default function ArchitectureReview() {
                     `}
                   >
                     <GitCommit size={12} />
-                    {it.version} (CAS {it.cas})
+                    {it.version} (CAS {typeof it.cas === 'number' ? it.cas.toFixed(3) : it.cas})
                   </button>
                 ))}
               </div>
@@ -546,50 +1259,145 @@ export default function ArchitectureReview() {
             {/* Iteration Viewer & AI Refine Prompt */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
-              {/* Code Viewer */}
-              <div className="lg:col-span-2 p-5 rounded-2xl border border-cyan-400/20 bg-[#080818] font-mono text-xs text-cyan-200 overflow-x-auto space-y-3">
-                <div className="flex justify-between items-center text-white/50 pb-2 border-b border-white/10 text-[11px]">
-                  <span>Active Revision: <strong>{activeIteration.version}</strong></span>
-                  <span>CAS Score: <strong className="text-cyan-400">{activeIteration.cas}</strong></span>
-                </div>
-                <pre className="p-4 bg-black/60 rounded-xl overflow-x-auto text-cyan-300 leading-relaxed">
-                  {activeIteration.code}
-                </pre>
+              {/* VSCode / AntiGravity Style Code Editor */}
+              <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#0a0c1a] overflow-hidden flex flex-col font-mono shadow-2xl">
+                {/* Editor Header Bar */}
+                {(() => {
+                  const rawCode = (activeIteration.code || "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
+                  // If LLM returned JSON instead of PlantUML, show the deterministic fallback
+                  const formattedCode = isValidPlantUML(rawCode)
+                    ? rawCode
+                    : generateFallbackPlantUML(
+                        selectedCandidate?.architecture || null,
+                        selectedCandidate?.architecture?.architecture_style || selectedCandidate?.style || "Architecture"
+                      );
+                  const isUsingFallback = !isValidPlantUML(rawCode);
+                  const codeLines = formattedCode.split("\n");
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-[#050610] border-b border-white/10 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
+                          <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
+                          <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
+                          <span className="ml-2 font-bold text-cyan-400 text-[11px] uppercase tracking-wider">
+                            architecture_diagram_{activeIteration.version}.puml
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-white/50 text-[11px]">
+                          <span className="px-2 py-0.5 rounded bg-cyan-400/10 text-cyan-300 font-semibold">
+                            CAS: {typeof activeIteration.cas === 'number' ? activeIteration.cas.toFixed(3) : activeIteration.cas}
+                          </span>
+                          <span>Lines: {codeLines.length}</span>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(formattedCode)}
+                            className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold cursor-pointer transition-all"
+                          >
+                            Copy Code
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Code Editor Body with Line Numbers */}
+                      <div className="p-4 overflow-x-auto max-h-[500px] overflow-y-auto flex text-xs leading-relaxed bg-[#060814]">
+                        {/* Line Numbers Gutter */}
+                        <div className="select-none pr-4 mr-4 text-right text-white/30 border-r border-white/10 font-mono space-y-0.5">
+                          {codeLines.map((_, i) => (
+                            <div key={i}>{i + 1}</div>
+                          ))}
+                        </div>
+
+                        {/* Code Text Content */}
+                        <div className="text-cyan-200 font-mono whitespace-pre space-y-0.5 flex-1">
+                          {codeLines.map((line, i) => (
+                            <div key={i} className="hover:bg-cyan-500/10 px-1 rounded transition-colors">
+                              {line || " "}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
-              {/* AI Prompt Refiner Modal/Card */}
-              <div className="p-6 rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-950/40 via-indigo-950/20 to-black space-y-4">
-                <div className="flex items-center gap-2 text-violet-300">
-                  <Sparkles size={18} />
-                  <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                    AI Refinement Engine
-                  </h4>
+              {/* Conditional Right Panel */}
+              {needsRefinement ? (
+                /* CAS BELOW THRESHOLD — Show AI Refinement Engine */
+                <div className="p-6 rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-950/30 via-orange-950/10 to-black space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-amber-300">
+                      <AlertTriangle size={16} />
+                      <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                        Quality Threshold Not Met
+                      </h4>
+                    </div>
+                    <div className="p-3 rounded-xl bg-black/40 border border-amber-400/10 space-y-1">
+                      <p className="text-[11px] text-white/60 font-mono">CAS Score: <span className="text-amber-300 font-bold">{diagramCas.toFixed(3)}</span> / Threshold: <span className="text-white/80">0.600</span></p>
+                      {activeIteration?.issues?.length > 0 && (
+                        <ul className="text-[10px] text-amber-200/70 space-y-0.5 mt-1">
+                          {activeIteration.issues.slice(0, 4).map((iss, i) => (
+                            <li key={i} className="flex gap-1"><span className="text-amber-400">›</span>{iss}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-white/50">
+                      Provide optional guidance for the AI Refinement Engine, or trigger automatic issue-based improvement:
+                    </p>
+                    <textarea
+                      rows={4}
+                      value={refinePrompt}
+                      onChange={e => setRefinePrompt(e.target.value)}
+                      placeholder="Optional: e.g. Add a Redis Caching Layer between API Gateway and DB..."
+                      className="w-full p-3 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder:text-white/30 focus:border-amber-400 outline-none"
+                    />
+                  </div>
+                  <button
+                    onClick={handleRefineDiagram}
+                    disabled={refining}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-amber-400 text-black cursor-pointer hover:bg-amber-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Sparkles size={14} className={refining ? "animate-spin" : ""} />
+                    {refining ? "AI Refinement Running..." : "Run AI Improvement Pass"}
+                  </button>
                 </div>
-                <p className="text-xs text-white/50">
-                  Enter prompt instructions to refactor the PlantUML architecture diagram (e.g. "Add a Redis Caching Layer between API Gateway and DB").
-                </p>
-
-                <textarea
-                  rows={4}
-                  value={refinePrompt}
-                  onChange={e => setRefinePrompt(e.target.value)}
-                  placeholder="e.g. Reorganize components into 3 explicit packages..."
-                  className="w-full p-3 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder:text-white/30 focus:border-cyan-400 outline-none"
-                />
-
-                <button
-                  onClick={handleRefineDiagram}
-                  disabled={refining || !refinePrompt.trim()}
-                  className="
-                    w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider
-                    bg-cyan-400 text-black cursor-pointer hover:bg-cyan-300 transition-all
-                    disabled:opacity-40 disabled:cursor-not-allowed
-                  "
-                >
-                  <Send size={14} />
-                  {refining ? "Refining with AI..." : "Generate New Iteration"}
-                </button>
-              </div>
+              ) : (
+                /* CAS PASSED THRESHOLD — Human Review Panel, no AI needed */
+                <div className="p-6 rounded-2xl border border-green-400/20 bg-gradient-to-br from-green-950/30 via-emerald-950/10 to-black space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-green-300">
+                      <CheckCircle2 size={16} />
+                      <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                        Human Review Gate
+                      </h4>
+                    </div>
+                    <div className="p-3 rounded-xl bg-black/40 border border-green-400/10 space-y-1">
+                      <p className="text-[11px] text-white/60 font-mono">CAS Score: <span className="text-green-300 font-bold">{diagramCas.toFixed(3)}</span> — <span className="text-green-400">PASSED ✓</span></p>
+                      <p className="text-[10px] text-white/40 mt-1">
+                        The evaluation engine determined this architecture meets all quality thresholds. No AI refinement is triggered.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-white/60 font-semibold">Your review checklist:</p>
+                      {[
+                        "Verify component layer separation is structurally sound",
+                        "Confirm all client-facing FRs are represented by named components",
+                        "Check that deployment boundaries match client infrastructure constraints",
+                      ].map((item, i) => (
+                        <label key={i} className="flex items-start gap-2 cursor-pointer">
+                          <input type="checkbox" className="mt-0.5 accent-cyan-400" />
+                          <span className="text-[11px] text-white/70">{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-white/30 text-center">
+                    Use <strong className="text-white/50">Accept & Proceed</strong> below when satisfied, or <strong className="text-white/50">Regenerate HLD</strong> to restart.
+                  </p>
+                </div>
+              )}
 
             </div>
 
@@ -605,7 +1413,7 @@ export default function ArchitectureReview() {
               <div className="flex items-center gap-2">
                 <FileDiff className="text-cyan-400" size={18} />
                 <h3 className="text-sm font-bold text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                  Unified Architecture Diff (v1 vs v2)
+                  Unified Architecture Diff (v1 vs {iterations[iterations.length - 1]?.version || "v2"})
                 </h3>
               </div>
               <span className="text-xs text-white/40 font-mono">
@@ -613,13 +1421,13 @@ export default function ArchitectureReview() {
               </span>
             </div>
 
-            <div className="p-4 rounded-xl bg-black/80 font-mono text-xs space-y-1 overflow-x-auto max-h-96">
+            <div className="p-4 rounded-xl bg-black/90 font-mono text-xs space-y-1 overflow-x-auto max-h-[500px] border border-white/10">
               {diffText.split("\n").map((line, idx) => {
                 let colorCls = "text-white/60";
-                if (line.startsWith("+")) colorCls = "text-green-400 bg-green-950/40 px-1 rounded";
-                if (line.startsWith("-")) colorCls = "text-red-400 bg-red-950/40 px-1 rounded";
+                if (line.startsWith("+")) colorCls = "text-green-300 bg-green-950/60 px-2 py-0.5 rounded font-semibold";
+                if (line.startsWith("-")) colorCls = "text-red-300 bg-red-950/60 px-2 py-0.5 rounded font-semibold";
                 return (
-                  <div key={idx} className={`${colorCls} leading-relaxed`}>
+                  <div key={idx} className={`${colorCls} leading-relaxed whitespace-pre`}>
                     {line}
                   </div>
                 );
@@ -628,7 +1436,7 @@ export default function ArchitectureReview() {
           </div>
         )}
 
-        {/* ── Verdict & Actions Footer ───────────────────────────────── */}
+        {/* ── Verdict & Actions Footer (Swapped Buttons) ───────────────── */}
         <div className={`p-6 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 ${
           isAcceptable ? "border-green-400/30 bg-green-950/20" : "border-amber-400/30 bg-amber-950/20"
         }`}>
@@ -639,25 +1447,28 @@ export default function ArchitectureReview() {
                 : "The architecture score requires manual review before proceeding."}
             </p>
             <p className="text-xs text-white/40 mt-0.5">
-              Current Verdict: <strong className="text-cyan-300 uppercase">{verdict}</strong>
+              Current Verdict: <strong className="text-cyan-300 uppercase">{selectedCandidate?.scores?.verdict || verdict}</strong>
             </p>
           </div>
 
           <div className="flex gap-3">
-            <button
-              onClick={handleAccept}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-black bg-cyan-400 hover:bg-cyan-300 cursor-pointer transition-all"
-            >
-              <CheckCircle2 size={16} />
-              Accept &amp; Proceed
-            </button>
+            {/* Left side: Regenerate HLD */}
             <button
               onClick={handleReject}
-              disabled={restarting}
+              disabled={restarting || selecting}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-white border border-red-400/50 hover:bg-red-900/30 cursor-pointer transition-all disabled:opacity-50"
             >
               <RefreshCw size={16} className={restarting ? "animate-spin" : ""} />
               Regenerate HLD
+            </button>
+            {/* Right side: Accept & Proceed */}
+            <button
+              onClick={handleAccept}
+              disabled={selecting}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest text-black bg-cyan-400 hover:bg-cyan-300 cursor-pointer transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(45,220,255,0.3)]"
+            >
+              {selecting ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {selecting ? "Saving Selection..." : "Accept & Proceed"}
             </button>
           </div>
         </div>

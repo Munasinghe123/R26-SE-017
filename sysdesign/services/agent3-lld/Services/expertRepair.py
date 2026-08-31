@@ -254,13 +254,10 @@ OUTPUT SCHEMA
     ],
     "relationships": [
       {{
-        "name": "semantic relationship verb or verb phrase",
         "source": "string",
         "target": "string",
-        "type": "one-to-one | one-to-many | many-to-one | many-to-many",
-        "source_multiplicity": "1 | 0..1 | 0..* | 1..*",
-        "target_multiplicity": "1 | 0..1 | 0..* | 1..*",
-        "evidence": "string"
+        "type": "association",
+        "cardinality": "1..*"
       }}
     ]
   }},
@@ -273,7 +270,17 @@ OUTPUT SCHEMA
         "requirement_ids": ["REQ-001"]
       }}
     ],
-    "relationships": []
+    "relationships": [
+      {{
+        "name": "semantic relationship verb or verb phrase",
+        "source": "string",
+        "target": "string",
+        "type": "one-to-one | one-to-many | many-to-one | many-to-many",
+        "source_multiplicity": "1 | 0..1 | 0..* | 1..*",
+        "target_multiplicity": "1 | 0..1 | 0..* | 1..*",
+        "evidence": "string"
+      }}
+    ]
   }},
   "sequence_diagrams": [
     {{

@@ -200,9 +200,51 @@ def run(payload: LLDRequest) -> LLDPackage:
             }
         ]
 
-        val_report = result.get("validation_report") or {}
-        consistency_score = 0.94 if val_report.get("passed", True) else 0.88
+        val_report = result.get("validation_report") or result.get("validation") or {}
+        cs = val_report.get("consistency_score")
+        consistency_score = cs if cs is not None else (0.94 if val_report.get("passed", True) else 0.88)
         plantuml_data = result.get("plantuml") or {}
+
+        val_errors = val_report.get("errors") or []
+        naming_viols = val_report.get("naming_violations") or []
+        overdesign_flgs = val_report.get("overdesign_flags") or []
+
+        val_issues = []
+        for err in val_errors:
+            if isinstance(err, dict):
+                val_issues.append({
+                    "rule_id": err.get("rule_id", ""),
+                    "severity": str(err.get("severity", "MEDIUM")).upper(),
+                    "message": err.get("message", ""),
+                    "suggestion": err.get("suggestion", ""),
+                    "educational_feedback": err.get("educational_feedback", ""),
+                })
+
+        for flag in overdesign_flgs:
+            if isinstance(flag, dict):
+                val_issues.append({
+                    "rule_id": "OVERDESIGN",
+                    "severity": "HIGH",
+                    "message": f"{flag.get('element_type', '')} '{flag.get('element_name', '')}': {flag.get('reason', '')}",
+                    "suggestion": "Remove the element or map it to a requirement.",
+                    "educational_feedback": flag.get("educational_feedback", ""),
+                })
+
+        formatted_naming_violations = []
+        for v in naming_viols:
+            if isinstance(v, dict):
+                is_fixed = v.get("auto_fixed", False)
+                loc = v.get("location", "")
+                curr = v.get("current_name", "")
+                exp = v.get("expected_name", "")
+                conv = v.get("convention", "snake_case")
+                formatted_naming_violations.append({
+                    "status": "FIXED" if is_fixed else "UNFIXED",
+                    "location": loc if loc else f"Entity: {curr}",
+                    "issue": f"Issue: {curr} → {exp}" if curr and exp else v.get("issue", f"{curr} → {exp}"),
+                    "convention": f"Convention: {conv}" if not str(conv).startswith("Convention:") else conv,
+                    "auto_fixed": is_fixed,
+                })
 
         return LLDPackage(
             schema_version="1.0",
@@ -217,11 +259,14 @@ def run(payload: LLDRequest) -> LLDPackage:
             },
             consistency_score=consistency_score,
             expert_model="meta-llama/llama-3.3-70b-instruct",
-            reconciliation_status="Clean Pass (Zero Over-design violations)",
+            reconciliation_status="Clean Pass (Zero Over-design violations)" if val_report.get("passed", True) else "Validation Warnings Detected",
             candidates=candidates_ui,
             diagrams=diagrams_dict,
             plantuml=plantuml_data,
-            artifact_uris=uris
+            artifact_uris=uris,
+            validation_report=val_report,
+            validation_issues=val_issues,
+            naming_violations=formatted_naming_violations,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLD Generation failed: {str(e)}")

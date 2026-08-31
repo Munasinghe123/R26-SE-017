@@ -38,18 +38,20 @@ def generate_report(ranked_candidates: list, requirements: dict,
     # === Ranking Table ===
     lines.append("## 📊 Candidate Rankings")
     lines.append("")
-    lines.append("| Rank | Model | Style | RCR | NAS | SMI | LSCS | SCI | **CAS** | Verdict |")
-    lines.append("|------|-------|-------|-----|-----|-----|------|-----|---------|---------|")
+    lines.append("| Rank | Model | Declared Style | Detected Style | RTS | QAC | CI | CoS | SSM₁ | SSM₂ | **CAS** | Verdict |")
+    lines.append("|------|-------|----------------|----------------|-----|-----|----|-----|------|------|---------|---------|")
 
     for c in ranked_candidates:
         s = c.get("scores", {})
+        arch = c.get("architecture", {})
         verdict_icon = {"Accepted": "✅", "Marginal": "⚠️", "Poor": "❌"}.get(
             s.get("verdict", ""), "❓"
         )
         lines.append(
-            f"| {c['rank']} | {c['model']} | {c.get('architecture', {}).get('architecture_style', 'N/A')} "
-            f"| {s.get('RCR', 0):.2f} | {s.get('NAS', 0):.2f} | {s.get('SMI', 0):.2f} "
-            f"| {s.get('LSCS', 0):.2f} | {s.get('SCI', 0):.2f} "
+            f"| {c.get('rank', '?')} | {c['model']} | {arch.get('architecture_style', 'N/A')} "
+            f"| {s.get('detected_style', 'N/A')} "
+            f"| {s.get('RTS', 0):.2f} | {s.get('QAC', 0):.2f} | {s.get('CI', 0):.2f} "
+            f"| {s.get('CoS', 0):.2f} | {s.get('SSM1', 0):.2f} | {s.get('SSM2', 0):.2f} "
             f"| **{s.get('CAS', 0):.4f}** | {verdict_icon} {s.get('verdict', '')} |"
         )
 
@@ -66,23 +68,28 @@ def generate_report(ranked_candidates: list, requirements: dict,
         lines.append("## 🏆 Winner Analysis")
         lines.append("")
         lines.append(f"- **Model:** {winner['model']}")
-        lines.append(f"- **Architecture Style:** {wa.get('architecture_style', 'N/A')}")
+        lines.append(f"- **Declared Style:** {wa.get('architecture_style', 'N/A')}")
+        lines.append(f"- **Detected Style:** {ws.get('detected_style', 'N/A')}")
         lines.append(f"- **CAS Score:** {ws.get('CAS', 0):.4f}")
         lines.append(f"- **Verdict:** {ws.get('verdict', 'N/A')}")
         lines.append(f"- **Components:** {len(wa.get('components', []))}")
-        lines.append(f"- **Interactions:** {len(wa.get('interactions', []))}")
+        lines.append(f"- **Connectors:** {len(wa.get('connectors', []) or wa.get('interactions', []))}")
         lines.append(f"- **Layers:** {len(wa.get('layers', []))}")
         lines.append("")
 
         # Component list
         lines.append("### Components")
         lines.append("")
-        lines.append("| Component | Layer | Responsibility |")
-        lines.append("|-----------|-------|----------------|")
+        lines.append("| Component | Layer | Responsibilities |")
+        lines.append("|-----------|-------|------------------|")
         for comp in wa.get("components", []):
+            resps = comp.get("responsibilities", [])
+            if not resps and comp.get("responsibility"):
+                resps = [comp["responsibility"]]
+            resp_str = "; ".join(resps) if isinstance(resps, list) else str(resps)
             lines.append(
-                f"| {comp.get('name', '')} | {comp.get('layer', '')} "
-                f"| {comp.get('responsibility', '')} |"
+                f"| {comp.get('name', '')} | {comp.get('layer', comp.get('boundary', ''))} "
+                f"| {resp_str} |"
             )
         lines.append("")
 
@@ -170,23 +177,23 @@ def generate_report(ranked_candidates: list, requirements: dict,
     # === Metric Details ===
     lines.append("---")
     lines.append("")
-    lines.append("## 📈 Metric Definitions")
+    lines.append("## 📈 Metric Definitions (Style-Aware 6-Metric Framework)")
     lines.append("")
-    lines.append("| Metric | Full Name | Weight | Threshold |")
-    lines.append("|--------|-----------|--------|-----------|")
-    lines.append("| RCR | Requirement Coverage Ratio | 25% | ≥ 0.80 |")
-    lines.append("| NAS | NFR Alignment Score (Deterministic Rules Engine) | 25% | ≥ 0.75 |")
-    lines.append("| SMI | Structural Modularity Index | 20% | ≥ 0.75 |")
-    lines.append("| LSCS | Layer Separation Consistency Score | 15% | ≥ 0.90 |")
-    lines.append("| SCI | Structural Clarity Index | 15% | ≥ 0.80 |")
+    lines.append("| Metric | Full Name | Weight (AHP) | Description / Threshold |")
+    lines.append("|--------|-----------|--------------|-------------------------|")
+    lines.append("| RTS | Requirement Traceability Score | 29.17% | Semantic trace of FRs to components (θ_rts=0.55) |")
+    lines.append("| QAC | Quality Attribute Coverage | 21.94% | ISO 25010 NFR provision coverage (θ_qac=0.50) |")
+    lines.append("| CI | Coupling Index | 13.61% | Graph decoupling density (higher = better) |")
+    lines.append("| CoS | Cohesion Score | 13.61% | Semantic coherence of responsibilities |")
+    lines.append("| SSM₁ | Primary Style Metric | 13.61% | LIS, SBA, EFC, MCR, or PC based on detected style |")
+    lines.append("| SSM₂ | Secondary Style Metric | 8.06% | DDS, ISS, PSC, or FIS based on detected style |")
     lines.append("")
-    lines.append("**Phase 1 CAS** = 0.50×RCR + 0.50×NAS (tradeoff selection gate)")
+    lines.append("**CAS Formula:**  ")
+    lines.append("$$\\text{CAS} = 0.2917 \\times \\text{RTS} + 0.2194 \\times \\text{QAC} + 0.1361 \\times \\text{CI} + 0.1361 \\times \\text{CoS} + 0.1361 \\times \\text{SSM}_1 + 0.0806 \\times \\text{SSM}_2$$")
     lines.append("")
-    lines.append("**Phase 2 CAS** = 0.25×RCR + 0.25×NAS + 0.20×SMI + 0.15×LSCS + 0.15×SCI")
-    lines.append("")
-    lines.append("LSCS is style-aware for Layered, Event-Driven, Microkernel, Microservices, and Space-Based architectures.")
+    lines.append("Architectural styles evaluated: Layered, Microservices, Event-Driven, Modular Monolith (Newman 2019), Pipe-and-Filter.")
     lines.append("")
     lines.append("---")
-    lines.append(f"*Report generated by HLA Agent v1.0*")
+    lines.append(f"*Report generated by HLA Agent v2.0 (Style-Aware Quantitative Evaluation Framework)*")
 
     return "\n".join(lines)

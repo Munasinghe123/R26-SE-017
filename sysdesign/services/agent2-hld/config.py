@@ -1,14 +1,17 @@
 """
-HLA Agent — Central Configuration
+HLA Agent — Central Configuration (v2: Style-Aware Evaluation Framework)
+
 All constants, thresholds, weights, and mappings live here.
 Nothing is hardcoded anywhere else in the project.
+
+Models are configurable via environment variables — change value and re-run.
 """
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file if present (local service or root)
+# Load .env file if present (agent-specific, then root fallback)
 load_dotenv(Path(__file__).parent / ".env")
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -25,46 +28,62 @@ DB_PATH = RESULTS_DIR / "results.db"
 RESULTS_DIR.mkdir(exist_ok=True)
 
 # ──────────────────────────────────────────────
-# LLM PROVIDER CONFIGURATION
+# LLM PROVIDER — OpenRouter Only
 # ──────────────────────────────────────────────
-# Provider: "groq", "deepseek", "gemini", "ollama"
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
-
-# API Keys
+LLM_PROVIDER = "openrouter"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "") or OPENROUTER_API_KEY
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Ollama (fallback for local GPU users)
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+# ──────────────────────────────────────────────
+# MODEL CONFIGURATION — Hot-swappable via .env
+# ──────────────────────────────────────────────
+OPENROUTER_MODEL_1 = os.getenv(
+    "OPENROUTER_MODEL_1",
+    "meta-llama/llama-3.1-8b-instruct:free",
+)
+OPENROUTER_MODEL_2 = os.getenv(
+    "OPENROUTER_MODEL_2",
+    "qwen/qwen-2.5-7b-instruct:free",
+)
+OPENROUTER_MODEL_3 = os.getenv(
+    "OPENROUTER_MODEL_3",
+    "deepseek/deepseek-chat-v3-0324",
+)
 
-# Active models (Cross-provider comparison)
-# Using OpenRouter models for testing: Llama 3.3 70B, Mistral Large, Qwen 2.5 72B
-MODELS = ["meta-llama/llama-3.3-70b-instruct", "mistralai/mistral-large-2411", "qwen/qwen-2.5-72b-instruct"]
+MODELS = [OPENROUTER_MODEL_1, OPENROUTER_MODEL_2, OPENROUTER_MODEL_3]
 
-# Models per provider
+# All models route through OpenRouter
 PROVIDER_MODELS = {
     "openrouter": MODELS,
-    "groq": ["llama-3.3-70b-versatile"],
-    "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
-    "gemini": ["gemini-2.0-flash"],
-    "ollama": ["llama3.1", "mistral", "qwen3"],
 }
 
-# Number of architecture candidates each model generates
-CANDIDATES_PER_MODEL = 1
+# ──────────────────────────────────────────────
+# GENERATION CONFIGURATION
+# ──────────────────────────────────────────────
+# Temperature — configurable for research (temperature study)
+GENERATION_TEMPERATURE = float(os.getenv("GENERATION_TEMPERATURE", "0.1"))
 
-# Generation parameters (provider-agnostic)
+# Max candidates per model (adaptive: LLM decides 1-3 styles)
+MAX_CANDIDATES_PER_MODEL = int(os.getenv("MAX_CANDIDATES_PER_MODEL", "3"))
+
+# For backward compatibility
+CANDIDATES_PER_MODEL = MAX_CANDIDATES_PER_MODEL
+
+# Generation seeds for reproducibility
+_seeds_str = os.getenv("GENERATION_SEEDS", "42,137,256")
+GENERATION_SEEDS = [int(s.strip()) for s in _seeds_str.split(",")]
+
 GENERATION_OPTIONS = {
-    "temperature": 0.1,
-    "max_tokens": 4000,
-    "top_p": 0.2,
-    "seed": 42,
+    "temperature": GENERATION_TEMPERATURE,
+    "max_tokens": int(os.getenv("GENERATION_MAX_TOKENS", "4000")),
+    "top_p": float(os.getenv("GENERATION_TOP_P", "0.2")),
+    "seed": GENERATION_SEEDS[0],  # Default seed; generator may override per-candidate
 }
+
+# Temperature sweep values (for research experiment — overridable via .env)
+_sweep_str = os.getenv("TEMPERATURE_SWEEP_VALUES", "0.0,0.1,0.3,0.5,0.7,1.0")
+TEMPERATURE_SWEEP_VALUES = [float(t.strip()) for t in _sweep_str.split(",")]
 
 # Diagram generation (LLM)
-# These options intentionally favor low-variance, reproducible outputs.
 DIAGRAM_MAX_ITERATIONS = int(os.getenv("DIAGRAM_MAX_ITERATIONS", "2"))
 DIAGRAM_GENERATION_OPTIONS = {
     "temperature": float(os.getenv("DIAGRAM_TEMPERATURE", "0.1")),
@@ -75,124 +94,73 @@ DIAGRAM_GENERATION_OPTIONS = {
 
 # Retry configuration
 MAX_GENERATION_RETRIES = 3
-MAX_REGENERATION_LOOPS = 0  # Disabled: using Human-in-the-Loop manual iteration
+MAX_REGENERATION_LOOPS = 0  # Disabled: using Human-in-the-Loop
+
+# ──────────────────────────────────────────────
+# ARCHITECTURE STYLES
+# Richards & Ford (2020), Newman (2019)
+# ──────────────────────────────────────────────
+ARCHITECTURE_STYLES = [
+    "Layered Architecture",
+    "Microservices Architecture",
+    "Event-Driven Architecture",
+    "Modular Monolith",
+    "Pipe-and-Filter Architecture",
+]
+
+# Canonical style keys (used internally)
+STYLE_KEYS = [
+    "layered",
+    "microservices",
+    "event_driven",
+    "modular_monolith",
+    "pipe_and_filter",
+]
+
+# ──────────────────────────────────────────────
+# METRIC WEIGHTS — AHP-derived (preliminary)
+# See evaluation/ahp.py for derivation
+# CR = 0.013 < 0.10 (consistent)
+# These are preliminary. Final weights after expert survey.
+# ──────────────────────────────────────────────
+WEIGHTS = {
+    "RTS":  0.2917,  # Requirement Traceability Score
+    "QAC":  0.2194,  # Quality Attribute Coverage
+    "CI":   0.1361,  # Coupling Index
+    "CoS":  0.1361,  # Cohesion Score
+    "SSM1": 0.1361,  # Style-Specific Metric 1
+    "SSM2": 0.0806,  # Style-Specific Metric 2
+}
+
+# Verify weights sum to 1.0
+assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, f"Metric weights must sum to 1.0, got {sum(WEIGHTS.values())}"
 
 # ──────────────────────────────────────────────
 # METRIC THRESHOLDS (minimum acceptable scores)
 # ──────────────────────────────────────────────
-PHASE1_THRESHOLDS = {
-    "RCR":  0.80,   # Requirement Coverage Ratio
-    "NAS":  0.75,   # NFR Alignment Score
-    "CAS":  0.75,   # Composite Architecture Score (acceptance gate)
+THRESHOLDS = {
+    "RTS":  0.70,   # At least 70% FR traceability
+    "QAC":  0.60,   # At least 60% NFR coverage
+    "CI":   0.50,   # Reasonable decoupling
+    "CoS":  0.50,   # Reasonable cohesion
+    "SSM1": 0.50,   # Reasonable style conformance
+    "SSM2": 0.40,   # Minimum style conformance
+    "CAS":  0.60,   # Overall acceptance gate
 }
 
-PHASE2_THRESHOLDS = {
-    "SMI":  0.75,   # Structural Modularity Index
-    "LSCS": 0.90,   # Layer Separation Consistency Score
-    "SCI":  0.80,   # Structural Clarity Index
-}
-
-THRESHOLDS = {**PHASE1_THRESHOLDS, **PHASE2_THRESHOLDS}
+# CAS verdict ranges
+CAS_ACCEPTED = 0.75
+CAS_MARGINAL = 0.60
 
 # ──────────────────────────────────────────────
-# METRIC WEIGHTS (must sum to 1.0)
+# SEMANTIC THRESHOLDS (calibratable)
+# See evaluation/calibration.py for justification
 # ──────────────────────────────────────────────
-PHASE1_WEIGHTS = {
-    "RCR":  0.50,
-    "NAS":  0.50,
-}
-
-PHASE2_WEIGHTS = {
-    "SMI":  0.40,
-    "LSCS": 0.30,
-    "SCI":  0.30,
-}
-
-WEIGHTS = {
-    "RCR":  0.25,
-    "NAS":  0.25,
-    "SMI":  0.20,
-    "LSCS": 0.15,
-    "SCI":  0.15,
-}
-
-# Verify weights sum to 1.0
-assert abs(sum(PHASE1_WEIGHTS.values()) - 1.0) < 1e-9, "Phase 1 weights must sum to 1.0"
-assert abs(sum(PHASE2_WEIGHTS.values()) - 1.0) < 1e-9, "Phase 2 weights must sum to 1.0"
-assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, "Metric weights must sum to 1.0"
+RTS_THRESHOLD = float(os.getenv("RTS_THRESHOLD", "0.55"))
+QAC_THRESHOLD = float(os.getenv("QAC_THRESHOLD", "0.50"))
 
 # ──────────────────────────────────────────────
-# ARCHITECTURE STYLES
-# ──────────────────────────────────────────────
-ARCHITECTURE_STYLES = [
-    "Layered Architecture",
-    "Event-Driven Architecture",
-    "Microkernel Architecture",
-    "Microservices Architecture",
-    "Space-Based Architecture",
-]
-
-# ──────────────────────────────────────────────
-# NFR EVIDENCE MAP (for NAS metric)
-# Maps NFR types to STYLE-NEUTRAL keywords that
-# indicate architectural support for that quality.
-# ──────────────────────────────────────────────
-NFR_EVIDENCE_MAP = {
-    "scalability": [
-        "load balancer", "scaling", "horizontal", "vertical scaling",
-        "cluster", "partition", "shard", "auto-scale", "elastic",
-        "replicate", "cdn", "stateless", "connection pool",
-        "read replica", "cache", "async", "queue",
-    ],
-    "performance": [
-        "cache", "redis", "cdn", "async", "queue", "batch",
-        "index", "in-memory", "optimiz", "pool", "buffer",
-        "compress", "lazy load", "pagination", "connection pool",
-    ],
-    "security": [
-        "auth", "jwt", "encryption", "tls", "ssl", "oauth",
-        "rbac", "firewall", "token", "certificate", "hash",
-        "sanitiz", "validate", "permission", "access control",
-        "audit", "logging", "input validation",
-    ],
-    "availability": [
-        "replica", "failover", "redundant", "backup", "health check",
-        "circuit breaker", "retry", "standby", "disaster recovery",
-        "high availability", "monitoring", "watchdog",
-        "graceful degradation", "hot standby", "load balancer",
-    ],
-    "maintainability": [
-        "modular", "plugin", "interface", "abstraction", "factory",
-        "repository pattern", "dependency injection", "loosely coupled",
-        "separation of concerns", "clean code", "adapter",
-        "port", "hexagonal", "layered",
-    ],
-    "reliability": [
-        "retry", "circuit breaker", "graceful degradation", "monitoring",
-        "alerting", "logging", "dead letter", "idempoten", "rollback",
-        "transaction", "saga", "backup", "validation",
-        "data integrity", "consistency",
-    ],
-}
-
-# ──────────────────────────────────────────────
-# SCI — Valid Component Suffixes
-# ──────────────────────────────────────────────
-VALID_COMPONENT_SUFFIXES = [
-    "Service", "Controller", "Repository", "Gateway", "Manager",
-    "Handler", "Engine", "Producer", "Consumer", "Client",
-    "Proxy", "Adapter", "Factory", "Provider", "Middleware",
-    "Router", "Dispatcher", "Scheduler", "Monitor", "Worker",
-    "Bus", "Broker", "Registry", "Store", "Cache",
-    "Balancer", "Queue", "Logger", "Validator", "Processor",
-    "Interactor", "Port", "UseCase",
-]
-
-# Minimum words in responsibility description for SCI
-MIN_RESPONSIBILITY_WORDS = 5
-
-# ──────────────────────────────────────────────
-# LAYER ORDERING (for LSCS metric)
+# LAYER ORDERING (for style-specific metrics)
 # Higher number = lower in the stack
 # ──────────────────────────────────────────────
 DEFAULT_LAYER_ORDER = {
@@ -220,11 +188,3 @@ DEFAULT_LAYER_ORDER = {
     "ports":            3,
     "adapters":         5,
 }
-
-# ──────────────────────────────────────────────
-# CAS VERDICT RANGES
-# ──────────────────────────────────────────────
-CAS_ACCEPTED = 0.75
-CAS_MARGINAL = 0.60
-# Below CAS_MARGINAL = Poor (must regenerate)
-

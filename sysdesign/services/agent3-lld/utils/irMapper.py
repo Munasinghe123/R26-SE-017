@@ -76,9 +76,17 @@ def _parse_sequence_message(raw_msg: dict) -> SequenceMessage:
     message_text = str(raw_msg.get("message", "")).strip()
 
     method_name, args = _parse_method_signature(message_text)
-    msg_type = MessageType.CALL
-    if message_text.lower().startswith("return"):
+    
+    # Requirement 6: Check explicit type field first
+    raw_type = str(raw_msg.get("type", "")).strip().lower()
+    if raw_type == "return":
         msg_type = MessageType.RETURN
+    elif raw_type == "call":
+        msg_type = MessageType.CALL
+    elif message_text.lower().startswith("return"):
+        msg_type = MessageType.RETURN
+    else:
+        msg_type = MessageType.CALL
 
     return SequenceMessage(
         from_participant=sender,
@@ -95,20 +103,40 @@ def _parse_logic_block(raw_block: dict) -> LogicBlock:
     logic_type = _parse_logic_block_type(raw_block.get("block_type", raw_block.get("type", "alt")))
 
     messages = []
-    for raw_msg in raw_block.get("messages", []) or []:
-        if isinstance(raw_msg, dict):
-            messages.append(_parse_sequence_message(raw_msg))
+    items: list[SequenceMessage | LogicBlock] = []
+    
+    raw_items = raw_block.get("items", raw_block.get("interactions", [])) or []
+    if raw_items:
+        for raw_item in raw_items:
+            if isinstance(raw_item, dict):
+                if "block_type" in raw_item or "type" in raw_item and str(raw_item.get("type")).lower() in {"loop", "alt", "opt", "else"}:
+                    sub_block = _parse_logic_block(raw_item)
+                    items.append(sub_block)
+                else:
+                    msg = _parse_sequence_message(raw_item)
+                    messages.append(msg)
+                    items.append(msg)
+    else:
+        for raw_msg in raw_block.get("messages", []) or []:
+            if isinstance(raw_msg, dict):
+                msg = _parse_sequence_message(raw_msg)
+                messages.append(msg)
+                items.append(msg)
 
     nested_blocks: list[LogicBlock] = []
     for raw_nested_block in raw_block.get("logic_blocks", []) or []:
         if isinstance(raw_nested_block, dict):
-            nested_blocks.append(_parse_logic_block(raw_nested_block))
+            sub_block = _parse_logic_block(raw_nested_block)
+            nested_blocks.append(sub_block)
+            if not raw_items:
+                items.append(sub_block)
 
     return LogicBlock(
         block_type=logic_type,
         condition=str(raw_block.get("condition", "")).strip(),
         messages=messages,
         logic_blocks=nested_blocks,
+        items=items,
     )
 
 
@@ -148,6 +176,7 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
             name=name,
             attributes=attributes,
             methods=methods,
+            requirement_ids=[str(rid) for rid in raw_cls.get("requirement_ids", []) or []],
         )
         classes.append(cls)
         class_index[name] = cls
@@ -190,14 +219,34 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
                     participant_types[participant_name] = _parse_participant_type(participant_type)
 
         logic_blocks: list[LogicBlock] = []
-        for raw_block in raw_seq.get("logic_blocks", []) or []:
-            if isinstance(raw_block, dict):
-                logic_blocks.append(_parse_logic_block(raw_block))
-
         messages: list[SequenceMessage] = []
-        for raw_msg in raw_seq.get("messages", []) or []:
-            if isinstance(raw_msg, dict):
-                messages.append(_parse_sequence_message(raw_msg))
+        items: list[SequenceMessage | LogicBlock] = []
+        raw_items = raw_seq.get("items", raw_seq.get("interactions", [])) or []
+
+        if raw_items:
+            for raw_item in raw_items:
+                if isinstance(raw_item, dict):
+                    if "block_type" in raw_item or ("type" in raw_item and str(raw_item.get("type")).lower() in {"loop", "alt", "opt", "else"}):
+                        block = _parse_logic_block(raw_item)
+                        logic_blocks.append(block)
+                        items.append(block)
+                    else:
+                        msg = _parse_sequence_message(raw_item)
+                        messages.append(msg)
+                        items.append(msg)
+        else:
+            for raw_block in raw_seq.get("logic_blocks", []) or []:
+                if isinstance(raw_block, dict):
+                    logic_blocks.append(_parse_logic_block(raw_block))
+
+            for raw_msg in raw_seq.get("messages", []) or []:
+                if isinstance(raw_msg, dict):
+                    msg = _parse_sequence_message(raw_msg)
+                    messages.append(msg)
+                    items.append(msg)
+
+            for block in logic_blocks:
+                items.append(block)
 
         sequences.append(SequenceIR(
             name=name,
@@ -206,6 +255,8 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
             participant_types=participant_types,
             logic_blocks=logic_blocks,
             messages=messages,
+            items=items,
+            requirement_ids=[str(rid) for rid in raw_seq.get("requirement_ids", []) or []],
         ))
 
     # ------------------------------------
@@ -248,6 +299,7 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
         entity = EntityIR(
             name=name,
             attributes=attributes,
+            requirement_ids=[str(rid) for rid in raw_entity.get("requirement_ids", []) or []],
         )
         entities.append(entity)
         entity_index[name] = entity
@@ -260,13 +312,20 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
             continue
 
         rel_type = str(rel.get("type", "one-to-many"))
+        rel_name = str(rel.get("name", "")).strip()
+        source_mult = str(rel.get("source_multiplicity", "")).strip()
+        target_mult = str(rel.get("target_multiplicity", "")).strip()
         entity = _ensure_entity(entity_index, source)
         if entity not in entities:
             entities.append(entity)
 
         entity.relationships.append(EntityRelationship(
             target=target,
+            name=rel_name,
+            source=source,
             rel_type=rel_type,
+            source_multiplicity=source_mult,
+            target_multiplicity=target_mult,
         ))
 
     return IntermediateRepresentation(

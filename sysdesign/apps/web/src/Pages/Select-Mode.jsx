@@ -1,9 +1,11 @@
 import meeting from "../Images/Mode/meeting.jpg";
 import recording from "../Images/Mode/recording.jpg";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function SelectMode() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const projectId = location.state?.projectId || new URLSearchParams(location.search).get("projectId");
 
   return (
     <div className="relative h-screen w-full overflow-hidden">
@@ -17,7 +19,10 @@ export default function SelectMode() {
           </h1>
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center gap-40 p-8">
-          <button className="group relative flex h-full aspect-[3/4] items-center justify-center cursor-pointer overflow-hidden">
+          <button 
+            onClick={() => navigate("/test-meeting", { state: { projectId } })}
+            className="group relative flex h-full aspect-[3/4] items-center justify-center cursor-pointer overflow-hidden"
+          >
             <img
               src={meeting}
               alt="Meeting"
@@ -33,7 +38,7 @@ export default function SelectMode() {
           </button>
 
           <button
-            onClick={() => navigate("/upload-audio")}
+            onClick={() => navigate("/upload-audio", { state: { projectId } })}
             className="group relative flex h-full aspect-[3/4] items-center justify-center cursor-pointer overflow-hidden"
           >
             <img

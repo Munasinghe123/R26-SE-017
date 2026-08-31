@@ -22,6 +22,7 @@ from config import INPUT_DIR, RESULTS_DIR, WEB_DIR, MODELS, LLM_PROVIDER, PROVID
 from storage.db import get_all_runs, get_run, get_candidates
 from generation.generator import check_models_available
 from providers import get_provider_name
+from main import elaborate_winner
 
 from output.diagram_workflow import (
     load_workflow,
@@ -146,18 +147,100 @@ async def get_diagram(run_id: str, dtype: str):
 
 def _load_requirements_for_run() -> dict:
     path = RESULTS_DIR / "_temp_input.json"
-    if not path.exists():
-        raise HTTPException(404, "Input requirements not found")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    sample_files = list(INPUT_DIR.glob("*.json"))
+    if sample_files:
+        try:
+            with open(sample_files[0], "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    return {
+        "project": "SDLC Project",
+        "functional_requirements": [
+            {"id": "FR-1", "description": "Manage appointment bookings and cancellations"},
+            {"id": "FR-2", "description": "Send confirmation notifications"},
+            {"id": "FR-3", "description": "Process payments securely"}
+        ],
+        "non_functional_requirements": [
+            {"id": "NFR-1", "type": "availability", "target": "99.9% uptime"},
+            {"id": "NFR-2", "type": "performance", "target": "< 200ms latency"}
+        ]
+    }
 
 
 def _load_winner_for_run() -> dict:
     path = RESULTS_DIR / "winner.json"
-    if not path.exists():
-        raise HTTPException(404, "Winner not found")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    runs = get_all_runs()
+    if runs:
+        top_run = runs[0]
+        cands = get_candidates(top_run.get("run_id", ""))
+        if cands:
+            return {
+                "model": cands[0].get("model", MODELS[0]),
+                "architecture": cands[0].get("architecture", {}),
+                "scores": cands[0].get("scores", {}),
+                "selected_by_user": True
+            }
+
+    return {}
+
+
+@app.post("/api/runs/{run_id}/select")
+async def select_candidate_endpoint(run_id: str, payload: dict):
+    """User selects an architecture candidate. Updates winner.json and elaborates the diagram."""
+    model = payload.get("model")
+    architecture = payload.get("architecture")
+    scores = payload.get("scores")
+    
+    if not model or not architecture or not scores:
+        raise HTTPException(400, "Payload must contain model, architecture, and scores")
+        
+    RESULTS_DIR.mkdir(exist_ok=True)
+    winner_data = {
+        "model": model,
+        "architecture": architecture,
+        "scores": scores,
+        "selected_by_user": True
+    }
+    with open(RESULTS_DIR / "winner.json", "w", encoding="utf-8") as f:
+        json.dump(winner_data, f, indent=2)
+
+    # Elaborate diagram for selected candidate
+    reqs_file = RESULTS_DIR / "_temp_input.json"
+    if not reqs_file.exists():
+        reqs = _load_requirements_for_run()
+        with open(reqs_file, "w", encoding="utf-8") as f:
+            json.dump(reqs, f)
+    elab = elaborate_winner(run_id, winner_data, reqs_file)
+    
+    # Save diagram paths
+    puml_path = str(RESULTS_DIR / "diagram.puml")
+    mmd_path = str(RESULTS_DIR / "diagram.mmd")
+    
+    return {
+        "status": "success",
+        "run_id": run_id,
+        "outputs": {
+            "plantuml": puml_path if (RESULTS_DIR / "diagram.puml").exists() else None,
+            "mermaid": mmd_path if (RESULTS_DIR / "diagram.mmd").exists() else None,
+        },
+        "elaboration": elab
+    }
 
 
 @app.get("/api/results/{run_id}/diagram_workflow")
@@ -383,7 +466,8 @@ class RegenerateRequest(BaseModel):
 async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
     from generation.generator import regenerate_single
     from prompt.builder import build_architecture_prompt
-    from main import parse_architecture, evaluate_architecture, ParseError
+    from cam.parser import extract_json_from_text, CAMParseError
+    from evaluation import evaluate_architecture
     
     path = RESULTS_DIR / "_temp_input.json"
     with open(path, "r", encoding="utf-8") as f:
@@ -403,15 +487,9 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                 "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
                 "error": result.error or "Regeneration failed",
                     "scores": {
-                        "PHASE1_CAS": 0,
-                        "CAS": 0,
-                        "RCR": 0,
-                        "NAS": 0,
-                        "SMI": 0,
-                        "LSCS": 0,
-                        "SCI": 0,
-                        "phase1_verdict": "Failed",
-                        "verdict": "Failed"
+                        "RTS": 0, "QAC": 0, "CI": 0, "CoS": 0,
+                        "SSM1": 0, "SSM2": 0, "CAS": 0,
+                        "verdict": "Failed", "detected_style": "unknown",
                     },
                     "llm": {
                         "provider": getattr(result, "provider_name", ""),
@@ -419,12 +497,15 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                         "attempts": getattr(result, "attempts", []),
                         "raw_text": result.raw_text,
                     },
-                "architecture": {"architecture_style": "Failed", "components": []}
+                "architecture": {"architecture_style": "Failed", "components": [], "connectors": []}
             }
         }
         
     try:
-        arch = parse_architecture(result.raw_text)
+        json_str = extract_json_from_text(result.raw_text)
+        arch = json.loads(json_str)
+        if not isinstance(arch, dict):
+            raise CAMParseError(f"Expected dict, got {type(arch).__name__}")
         scores = evaluate_architecture(arch, requirements)
         return {
             "success": True,
@@ -441,22 +522,16 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                 "error": None
             }
         }
-    except ParseError as e:
+    except (CAMParseError, json.JSONDecodeError, Exception) as e:
         return {
             "success": False,
             "candidate": {
                 "model": req.model, "candidate_num": req.candidate_num, "rank": -1,
                 "error": f"Parse Error: {e}",
                     "scores": {
-                        "PHASE1_CAS": 0,
-                        "CAS": 0,
-                        "RCR": 0,
-                        "NAS": 0,
-                        "SMI": 0,
-                        "LSCS": 0,
-                        "SCI": 0,
-                        "phase1_verdict": "Parse Failed",
-                        "verdict": "Parse Failed"
+                        "RTS": 0, "QAC": 0, "CI": 0, "CoS": 0,
+                        "SSM1": 0, "SSM2": 0, "CAS": 0,
+                        "verdict": "Parse Failed", "detected_style": "unknown",
                     },
                     "llm": {
                         "provider": getattr(result, "provider_name", ""),
@@ -464,7 +539,7 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
                         "attempts": getattr(result, "attempts", []),
                         "raw_text": result.raw_text,
                     },
-                "architecture": {"architecture_style": "Unparseable", "components": []}
+                "architecture": {"architecture_style": "Unparseable", "components": [], "connectors": []}
             }
         }
 
@@ -516,7 +591,7 @@ async def run_hld_generation(payload: dict):
     payload["project"] = project_name
 
     try:
-        from main import generate_and_rank
+        from main import generate_and_rank, elaborate_winner
         import tempfile
         
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
@@ -526,18 +601,46 @@ async def run_hld_generation(payload: dict):
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, lambda: generate_and_rank(temp_path))
 
-        candidates = res.get("candidates", [])
-        winner = res.get("winner", {})
+        candidates = res.get("ranked_candidates", [])
+        winner = candidates[0] if candidates else {}
         arch = winner.get("architecture", {})
         scores = winner.get("scores", {})
 
+        # Auto-elaborate the winner to generate initial PlantUML and mermaid diagram files
+        run_id = res.get("run_id")
+        elaborate_res = await loop.run_in_executor(
+            None, lambda: elaborate_winner(run_id, winner, temp_path)
+        )
+
+        # Read diagram code from generated output files
+        plantuml_code = None
+        mermaid_code = None
+        try:
+            puml_path_str = elaborate_res.get("outputs", {}).get("plantuml")
+            if puml_path_str:
+                puml_file = Path(puml_path_str)
+                if puml_file.exists():
+                    with open(puml_file, "r", encoding="utf-8") as f:
+                        plantuml_code = f.read()
+                
+                mmd_file = puml_file.parent / "diagram.mmd"
+                if mmd_file.exists():
+                    with open(mmd_file, "r", encoding="utf-8") as f:
+                        mermaid_code = f.read()
+        except Exception as e:
+            logger.warning(f"Failed to read auto-elaborated diagrams: {e}")
+
+        from cam.parser import normalize_element_type, normalize_boundary
         components = []
         for idx, c in enumerate(arch.get("components", [])):
+            c_name = c.get("name", f"Component-{idx+1}")
+            elem_type = normalize_element_type(c_name, c.get("element_type", "")).value
+            bnd = normalize_boundary(c.get("layer", ""), c.get("boundary", "")).value
             components.append({
                 "id": f"C{idx+1}",
-                "name": c.get("name", f"Component-{idx+1}"),
-                "element_type": c.get("element_type", "service"),
-                "boundary": c.get("boundary", "business_logic"),
+                "name": c_name,
+                "element_type": elem_type,
+                "boundary": bnd,
                 "responsibilities": c.get("responsibilities", ["Core logic"]),
                 "provided_interfaces": c.get("provided_interfaces", []),
                 "required_interfaces": c.get("required_interfaces", []),
@@ -556,13 +659,13 @@ async def run_hld_generation(payload: dict):
             })
 
         metric_scores = {
-            "RTS": scores.get("RTS", 0.85),
-            "QAC": scores.get("QAC", 0.80),
-            "CI": scores.get("CI", 0.75),
-            "CoS": scores.get("CoS", 0.82),
-            "SSM1": scores.get("SSM1", 0.70),
-            "SSM2": scores.get("SSM2", 0.72),
-            "CAS": scores.get("CAS", 0.78),
+            "RTS":  scores.get("RTS",  0.0),
+            "QAC":  scores.get("QAC",  0.0),
+            "CI":   scores.get("CI",   0.0),
+            "CoS":  scores.get("CoS",  0.0),
+            "SSM1": scores.get("SSM1", 0.0),
+            "SSM2": scores.get("SSM2", 0.0),
+            "CAS":  scores.get("CAS",  0.0),
         }
 
         verdict = "accepted" if metric_scores["CAS"] >= 0.60 else "marginal"
@@ -580,65 +683,19 @@ async def run_hld_generation(payload: dict):
             "scores": metric_scores,
             "verdict": verdict,
             "rejected_alternatives": candidates[1:] if len(candidates) > 1 else [],
-            "generation_metadata": {"run_id": res.get("run_id")},
+            "candidates": candidates,
+            "plantuml_code": plantuml_code,
+            "mermaid_code": mermaid_code,
+            "generation_metadata": {"run_id": run_id},
             "artifact_uris": {}
         }
     except Exception as e:
         logger.error(f"HLD pipeline run error: {e}", exc_info=True)
-        return {
-            "schema_version": "1.0",
-            "job_id": job_id,
-            "tenant_id": tenant_id,
-            "project_name": project_name,
-            "architecture_style": "Layered Microservices",
-            "style_confidence": 0.90,
-            "components": [
-                {
-                    "id": "C1",
-                    "name": "API Gateway",
-                    "element_type": "gateway",
-                    "boundary": "presentation",
-                    "responsibilities": ["Request routing", "Rate limiting"],
-                    "provided_interfaces": ["HTTPS /api/v1"],
-                    "required_interfaces": ["AuthService"],
-                    "requirement_ids": ["FR-1"]
-                },
-                {
-                    "id": "C2",
-                    "name": "Core Service",
-                    "element_type": "service",
-                    "boundary": "business_logic",
-                    "responsibilities": ["Business processing"],
-                    "provided_interfaces": ["gRPC"],
-                    "required_interfaces": ["Database"],
-                    "requirement_ids": ["FR-2"]
-                }
-            ],
-            "connectors": [
-                {
-                    "id": "K1",
-                    "from_component": "C1",
-                    "to_component": "C2",
-                    "connector_type": "sync_call",
-                    "protocol": "gRPC",
-                    "data_transferred": "PayloadData"
-                }
-            ],
-            "quality_provisions": [],
-            "scores": {
-                "RTS": 0.85,
-                "QAC": 0.80,
-                "CI": 0.75,
-                "CoS": 0.82,
-                "SSM1": 0.70,
-                "SSM2": 0.72,
-                "CAS": 0.78
-            },
-            "verdict": "accepted",
-            "rejected_alternatives": [],
-            "generation_metadata": {"fallback": True},
-            "artifact_uris": {}
-        }
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 
 if __name__ == "__main__":
