@@ -25,6 +25,24 @@ def _escape_name(name):
     return escaped
 
 
+def _to_chen_cardinality(value):
+    cardinality = str(value).strip()
+    mapping = {
+        "1": "1",
+        "0..1": "(0,1)",
+        "0..*": "(0,N)",
+        "1..*": "(1,N)",
+        "N": "N",
+    }
+
+    if cardinality in mapping:
+        return mapping[cardinality]
+
+    raise ValueError(
+        f"Unsupported ER multiplicity for Chen PlantUML rendering: {value!r}"
+    )
+
+
 # ====================================
 # CLASS DIAGRAM GENERATOR
 # ====================================
@@ -165,6 +183,8 @@ def generate_sequence_plantuml(sequence_diagram):
 
     plantuml = "@startuml\n\n"
 
+    plantuml += "hide footbox\n\n"
+
     plantuml += "skinparam linetype ortho\n\n"
 
     plantuml += f"title {diagram_name}\n\n"
@@ -237,6 +257,10 @@ def generate_sequence_plantuml(sequence_diagram):
             header = f"{indent}else {condition}".rstrip()
         elif block_type == "end":
             header = f"{indent}end"
+        elif block_type == "loop":
+            header = f"{indent}loop {condition}".rstrip()
+        elif block_type == "opt":
+            header = f"{indent}opt {condition}".rstrip()
         else:
             header = f"{indent}alt {condition}".rstrip()
 
@@ -249,7 +273,7 @@ def generate_sequence_plantuml(sequence_diagram):
             if isinstance(nested_block, dict):
                 rendered.append(render_logic_block(nested_block, alias_lookup, indent=indent + "  "))
 
-        if block_type == "alt" and not any(str(item.get("block_type", item.get("type", ""))).strip().lower() == "else" for item in nested_blocks if isinstance(item, dict)):
+        if block_type in {"alt", "loop", "opt"} and not any(str(item.get("block_type", item.get("type", ""))).strip().lower() == "else" for item in nested_blocks if isinstance(item, dict)):
             rendered.append(f"{indent}end\n")
 
         return "".join(rendered)
@@ -290,7 +314,14 @@ def generate_sequence_plantuml(sequence_diagram):
         []
     )
 
-    for message in messages:
+    def _is_success_message(message):
+        text = _message_text(message).lower()
+        return any(token in text for token in ["success", "response", "confirmation", "created"])
+
+    success_messages = [message for message in messages if isinstance(message, dict) and _is_success_message(message)]
+    non_success_messages = [message for message in messages if not (isinstance(message, dict) and _is_success_message(message))]
+
+    for message in non_success_messages:
         if isinstance(message, dict):
             plantuml += _render_message_tree(message, alias_lookup)
 
@@ -300,6 +331,9 @@ def generate_sequence_plantuml(sequence_diagram):
         for block in logic_blocks:
             if isinstance(block, dict):
                 plantuml += render_logic_block(block, alias_lookup)
+
+    for message in success_messages:
+        plantuml += _render_message_tree(message, alias_lookup)
 
     plantuml += "\n@enduml"
 
@@ -428,10 +462,8 @@ def generate_er_plantuml(er_diagram):
         if source not in entity_aliases or target not in entity_aliases:
             continue
 
-        rel_type = rel.get(
-            "type",
-            "one-to-many"
-        )
+        rel_type = rel.get("type", "one-to-many")
+        semantic_name = str(rel.get("name", "")).strip() or str(rel_type)
 
         # ----------------------------
         # CREATE RELATIONSHIP ENTITY
@@ -442,7 +474,7 @@ def generate_er_plantuml(er_diagram):
         )
 
         plantuml += (
-            f'relationship "{rel_type}" '
+            f'relationship "{semantic_name}" '
             f'as {relationship_name} {{\n'
             f'}}\n\n'
         )
@@ -451,7 +483,13 @@ def generate_er_plantuml(er_diagram):
         # CARDINALITIES
         # ----------------------------
 
-        if rel_type == "one-to-one":
+        source_multiplicity = str(rel.get("source_multiplicity", "")).strip()
+        target_multiplicity = str(rel.get("target_multiplicity", "")).strip()
+
+        if source_multiplicity or target_multiplicity:
+            left = _to_chen_cardinality(source_multiplicity or "1")
+            right = _to_chen_cardinality(target_multiplicity or "1")
+        elif rel_type == "one-to-one":
 
             left = "1"
             right = "1"
