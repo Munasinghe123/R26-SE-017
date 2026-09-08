@@ -8,8 +8,13 @@ from graph.nodes import (
     role_identification_node,
     transcript_cleaning_node,
     document_node,
+    extract_evidence_node,
+    normalize_requirements_node,
+    classify_requirements_node,
+    deterministic_quality_checks_node,
     extraction_node,
     reclassify_requirements_node,
+    analyze_requirements_node,
     client_view_node,
     await_client_node,
     process_client_review_node,
@@ -52,8 +57,14 @@ def build_graph(checkpointer=None):
     builder.add_node("role_identification", role_identification_node)
     builder.add_node("transcript_cleaning", transcript_cleaning_node)
     builder.add_node("document", document_node)
-    builder.add_node("extract", extraction_node)
-    builder.add_node("reclassify_requirements", reclassify_requirements_node)
+
+    # 4-stage extraction pipeline nodes
+    builder.add_node("extract_evidence", extract_evidence_node)
+    builder.add_node("normalize_requirements", normalize_requirements_node)
+    builder.add_node("classify_requirements", classify_requirements_node)
+    builder.add_node("quality_checks", deterministic_quality_checks_node)
+    builder.add_node("analyze_requirements", analyze_requirements_node)
+
     builder.add_node("client_view", client_view_node)
     builder.add_node("await_client", await_client_node)
     builder.add_node("process_client_review", process_client_review_node)
@@ -80,14 +91,17 @@ def build_graph(checkpointer=None):
     builder.add_edge("diarize", "speaker_alignment")
     builder.add_edge("speaker_alignment", "role_identification")
     builder.add_edge("role_identification", "transcript_cleaning")
-    builder.add_edge("transcript_cleaning", "extract")
+    builder.add_edge("transcript_cleaning", "extract_evidence")
 
     # ── document path ──────────────────────────────────────
-    builder.add_edge("document", "extract")
+    builder.add_edge("document", "extract_evidence")
 
-    # ── common: extract → client view ──────────────────────
-    builder.add_edge("extract", "reclassify_requirements")
-    builder.add_edge("reclassify_requirements", "client_view")
+    # ── 4-stage extraction pipeline ────────────────────────
+    builder.add_edge("extract_evidence", "normalize_requirements")
+    builder.add_edge("normalize_requirements", "classify_requirements")
+    builder.add_edge("classify_requirements", "quality_checks")
+    builder.add_edge("quality_checks", "analyze_requirements")
+    builder.add_edge("analyze_requirements", "client_view")
     builder.add_edge("client_view", "await_client")
 
     # ── HITL: client review ────────────────────────────────

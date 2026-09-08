@@ -4,7 +4,15 @@ from graph.state import GraphState
 from langgraph.types import interrupt
 
 from services.tanscribe import transcribe_audio
-from services.extract.extract import extract_requirements
+from services.extract.extract import (
+    extract_requirements,
+    extract_evidence,
+    normalize_evidence,
+    classify_requirements,
+    run_deterministic_quality_checks,
+    assemble_canonical_requirements
+)
+from services.extract.analyze_requirements import analyze_extracted_requirements
 from services.diarize import diarize_audio
 from services.srs.build_srs import build_srs
 from services.srs.generate_srs_pdf import create_pdf
@@ -25,7 +33,7 @@ from services.HITL.generate_requirements_from_answers import generate_requiremen
 from services.HITL.collect_new_requirements import collect_new_requirements
 from services.HITL.classify_new_requirements import classify_new_requirements
 from services.HITL.validate_requirement_format import find_requirements_to_rewrite
-from services.HITL.normalize_requirements import normalize_requirements
+from services.HITL.normalize_requirements import normalize_requirements as hitl_normalize_requirements
 from services.HITL.reconcile_requirements import reconcile_requirements
 
 
@@ -81,15 +89,59 @@ def document_node(state: GraphState):
 
 
 # ============================================================
-# Extraction & reclassification
+# Multi-Stage Extraction Pipeline Nodes
 # ============================================================
 
+def extract_evidence_node(state: GraphState):
+    transcript = state.get("transcript") or ""
+    evidence_candidates = extract_evidence(transcript)
+    return {"evidence_candidates": evidence_candidates}
+
+
+def normalize_requirements_node(state: GraphState):
+    evidence_candidates = state.get("evidence_candidates") or []
+    normalized_reqs = normalize_evidence(evidence_candidates)
+    return {"normalized_requirements": normalized_reqs}
+
+
+def classify_requirements_node(state: GraphState):
+    normalized_reqs = state.get("normalized_requirements") or []
+    classified_reqs = classify_requirements(normalized_reqs)
+    return {"classified_requirements": classified_reqs}
+
+
+def deterministic_quality_checks_node(state: GraphState):
+    evidence_candidates = state.get("evidence_candidates") or []
+    classified_reqs = state.get("classified_requirements") or []
+    valid_requirements, report = run_deterministic_quality_checks(
+        evidence_candidates,
+        classified_reqs
+    )
+    requirements = assemble_canonical_requirements(
+        valid_requirements,
+        evidence_candidates,
+        report
+    )
+    print("\n========== EXTRACTION QUALITY REPORT ==========")
+    print(json.dumps(report, indent=4, ensure_ascii=False))
+    print("===============================================")
+    return {
+        "requirements": requirements,
+        "extraction_quality_report": report
+    }
+
+
 def extraction_node(state: GraphState):
-    requirements = extract_requirements(state["transcript"])
+    """Facade node running the full 4-stage extraction pipeline."""
+    requirements = extract_requirements(state.get("transcript") or "")
     print("\n========== EXTRACTION NODE RESULT ==========")
     print(json.dumps(requirements, indent=4, ensure_ascii=False))
     print("============================================")
-    return {"requirements": requirements}
+    return {
+        "requirements": requirements,
+        "evidence_candidates": requirements.get("evidence_candidates"),
+        "extraction_quality_report": requirements.get("extraction_quality_report")
+    }
 
 
 def reclassify_requirements_node(state: GraphState):
@@ -103,12 +155,54 @@ def reclassify_requirements_node(state: GraphState):
     return {"requirements": updated_requirements}
 
 
+def analyze_requirements_node(state: GraphState):
+    """
+    Analyzes the extracted requirements for vagueness, incompleteness, and contradictions
+    before presenting them to the client.
+    """
+    reqs = state.get("requirements") or {}
+    analysis = analyze_extracted_requirements(reqs)
+    return {"requirement_analysis": analysis}
+
+
 # ============================================================
 # Client view
 # ============================================================
 
 def client_view_node(state: GraphState):
-    client_view = build_client_view(state.get("requirements") or {})
+    reqs = state.get("requirements") or {}
+    specified = reqs.get("specified_requirements") or {}
+    frs = specified.get("functional") or reqs.get("functional") or []
+    nfrs = specified.get("non_functional") or reqs.get("non_functional") or []
+    uncertain = specified.get("uncertain") or reqs.get("uncertain") or []
+
+    print("\n" + "="*60)
+    print("REQUIREMENTS SET (BEFORE CALLING CLIENT VIEW)")
+    print("="*60)
+    print(f"--- FUNCTIONAL REQUIREMENTS (FRs) [{len(frs)}] ---")
+    for item in frs:
+        req_id = item.get("id", "FR")
+        desc = item.get("description") or item.get("text", "")
+        print(f"  [{req_id}] {desc}")
+
+    print(f"\n--- NON-FUNCTIONAL REQUIREMENTS (NFRs) [{len(nfrs)}] ---")
+    for item in nfrs:
+        req_id = item.get("id", "NFR")
+        desc = item.get("description") or item.get("text", "")
+        q_attr = f" [{item.get('quality_attribute')}]" if item.get("quality_attribute") else ""
+        print(f"  [{req_id}]{q_attr} {desc}")
+
+    if uncertain:
+        print(f"\n--- UNCERTAIN REQUIREMENTS [{len(uncertain)}] ---")
+        for item in uncertain:
+            req_id = item.get("id", "UNC")
+            desc = item.get("description") or item.get("text", "")
+            print(f"  [{req_id}] {desc}")
+
+    print("="*60 + "\n")
+
+    analysis = state.get("requirement_analysis")
+    client_view = build_client_view(reqs, requirement_analysis=analysis)
     return {"client_view": client_view}
 
 
@@ -162,7 +256,9 @@ def analyze_client_changes_node(state: GraphState):
 def partition_client_changes_node(state: GraphState):
     result = partition_client_changes(
         state["change_set"],
-        state["change_analysis"]
+        state["change_analysis"],
+        requirement_analysis=state.get("requirement_analysis"),
+        requirements=state.get("requirements")
     )
     print("\n========== ACCEPTED CHANGES ==========")
     print(json.dumps(result["accepted_changes"], indent=4, ensure_ascii=False))
@@ -261,7 +357,7 @@ def normalize_new_requirements_node(state: GraphState):
         print("[normalize_new_requirements_node] Nothing to rewrite.")
         return {"normalized_new_requirements": classified}
 
-    rewritten = normalize_requirements(to_rewrite)
+    rewritten = hitl_normalize_requirements(to_rewrite)
 
     rewritten_ids = {r["id"] for r in rewritten}
     final_requirements = []
@@ -287,31 +383,47 @@ def reconcile_requirements_node(state: GraphState):
         original_requirements=state.get("requirements") or {},
         accepted_changes=state.get("accepted_changes") or {},
         answer_requirements=state.get("answer_requirements") or [],
-        normalized_new_requirements=state.get("normalized_new_requirements") or []
+        normalized_new_requirements=state.get("normalized_new_requirements") or [],
+        requirement_analysis=state.get("requirement_analysis")
     )
 
     orig = dict(state.get("requirements") or {})
-    func_items = []
-    nfunc_items = []
 
-    for section in final_requirements.get("sections", []):
-        stitle = section.get("title", "").lower()
-        for item in section.get("items", []):
-            mapped = {
-                "id": item.get("id"),
-                "description": item.get("text") or item.get("description", "")
-            }
-            if "non" in stitle or item.get("type") == "non_functional":
-                nfunc_items.append(mapped)
-            else:
-                func_items.append(mapped)
+    # Use the canonical specified_requirements directly from final_requirements
+    if "specified_requirements" in final_requirements:
+        orig["specified_requirements"] = final_requirements["specified_requirements"]
+        orig["functional"] = final_requirements["specified_requirements"].get("functional", [])
+        orig["non_functional"] = final_requirements["specified_requirements"].get("non_functional", [])
+    else:
+        func_items = []
+        nfunc_items = []
+        for section in final_requirements.get("sections", []):
+            stitle = section.get("title", "").lower()
+            for item in section.get("items", []):
+                mapped = {
+                    "id": item.get("id"),
+                    "description": item.get("text") or item.get("description", ""),
+                    "source_evidence": item.get("source_evidence") or [
+                        {"speaker": "Client", "statement": item.get("text") or item.get("description", "")}
+                    ]
+                }
+                if "non" in stitle or item.get("type") == "non_functional":
+                    nfunc_items.append(mapped)
+                else:
+                    func_items.append(mapped)
 
-    orig["specified_requirements"] = {
-        "functional": func_items,
-        "non_functional": nfunc_items
-    }
-    orig["functional"] = func_items
-    orig["non_functional"] = nfunc_items
+        orig["specified_requirements"] = {
+            "functional": func_items,
+            "non_functional": nfunc_items
+        }
+        orig["functional"] = func_items
+        orig["non_functional"] = nfunc_items
+
+    # Run post-reconciliation defect audit to ensure client additions didn't introduce new defects
+    post_audit = analyze_extracted_requirements(orig)
+    print("\n========== POST-RECONCILIATION QUALITY AUDIT ==========")
+    print(f"Defects identified in reconciled set: {post_audit.get('total_flagged', 0)}")
+    print("=======================================================\n")
 
     # Persist reconciled requirements for PO UI
     meeting_id = state.get("meeting_id") or state.get("thread_id")
@@ -327,6 +439,7 @@ def reconcile_requirements_node(state: GraphState):
                     "requirements": orig,
                     "final_requirements": final_requirements,
                     "client_view": state.get("client_view"),
+                    "reconciliation_analysis": post_audit,
                     "version": 2,
                     "project_id": project_id
                 }, f, indent=2, default=str)
@@ -335,7 +448,8 @@ def reconcile_requirements_node(state: GraphState):
 
     return {
         "final_requirements": final_requirements,
-        "requirements": orig
+        "requirements": orig,
+        "reconciliation_analysis": post_audit
     }
 
 

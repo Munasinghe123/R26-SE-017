@@ -1,216 +1,104 @@
-import json
-import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-import os
-from .extract_guidelines import (
-    PURPOSE_GUIDELINES,
-    SCOPE_GUIDELINES,
-    PRODUCT_PERSPECTIVE_GUIDELINES,
-    PRODUCT_FUNCTIONS_GUIDELINES,
-    USER_CHARACTERISTICS_GUIDELINES,
-    ASSUMPTIONS_AND_DEPENDENCIES_GUIDELINES,
-    SPECIFIED_REQUIREMENTS_GUIDELINES,
-    EXTERNAL_INTERFACES_GUIDELINES,
-    DESIGN_CONSTRAINTS_GUIDELINES,
-    STANDARDS_COMPLIANCE_GUIDELINES,
-    SUPPORTING_INFORMATION_GUIDELINES,
-    GLOBAL_RULES,
-    OUTPUT_SCHEMA,
-)
-import re
+"""
+Multi-Stage Requirements Extraction Engine
 
-
-
-load_dotenv()
-
-
-llm = ChatOpenAI(
-    api_key=os.getenv('OPENROUTER_API_KEY'),
-    base_url='https://openrouter.ai/api/v1', 
-    model="meta-llama/llama-3.3-70b-instruct",
-    temperature=0
-)
-
-
-def build_prompt(transcript: str) -> str:
-    return f"""
-You are a senior software requirements analyst.
-
-Extract structured software requirements and other SRS-relevant information
-from the provided client/BA meeting transcript.
-
-The purpose of this extraction is to provide the information available from
-the elicitation meeting for generation of an initial IEEE/ISO/IEC 29148
-Software Requirements Specification (SRS) Version 1.
-
-{PURPOSE_GUIDELINES}
-
-{SCOPE_GUIDELINES}
-
-{PRODUCT_PERSPECTIVE_GUIDELINES}
-
-{PRODUCT_FUNCTIONS_GUIDELINES}
-
-{USER_CHARACTERISTICS_GUIDELINES}
-
-{ASSUMPTIONS_AND_DEPENDENCIES_GUIDELINES}
-
-{SPECIFIED_REQUIREMENTS_GUIDELINES}
-
-{EXTERNAL_INTERFACES_GUIDELINES}
-
-
-{DESIGN_CONSTRAINTS_GUIDELINES}
-
-{STANDARDS_COMPLIANCE_GUIDELINES}
-
-{SUPPORTING_INFORMATION_GUIDELINES}
-
-{GLOBAL_RULES}
-
-{OUTPUT_SCHEMA}
-
-MEETING TRANSCRIPT:
-{transcript}
+Orchestrates the 4-stage extraction pipeline:
+  Stage 1: Evidence Extraction (high recall, raw atomic stakeholder statements)
+  Stage 2: Requirement Normalization (atomic requirements, traceability, clarification detection)
+  Stage 3: Independent Classification (FR, NFR with ISO quality attributes, Uncertain)
+  Stage 4: Deterministic Programmatic Checks (pure Python schema, traceability, duplicate & classification validation)
 """
 
+import json
+from typing import Dict, Any, List
 
-def validate_extraction(data):
-    if not isinstance(data, dict):
-        return False
+from .stage1_evidence import extract_evidence
+from .stage2_normalization import normalize_requirements
+from .stage3_classification import classify_requirements
+from .stage4_quality_checks import (
+    run_deterministic_quality_checks,
+    assemble_canonical_requirements
+)
 
-    required_fields = [
-        "purpose",
-        "scope",
-        "product_perspective",
-        "product_functions",
-        "user_characteristics",
-        "assumptions_and_dependencies",
-        "specified_requirements",
-        "external_interfaces",
-        "design_constraints",
-        "standards_compliance",
-        "supporting_information",
-    ]
-
-    if not all(field in data for field in required_fields):
-        return False
-
-    # Product perspective
-    perspective_fields = [
-        "system_interfaces",
-        "user_interfaces",
-        "hardware_interfaces",
-        "software_interfaces",
-        "communications_interfaces",
-        "memory_constraints",
-        "operations",
-        "site_adaptation_requirements",
-        "service_interfaces",
-    ]
-
-    perspective = data["product_perspective"]
-
-    if not isinstance(perspective, dict):
-        return False
-
-    if not all(field in perspective for field in perspective_fields):
-        return False
-
-    # Specified requirements
-    specified = data["specified_requirements"]
-
-    if not isinstance(specified, dict):
-        return False
-
-    if "functional" not in specified or "non_functional" not in specified:
-        return False
-
-    # FR / NFR structure
-    for requirement_type in ["functional", "non_functional"]:
-        requirements = specified[requirement_type]
-
-        if not isinstance(requirements, list):
-            return False
-
-        for item in requirements:
-            if not isinstance(item, dict):
-                return False
-
-            if "id" not in item or "description" not in item:
-                return False
-
-            if not isinstance(item["id"], str):
-                return False
-
-            if not isinstance(item["description"], str):
-                return False
-
-    return True
-
-def parse_json_response(content: str):
-    content = content.strip()
-
-    # Remove markdown code fences if present
-    content = re.sub(r"```json\s*", "", content, flags=re.IGNORECASE)
-    content = re.sub(r"```\s*", "", content)
-
-    # Find the actual JSON object
-    start = content.find("{")
-    end = content.rfind("}")
-
-    if start == -1 or end == -1:
-        raise json.JSONDecodeError("No JSON object found", content, 0)
-
-    json_content = content[start:end + 1]
-
-    try:
-        return json.loads(json_content, strict=False)
-    except json.JSONDecodeError:
-        # Fallback: remove trailing commas before closing braces/brackets
-        cleaned = re.sub(r",\s*([\]}])", r"\1", json_content)
-        return json.loads(cleaned, strict=False)
+# Explicit alias to avoid collisions with HITL normalize_requirements
+normalize_evidence = normalize_requirements
 
 
-def extract_requirements(transcript: str):
-    print("\n========== EXTRACTION START ==========")
+def extract_requirements(transcript: str) -> Dict[str, Any]:
+    """
+    Master entry point for the 4-stage requirements extraction pipeline.
+    Ensures complete backward compatibility with any direct caller.
+    """
+    print("\n" + "="*60)
+    print("STARTING MULTI-STAGE REQUIREMENTS EXTRACTION PIPELINE")
+    print("="*60)
 
-    prompt = build_prompt(transcript)
+    if not transcript or not transcript.strip():
+        print("[Extraction Pipeline] Empty transcript received.")
+        return {
+            "specified_requirements": {"functional": [], "non_functional": [], "uncertain": []},
+            "functional": [],
+            "non_functional": [],
+            "uncertain": [],
+            "evidence_candidates": [],
+            "extraction_quality_report": {"passed": True, "total_input_candidates": 0}
+        }
 
-    print("Calling LLM for extraction...")
+    # Stage 1: Evidence Extraction
+    evidence_candidates = extract_evidence(transcript)
 
-    response = llm.invoke(prompt)
+    if not evidence_candidates:
+        print("[Extraction Pipeline WARNING] No evidence candidates extracted from transcript.")
+        return {
+            "specified_requirements": {"functional": [], "non_functional": [], "uncertain": []},
+            "functional": [],
+            "non_functional": [],
+            "uncertain": [],
+            "evidence_candidates": [],
+            "extraction_quality_report": {"passed": False, "warnings": ["No evidence candidates extracted."]}
+        }
 
-    print("LLM extraction response received.")
+    # Stage 2: Requirement Normalization
+    normalized_requirements = normalize_requirements(evidence_candidates)
 
-    content = response.content.strip()
+    if not normalized_requirements:
+        print("[Extraction Pipeline WARNING] No requirements normalized from evidence.")
+        return {
+            "specified_requirements": {"functional": [], "non_functional": [], "uncertain": []},
+            "functional": [],
+            "non_functional": [],
+            "uncertain": [],
+            "evidence_candidates": evidence_candidates,
+            "extraction_quality_report": {"passed": False, "warnings": ["Normalization yielded 0 requirements."]}
+        }
 
-    print("\n========== RAW EXTRACTION RESPONSE ==========")
-    print(content)
-    print("=============================================")
+    # Stage 3: Independent Classification
+    classified_requirements = classify_requirements(normalized_requirements)
 
-    data = None
-    try:
-        data = parse_json_response(content)
-        print("JSON parsing: SUCCESS")
-    except Exception as e:
-        print("JSON parsing: FAILED -", e)
+    # Stage 4: Deterministic Quality Checks & Canonical Assembly
+    valid_requirements, report = run_deterministic_quality_checks(
+        evidence_candidates,
+        classified_requirements
+    )
 
-    if data and isinstance(data, dict):
-        print("Running schema validation...")
-        if not validate_extraction(data):
-            print("Schema validation: WARNING (minor structure mismatch, proceeding with extracted data)")
-        else:
-            print("Schema validation: SUCCESS")
+    canonical_result = assemble_canonical_requirements(
+        valid_requirements,
+        evidence_candidates,
+        report
+    )
 
-        print("\n========== EXTRACTED STUFF ==========")
-        print(json.dumps(data, indent=4, ensure_ascii=False))
-        print("=====================================")
-        return data
+    print("\n" + "="*60)
+    print("MULTI-STAGE REQUIREMENTS EXTRACTION PIPELINE COMPLETED")
+    print("="*60)
 
-    print("[WARNING] Could not parse valid JSON. Returning raw content container.")
-    return {
-        "error": "invalid_json",
-        "raw": content
-    }
+    return canonical_result
+
+
+__all__ = [
+    "extract_requirements",
+    "extract_evidence",
+    "normalize_requirements",
+    "normalize_evidence",
+    "classify_requirements",
+    "run_deterministic_quality_checks",
+    "assemble_canonical_requirements",
+]

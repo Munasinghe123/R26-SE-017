@@ -194,9 +194,12 @@ def validate_client_view(data, requirements):
     return True
 
 
-def build_client_view(requirements):
+def build_client_view(requirements, requirement_analysis=None):
 
     print("\n========== BUILDING CLIENT VIEW ==========")
+
+    if not requirement_analysis and isinstance(requirements, dict):
+        requirement_analysis = requirements.get("requirement_analysis")
 
     specified_requirements = requirements.get(
         "specified_requirements",
@@ -218,6 +221,18 @@ def build_client_view(requirements):
         functional +
         non_functional
     )
+
+    print("\n" + "="*60)
+    print("CLIENT VIEW INPUT: FUNCTIONAL & NON-FUNCTIONAL REQUIREMENTS")
+    print("="*60)
+    print(f"Functional Requirements ({len(functional)}):")
+    for f in functional:
+        print(f"  [{f.get('id')}] {f.get('description') or f.get('text')}")
+    print(f"\nNon-Functional Requirements ({len(non_functional)}):")
+    for nf in non_functional:
+        q_attr = f" [{nf.get('quality_attribute')}]" if nf.get("quality_attribute") else ""
+        print(f"  [{nf.get('id')}]{q_attr} {nf.get('description') or nf.get('text')}")
+    print("="*60 + "\n")
 
     if not all_requirements:
 
@@ -295,29 +310,50 @@ REQUIREMENTS:
             })
         data = {"items": fallback_items}
 
-    # ---------------------------------------------------------
-    # Build application client_view
-    #
-    # IMPORTANT:
-    # There is NO item-* ID anymore.
-    #
-    # The requirement ID itself is used everywhere.
+    # Build application client_view with prioritized flagged requirements
     # ---------------------------------------------------------
 
-    items = []
+    flagged_map = {}
+    if requirement_analysis and isinstance(requirement_analysis, dict):
+        for f in requirement_analysis.get("flagged_requirements", []):
+            if isinstance(f, dict) and f.get("id"):
+                flagged_map[f["id"]] = f
+
+    flagged_items = []
+    normal_items = []
 
     for item in data["items"]:
+        req_id = item["requirement_id"]
+        flag_info = flagged_map.get(req_id)
 
-        items.append({
-            "id": item["requirement_id"],
-            "text": item["text"].strip()
-        })
+        if flag_info:
+            flagged_items.append({
+                "id": req_id,
+                "text": item["text"].strip(),
+                "needs_review": True,
+                "issue_type": flag_info.get("issue_type", "vague"),
+                "review_reason": flag_info.get("reason", "Requires client review.")
+            })
+        else:
+            normal_items.append({
+                "id": req_id,
+                "text": item["text"].strip(),
+                "needs_review": False,
+                "issue_type": None,
+                "review_reason": None
+            })
+
+    # Flagged items are placed at the TOP of the requirements list for the client to review
+    sorted_items = flagged_items + normal_items
+
+    if flagged_items:
+        print(f"[Client View] Placed {len(flagged_items)} flagged requirement(s) at the TOP of the list.")
 
     client_view = {
         "sections": [
             {
                 "title": "Requirements",
-                "items": items
+                "items": sorted_items
             }
         ]
     }
