@@ -115,8 +115,8 @@ def evaluate_requirements_suite(requirements: Dict[str, Any]) -> Dict[str, Any]:
     cleaned_non_functional = []
     improvements_applied = []
 
-    # Evaluate all requirements
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    # Evaluate all requirements concurrently (10 parallel workers)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_req = {
             executor.submit(evaluate_requirement, req, project_scope=scope): req
             for req in flat_reqs
