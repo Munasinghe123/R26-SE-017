@@ -17,7 +17,7 @@ from config import (
 )
 from prompt.builder import build_architecture_prompt, build_feedback_from_scores
 from generation.generator import generate_all, regenerate_single, check_models_available
-from cam.parser import parse_cam, CAMParseError, extract_json_from_text
+from cam.parser import parse_cam, CAMParseError, extract_json_from_text, extract_and_parse_json
 from evaluation import evaluate_architecture
 from evaluation.cas import rank_candidates
 from output.report import generate_report
@@ -178,10 +178,7 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
             })
             continue
         try:
-            # Use cam parser — parse_cam returns ArchitecturePackage (Pydantic),
-            # but evaluate_architecture needs a dict. Use extract + json.loads for dict path.
-            json_str = extract_json_from_text(c.raw_text)
-            arch = json.loads(json_str)
+            arch = extract_and_parse_json(c.raw_text)
             if not isinstance(arch, dict):
                 raise CAMParseError(f"Expected dict, got {type(arch).__name__}")
 
