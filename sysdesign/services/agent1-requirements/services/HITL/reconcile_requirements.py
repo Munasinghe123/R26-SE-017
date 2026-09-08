@@ -1,5 +1,93 @@
 import json
-from typing import Dict, List
+import re
+from typing import Dict, List, Optional, Tuple
+
+
+ARBITRATE_CONTRADICTION_PROMPT = """You are a principal software requirements governance arbiter.
+Two software requirements in the final specification are in direct contradiction with each other:
+
+Requirement A ({id_a}): "{text_a}"
+Requirement B ({id_b}): "{text_b}"
+
+Conflict Context / Reason: {reason}
+
+GOVERNANCE ARBITRATION PRINCIPLES:
+1. Active Business Capability / Structured Workflow > Blanket Negative Prohibition (e.g. structured cancellation or refund policy takes precedence over a blanket zero-refund ban).
+2. Security, Integrity & Administrative Governance > Unmoderated / Unrestricted Access (e.g. administrator approval requirement takes precedence over unmoderated instant publishing).
+3. Specific Defined Capability > Broad Generic Statement.
+
+Determine which requirement should be RETAINED and which should be DROPPED to make the software specification safe and consistent.
+
+Return ONLY valid JSON with this exact structure:
+{{
+  "keep_id": "{id_a}",
+  "drop_id": "{id_b}",
+  "rationale": "Clear 1-sentence explanation of why this requirement was selected based on governance principles."
+}}
+"""
+
+
+def arbitrate_contradiction(
+    id_a: str,
+    text_a: str,
+    id_b: str,
+    text_b: str,
+    reason: str
+) -> Tuple[str, str, str]:
+    """
+    Dynamically arbitrates a contradiction between any two requirements using LLM governance reasoning
+    with semantic fallback. NO HARDCODED IDS.
+    """
+    prompt = ARBITRATE_CONTRADICTION_PROMPT.format(
+        id_a=id_a,
+        text_a=text_a,
+        id_b=id_b,
+        text_b=text_b,
+        reason=reason
+    )
+
+    try:
+        from services.llm import llm
+        response = llm.invoke(prompt)
+        content = (response.content or "").strip()
+
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL | re.IGNORECASE)
+        json_str = match.group(1) if match else content
+        start = json_str.find("{")
+        end = json_str.rfind("}")
+        if start != -1 and end != -1:
+            data = json.loads(json_str[start:end + 1])
+            keep_id = data.get("keep_id")
+            drop_id = data.get("drop_id")
+            rationale = data.get("rationale") or "Resolved via software engineering governance principles."
+
+            if keep_id in (id_a, id_b) and drop_id in (id_a, id_b) and keep_id != drop_id:
+                return keep_id, drop_id, rationale
+    except Exception as exc:
+        print(f"[arbitrate_contradiction WARNING] Dynamic LLM arbitration fallback: {exc}")
+
+    # Deterministic Semantic Governance Fallback (Domain-agnostic heuristics)
+    # Principle 1: Active business workflow vs blanket prohibition
+    is_a_prohibition = bool(re.search(r"\b(no\s+refund|never|cannot\s+be\s+refunded|prohibit|disallow)\b", text_a, re.I))
+    is_b_prohibition = bool(re.search(r"\b(no\s+refund|never|cannot\s+be\s+refunded|prohibit|disallow)\b", text_b, re.I))
+    if is_a_prohibition and not is_b_prohibition:
+        return id_b, id_a, "Retained active business capability and dropped opposing blanket negative prohibition."
+    if is_b_prohibition and not is_a_prohibition:
+        return id_a, id_b, "Retained active business capability and dropped opposing blanket negative prohibition."
+
+    # Principle 2: Administrative governance/security vs unmoderated access
+    is_a_gov = bool(re.search(r"\b(admin|approval|review|moderation|verify|authorized)\b", text_a, re.I))
+    is_b_gov = bool(re.search(r"\b(admin|approval|review|moderation|verify|authorized)\b", text_b, re.I))
+    if is_a_gov and not is_b_gov:
+        return id_a, id_b, "Enforced administrative governance/approval requirement over unmoderated access."
+    if is_b_gov and not is_a_gov:
+        return id_b, id_a, "Enforced administrative governance/approval requirement over unmoderated access."
+
+    # Principle 3: Greater specificity
+    if len(text_a) >= len(text_b):
+        return id_a, id_b, "Retained more detailed requirement statement."
+    return id_b, id_a, "Retained more detailed requirement statement."
+
 
 
 def get_requirement_type(requirement_id: str):
@@ -37,7 +125,8 @@ def extract_original_requirements(
         original_items.append({
             "id": item["id"],
             "text": text,
-            "type": "functional"
+            "type": "functional",
+            "source_evidence": item.get("source_evidence", [])
         })
 
     # =========================================================
@@ -52,8 +141,28 @@ def extract_original_requirements(
         original_items.append({
             "id": item["id"],
             "text": text,
-            "type": "non_functional"
+            "type": "non_functional",
+            "quality_attribute": item.get("quality_attribute"),
+            "source_evidence": item.get("source_evidence", [])
         })
+
+    # Fallback if specified_requirements was not keyed
+    if not original_items:
+        for item in requirements.get("functional", []):
+            original_items.append({
+                "id": item["id"],
+                "text": item.get("description") or item.get("text", ""),
+                "type": "functional",
+                "source_evidence": item.get("source_evidence", [])
+            })
+        for item in requirements.get("non_functional", []):
+            original_items.append({
+                "id": item["id"],
+                "text": item.get("description") or item.get("text", ""),
+                "type": "non_functional",
+                "quality_attribute": item.get("quality_attribute"),
+                "source_evidence": item.get("source_evidence", [])
+            })
 
     return original_items
 
@@ -62,8 +171,12 @@ def reconcile_requirements(
     original_requirements: Dict,
     accepted_changes: Dict,
     answer_requirements: Dict,
-    normalized_new_requirements: List[Dict]
+    normalized_new_requirements: List[Dict],
+    requirement_analysis: Optional[Dict] = None
 ) -> Dict:
+
+    if requirement_analysis is None and isinstance(original_requirements, dict):
+        requirement_analysis = original_requirements.get("requirement_analysis")
 
     print(
         "\n========== RECONCILING REQUIREMENTS =========="
@@ -173,9 +286,16 @@ def reconcile_requirements(
                 f"{requirement_id}"
             )
 
-        requirements_by_id[
-            requirement_id
-        ]["text"] = change["new_text"]
+        new_text = change.get("new_text") or change.get("text", "")
+        requirements_by_id[requirement_id]["text"] = new_text
+
+        # Append audit trail to source_evidence
+        existing_ev = requirements_by_id[requirement_id].get("source_evidence", [])
+        audit_entry = {
+            "speaker": "Client (HITL Review)",
+            "statement": f"Client edited requirement to: \"{new_text}\""
+        }
+        requirements_by_id[requirement_id]["source_evidence"] = [*existing_ev, audit_entry]
 
     # ---------------------------------------------------------
     # DELETE
@@ -197,13 +317,20 @@ def reconcile_requirements(
     for change in added_changes:
 
         requirement_id = change["id"]
+        add_text = change.get("new_text") or change.get("text", "")
 
         requirements_by_id[
             requirement_id
         ] = {
             "id": requirement_id,
-            "text": change["text"],
-            "type": None
+            "text": add_text,
+            "type": None,
+            "source_evidence": [
+                {
+                    "speaker": "Client (HITL Review)",
+                    "statement": f"Client added new requirement: \"{add_text}\""
+                }
+            ]
         }
 
 
@@ -317,13 +444,21 @@ def reconcile_requirements(
     for requirement in normalized_new_requirements:
 
         requirement_id = requirement["id"]
+        existing = requirements_by_id.get(requirement_id, {})
+        source_ev = existing.get("source_evidence") or [
+            {
+                "speaker": "Client (HITL Review)",
+                "statement": f"Client added new requirement: \"{requirement['text']}\""
+            }
+        ]
 
         requirements_by_id[
             requirement_id
         ] = {
             "id": requirement_id,
             "text": requirement["text"],
-            "type": requirement["type"]
+            "type": requirement.get("type", "functional"),
+            "source_evidence": source_ev
         }
 
     print(
@@ -351,14 +486,104 @@ def reconcile_requirements(
 
         if requirement.get("type") is None:
 
-            requirement["type"] = (
-                get_requirement_type(
-                    requirement_id
-                )
-            )
+            recovered = get_requirement_type(requirement_id)
+            requirement["type"] = recovered or "functional"
+
+    # =========================================================
+    # 5.5 Canonical sequential ID assignment for new additions
+    # =========================================================
+
+    # Prevent ID collision: Do not recycle deleted requirement IDs for new additions
+    all_seen_fr_nums = [
+        int(m.group(1)) for r in list(requirements_by_id.values()) + original_items
+        if (m := re.match(r"^FR-(\d+)$", str(r.get("id", ""))))
+    ]
+    next_fr_num = max(all_seen_fr_nums, default=0) + 1
+
+    all_seen_nfr_nums = [
+        int(m.group(1)) for r in list(requirements_by_id.values()) + original_items
+        if (m := re.match(r"^NFR-(\d+)$", str(r.get("id", ""))))
+    ]
+    next_nfr_num = max(all_seen_nfr_nums, default=0) + 1
+
+    updated_requirements_by_id = {}
+    for req_id, requirement in list(requirements_by_id.items()):
+        if str(req_id).startswith("new-") or not (str(req_id).startswith("FR-") or str(req_id).startswith("NFR-")):
+            if requirement.get("type") == "non_functional":
+                canonical_id = f"NFR-{next_nfr_num}"
+                next_nfr_num += 1
+            else:
+                canonical_id = f"FR-{next_fr_num}"
+                next_fr_num += 1
+            print(f"[Reconciliation] Assigned canonical ID '{canonical_id}' to addition (was '{req_id}')")
+            requirement["id"] = canonical_id
+            updated_requirements_by_id[canonical_id] = requirement
+        else:
+            updated_requirements_by_id[req_id] = requirement
+
+    requirements_by_id = updated_requirements_by_id
+
+    # =========================================================
+    # 5.6 Automated Dynamic Contradiction Resolution Safety Net (Layer 2)
+    # =========================================================
+    # Dynamically detects and resolves any contradictory pairs that survived client review.
+    # Uses governance arbitration principles without hardcoded requirement IDs.
+    if requirement_analysis and isinstance(requirement_analysis, dict):
+        flagged = requirement_analysis.get("flagged_requirements", [])
+        edited_ids = {c.get("id") for c in accepted_changes.get("edited", []) if c.get("id")}
+        resolved_conflicts = set()
+
+        for item in flagged:
+            if item.get("issue_type") != "contradictory":
+                continue
+            r1_id = str(item.get("id"))
+            conflicts = item.get("conflicting_with") or item.get("conflicts_with") or []
+            if isinstance(conflicts, str):
+                conflicts = [conflicts]
+
+            for r2_id_raw in conflicts:
+                r2_id = str(r2_id_raw)
+                pair_key = tuple(sorted([r1_id, r2_id]))
+                if pair_key in resolved_conflicts:
+                    continue
+
+                if r1_id in requirements_by_id and r2_id in requirements_by_id:
+                    resolved_conflicts.add(pair_key)
+                    r1_obj = requirements_by_id[r1_id]
+                    r2_obj = requirements_by_id[r2_id]
+                    r1_text = r1_obj.get("text") or r1_obj.get("description", "")
+                    r2_text = r2_obj.get("text") or r2_obj.get("description", "")
+                    reason = item.get("reason", "Direct conflict between business rules")
+
+                    # Check client explicit edit intent
+                    if r1_id in edited_ids and r2_id not in edited_ids:
+                        keep_id, drop_id = r1_id, r2_id
+                        rationale = f"Client explicitly edited {r1_id}, confirming intent over conflicting {r2_id}."
+                    elif r2_id in edited_ids and r1_id not in edited_ids:
+                        keep_id, drop_id = r2_id, r1_id
+                        rationale = f"Client explicitly edited {r2_id}, confirming intent over conflicting {r1_id}."
+                    else:
+                        # Dynamic Semantic & Governance Arbitration
+                        keep_id, drop_id, rationale = arbitrate_contradiction(
+                            r1_id, r1_text, r2_id, r2_text, reason
+                        )
+
+                    # Apply resolution
+                    requirements_by_id.pop(drop_id, None)
+                    surviving = requirements_by_id.get(keep_id)
+                    if surviving:
+                        ev = surviving.get("source_evidence") or []
+                        surviving["source_evidence"] = [
+                            *ev,
+                            {
+                                "speaker": "System (Contradiction Safety Net)",
+                                "statement": f"Automatically resolved direct conflict: dropped {drop_id}. Rationale: {rationale}"
+                            }
+                        ]
+                    print(f"[Dynamic Safety Net] Resolved contradiction between {r1_id} and {r2_id}: kept {keep_id}, dropped {drop_id}. Rationale: {rationale}")
 
     print(
-        f"\nAFTER CLASSIFICATION RECOVERY COUNT: "
+        f"\nAFTER CLASSIFICATION RECOVERY, CANONICAL NUMBERING & SAFETY NET COUNT: "
         f"{len(requirements_by_id)}"
     )
 
@@ -479,7 +704,33 @@ def reconcile_requirements(
     # 10. Build final result
     # =========================================================
 
+    canonical_frs = []
+    for req in functional_requirements:
+        canonical_frs.append({
+            "id": req["id"],
+            "description": req.get("description") or req.get("text", ""),
+            "source_evidence": req.get("source_evidence") or [
+                {"speaker": "Client", "statement": req.get("description") or req.get("text", "")}
+            ]
+        })
+
+    canonical_nfrs = []
+    for req in non_functional_requirements:
+        canonical_nfrs.append({
+            "id": req["id"],
+            "description": req.get("description") or req.get("text", ""),
+            "source_evidence": req.get("source_evidence") or [
+                {"speaker": "Client", "statement": req.get("description") or req.get("text", "")}
+            ]
+        })
+
     final_result = {
+        "specified_requirements": {
+            "functional": canonical_frs,
+            "non_functional": canonical_nfrs
+        },
+        "functional": canonical_frs,
+        "non_functional": canonical_nfrs,
         "sections": [
             {
                 "title": "Functional Requirements",
