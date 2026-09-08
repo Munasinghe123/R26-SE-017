@@ -1,4 +1,4 @@
-﻿from typing import TypedDict, Optional, List, Dict, Any
+from typing import TypedDict, Optional, List, Dict, Any
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -21,6 +21,13 @@ class GraphState(TypedDict):
     requirements: Optional[Dict]
     client_view: Optional[Dict]
     feedback: Optional[str]
+
+    # multi-stage extraction pipeline
+    evidence_candidates: Optional[List[Dict]]
+    normalized_requirements: Optional[List[Dict]]
+    classified_requirements: Optional[List[Dict]]
+    extraction_quality_report: Optional[Dict]
+    requirement_analysis: Optional[Dict]
 
     # agent state tracking
     previous_requirements: Optional[Dict]
@@ -51,6 +58,7 @@ class GraphState(TypedDict):
 
     # final output
     final_requirements: Optional[Dict]
+    reconciliation_analysis: Optional[Dict]
 
     # srs
     srs_text: Optional[Dict]
