@@ -62,29 +62,22 @@ RULES:
     already sufficiently clear from the client change and project
     context.
 
-14. Generate the minimum number of questions necessary.
+14. Generate the minimum number of questions necessary (MAXIMUM of 3 questions in total).
 
-15. Generate between 1 and 2 questions only when clarification is
-    genuinely necessary for a specific change.
+15. Prioritize the highest-impact ambiguities (such as contradictions, security/access bounds, or undefined outputs) over minor phrasing issues.
 
-16. Every question must directly address a specific unresolved
-    business issue provided in the input.
+16. Every question must directly address a specific unresolved business issue provided in the input.
 
-17. Requirement identifiers are internal metadata only.
+17. For EACH question, provide 2 to 4 concrete `suggested_options` (e.g., specific formats, roles, or policies) so the client can easily choose an option or use it as a reference.
 
-18. NEVER mention internal requirement identifiers such as FR-1,
-    FR-14, FR-21, NFR-1, NFR-2, Q-1, or generated IDs inside the
-    client-facing question or reason.
+18. NEVER mention internal requirement identifiers such as FR-1, FR-14, FR-21, NFR-1, NFR-2, Q-1, or generated IDs inside the client-facing `question` or `reason`.
+    Refer instead to the feature or phrasing (e.g. "Regarding the export feature you edited..." or "In the newly added login requirement...").
 
-19. The requirement identifier must appear only in the structured
-    `requirement_id` field.
+19. The requirement identifier must appear only in the structured `requirement_id` field.
 
-20. Do not mention that a question is being asked because of an
-    internal requirement, change analysis, classifier, agent,
-    system, or workflow.
+20. Do not mention that a question is being asked because of an internal requirement, change analysis, classifier, agent, system, or workflow.
 
-21. The `question` and `reason` fields must be written entirely
-    for the business client.
+21. The `question` and `reason` fields must be written entirely in clear, friendly business language.
 
 22. Return ONLY valid JSON.
 
@@ -95,8 +88,14 @@ OUTPUT:
         {
             "id": "Q-1",
             "requirement_id": "FR-8",
-            "question": "Business-oriented question",
-            "reason": "Business-oriented explanation of why this clarification is needed"
+            "question": "Which export formats should the system support?",
+            "suggested_options": [
+                "CSV only",
+                "CSV and Excel (.xlsx)",
+                "PDF and Excel",
+                "Other (specify below)"
+            ],
+            "reason": "Clarification needed because the edited requirement mentions exporting logs without specifying the file format."
         }
     ]
 }
@@ -172,7 +171,8 @@ def validate_questions(
     for change_type in (
         "edited",
         "deleted",
-        "added"
+        "added",
+        "contradictions"
     ):
 
         for change in clarification_changes.get(
@@ -183,87 +183,79 @@ def validate_questions(
             expected_ids.add(
                 change["id"]
             )
+            if change.get("conflicts_with"):
+                expected_ids.add(change["conflicts_with"])
 
     # ---------------------------------------------------------
     # Validate questions
     # ---------------------------------------------------------
 
+    valid_questions = []
     question_ids = set()
 
     for question in questions:
 
         if not isinstance(question, dict):
-            raise ValueError(
-                "Each question must be an object."
-            )
+            continue
 
         question_id = question.get("id")
-        requirement_id = question.get(
-            "requirement_id"
-        )
+        requirement_id = question.get("requirement_id")
         text = question.get("question")
         reason = question.get("reason")
 
-        if not isinstance(question_id, str):
-            raise ValueError(
-                "Each question must contain a string 'id'."
-            )
-
-        if not isinstance(
-            requirement_id,
-            str
-        ):
-            raise ValueError(
-                "Each question must contain a string "
-                "'requirement_id'."
-            )
+        if not isinstance(question_id, str) or not isinstance(requirement_id, str):
+            continue
 
         if requirement_id not in expected_ids:
-            raise ValueError(
-                f"Question references requirement "
-                f"'{requirement_id}', which does not "
-                f"require clarification."
-            )
+            print(f"[generate_targeted_questions] Dropping question referencing non-clarification ID: '{requirement_id}'")
+            continue
 
         if not isinstance(text, str) or not text.strip():
-            raise ValueError(
-                f"Invalid question for {requirement_id}."
-            )
+            continue
 
         if not isinstance(reason, str) or not reason.strip():
-            raise ValueError(
-                f"Invalid reason for {requirement_id}."
-            )
+            reason = "Clarification required to ensure accurate requirement implementation."
+
+        options = question.get("suggested_options", [])
+        if not isinstance(options, list):
+            options = []
+        question["suggested_options"] = [str(o).strip() for o in options if str(o).strip()]
+
+        # Scrub any accidental technical IDs from question and reason
+        question["question"] = re.sub(r"\b(FR|NFR|RC|Q)-\d+\b", "this requirement", text, flags=re.IGNORECASE).strip()
+        question["reason"] = re.sub(r"\b(FR|NFR|RC|Q)-\d+\b", "this requirement", reason, flags=re.IGNORECASE).strip()
 
         if question_id in question_ids:
-            raise ValueError(
-                f"Duplicate question ID: {question_id}"
-            )
+            question_id = f"Q-{len(valid_questions) + 1}"
+            question["id"] = question_id
 
         question_ids.add(question_id)
+        valid_questions.append(question)
 
     # ---------------------------------------------------------
-    # Ensure every clarification change receives a question
+    # Attach requirement context for UI clarity
     # ---------------------------------------------------------
 
-    questioned_ids = {
-        question["requirement_id"]
-        for question in questions
-    }
+    changes_by_id = {}
+    for change_type in ("edited", "deleted", "added"):
+        for c in clarification_changes.get(change_type, []):
+            cid = c.get("id")
+            if cid:
+                changes_by_id[cid] = {
+                    "action": change_type,
+                    "text": c.get("new_text") or c.get("text", "") or c.get("old_text", "")
+                }
 
-    missing_ids = expected_ids - questioned_ids
+    for q in valid_questions:
+        c_info = changes_by_id.get(q.get("requirement_id"), {})
+        q["requirement_text"] = c_info.get("text", "")
+        q["client_action"] = c_info.get("action", "change")
 
-    if missing_ids:
-        print(f"[generate_targeted_questions] Auto-generating questions for missing IDs: {sorted(missing_ids)}")
-        for rid in sorted(missing_ids):
-            qid = f"Q-{len(questions) + 1}"
-            questions.append({
-                "id": qid,
-                "requirement_id": rid,
-                "question": f"Please clarify the intended behavior or requirements for {rid}.",
-                "reason": "Clarification required to resolve requirement dependency/conflict."
-            })
+    # Cap to maximum 3 questions to prevent client fatigue
+    if len(valid_questions) > 3:
+        valid_questions = valid_questions[:3]
 
+    data["questions"] = valid_questions
     return True
 
 
@@ -279,33 +271,55 @@ def generate_targeted_questions(
     # Nothing requires clarification
     # ---------------------------------------------------------
 
-    total_changes = sum(
-        len(
-            clarification_changes.get(
-                change_type,
-                []
-            )
-        )
-        for change_type in (
-            "edited",
-            "deleted",
-            "added"
-        )
+    contradictions = clarification_changes.get("contradictions", [])
+    other_changes_count = sum(
+        len(clarification_changes.get(change_type, []))
+        for change_type in ("edited", "deleted", "added")
     )
+    total_changes = other_changes_count + len(contradictions)
 
     if total_changes == 0:
-
-        print(
-            "No changes require clarification."
-        )
-
-        return {
-            "questions": []
-        }
+        print("No changes require clarification.")
+        return {"questions": []}
 
     # ---------------------------------------------------------
-    # LLM receives ONLY problematic changes
+    # 1. Direct multiple-choice resolution for contradictions
     # ---------------------------------------------------------
+    contradiction_questions = []
+    for idx, c in enumerate(contradictions):
+        r1_id = c.get("id")
+        r2_id = c.get("conflicts_with")
+        r1_text = c.get("r1_text", "")
+        r2_text = c.get("r2_text", "")
+
+        contradiction_questions.append({
+            "id": f"Q-CONFLICT-{idx + 1}",
+            "requirement_id": r1_id,
+            "conflicts_with": r2_id,
+            "question": "Which of these two conflicting policies should the platform follow?",
+            "suggested_options": [
+                f"Keep: \"{r1_text}\" (Removes opposing rule)",
+                f"Keep: \"{r2_text}\" (Removes opposing rule)"
+            ],
+            "reason": f"Direct conflict: {c.get('reason', 'Both policies cannot coexist.')}",
+            "requirement_text": f"Conflicting rules: \"{r1_text}\" vs \"{r2_text}\"",
+            "client_action": "conflict"
+        })
+
+    # If only contradictions exist or cap reached, return directly
+    if other_changes_count == 0 or len(contradiction_questions) >= 3:
+        capped = contradiction_questions[:3]
+        print(f"Generated {len(capped)} direct contradiction resolution questions.")
+        return {"questions": capped}
+
+    # ---------------------------------------------------------
+    # 2. LLM generates questions for remaining changes
+    # ---------------------------------------------------------
+    non_contradiction_changes = {
+        "edited": clarification_changes.get("edited", []),
+        "deleted": clarification_changes.get("deleted", []),
+        "added": clarification_changes.get("added", [])
+    }
 
     prompt = f"""
 {QUESTION_GENERATION_PROMPT}
@@ -313,15 +327,14 @@ def generate_targeted_questions(
 CHANGES REQUIRING CLARIFICATION:
 
 {json.dumps(
-    clarification_changes,
+    non_contradiction_changes,
     indent=4,
     ensure_ascii=False
 )}
 """
 
     print(
-        f"Generating questions for "
-        f"{total_changes} changes..."
+        f"Generating questions for {other_changes_count} other changes..."
     )
 
     print(
@@ -329,7 +342,6 @@ CHANGES REQUIRING CLARIFICATION:
     )
 
     response = llm.invoke(prompt)
-
     content = response.content.strip()
 
     print(
@@ -382,11 +394,16 @@ CHANGES REQUIRING CLARIFICATION:
 
     validate_questions(
         data,
-        clarification_changes
+        non_contradiction_changes
     )
 
     print(
         "Question validation: SUCCESS"
     )
 
+    merged = contradiction_questions + data.get("questions", [])
+    if len(merged) > 3:
+        merged = merged[:3]
+
+    data["questions"] = merged
     return data

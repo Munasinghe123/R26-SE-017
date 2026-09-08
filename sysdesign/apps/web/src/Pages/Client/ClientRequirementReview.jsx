@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Send,
   CheckCheck,
+  AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -41,6 +42,9 @@ function parseItems(clientView) {
         originalText: text,
         deleted: false,
         isNew: false,
+        needs_review: Boolean(item.needs_review),
+        issue_type: item.issue_type || null,
+        review_reason: item.review_reason || null,
       });
     });
   } else if (clientView?.sections && Array.isArray(clientView.sections)) {
@@ -56,6 +60,9 @@ function parseItems(clientView) {
           originalText: text,
           deleted: false,
           isNew: false,
+          needs_review: Boolean(item.needs_review),
+          issue_type: item.issue_type || null,
+          review_reason: item.review_reason || null,
         });
       })
     );
@@ -304,6 +311,7 @@ export default function ClientRequirementReview() {
   const editedCount = items.filter((i) => !i.deleted && !i.isNew && i.text !== i.originalText).length;
   const addedCount = items.filter((i) => !i.deleted && i.isNew).length;
   const deletedCount = items.filter((i) => i.deleted).length;
+  const reviewNeededCount = items.filter((i) => !i.deleted && i.needs_review).length;
 
   return (
     <div className="min-h-screen w-full pt-28 pb-16 px-4 md:px-12 text-white">
@@ -366,6 +374,12 @@ export default function ClientRequirementReview() {
 
                 {/* Status Pills */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {reviewNeededCount > 0 && (
+                    <span className="text-[11px] font-semibold text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-full border border-amber-400/40 flex items-center gap-1.5 animate-pulse">
+                      <AlertTriangle size={12} />
+                      {reviewNeededCount} Needs Attention
+                    </span>
+                  )}
                   <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-400/20">
                     {keptCount} Kept
                   </span>
@@ -460,6 +474,8 @@ export default function ClientRequirementReview() {
                             ? "bg-purple-500/8 border-purple-400/30 hover:border-purple-400/50"
                             : isEditing
                             ? "bg-cyan-500/10 border-cyan-400/40"
+                            : item.needs_review
+                            ? "bg-amber-500/8 border-amber-400/40 hover:border-amber-400/70 shadow-amber-500/5"
                             : "bg-white/5 hover:bg-cyan-500/10 border-white/10 hover:border-cyan-400/40"}`}
                       >
                         {/* Status Icon */}
@@ -504,8 +520,27 @@ export default function ClientRequirementReview() {
                             </p>
                           )}
 
+                          {/* Reason Banner for Flagged Requirements */}
+                          {item.needs_review && !item.deleted && (
+                            <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-400/30 text-xs text-amber-200 flex items-start gap-2.5">
+                              <AlertTriangle size={15} className="shrink-0 text-amber-400 mt-0.5" />
+                              <div>
+                                <span className="font-bold uppercase tracking-wider text-amber-300 mr-2">
+                                  Attention ({item.issue_type || "Clarification Needed"}):
+                                </span>
+                                <span className="text-gray-200 leading-relaxed">{item.review_reason}</span>
+                              </div>
+                            </div>
+                          )}
+
                           {/* Action Badges */}
                           <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            {item.needs_review && !item.deleted && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center gap-1">
+                                <AlertTriangle size={9} />
+                                {item.issue_type?.toUpperCase() || "NEEDS REVIEW"}
+                              </span>
+                            )}
                             {isKept && (
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/20">
                                 KEEP
@@ -666,7 +701,7 @@ export default function ClientRequirementReview() {
                     <div className="shrink-0 h-6 w-6 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-xs">
                       {idx + 1}
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1 w-full">
                       <h4 className="text-sm font-semibold text-white leading-relaxed">
                         {q.question}
                       </h4>
@@ -675,16 +710,45 @@ export default function ClientRequirementReview() {
                           Context: {q.reason}
                         </p>
                       )}
+                      {q.requirement_text && (
+                        <div className="mt-2.5 p-3 rounded-xl bg-black/40 border border-white/10 text-xs text-cyan-200/90 leading-relaxed flex items-start gap-2">
+                          <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-400/30">
+                            {q.client_action === "added" ? "Added" : q.client_action === "deleted" ? "Deleted" : "Edited"}
+                          </span>
+                          <span className="italic">"{q.requirement_text}"</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="pl-9">
+                  <div className="pl-9 space-y-3">
+                    {/* Suggested Options Chips */}
+                    {q.suggested_options && Array.isArray(q.suggested_options) && q.suggested_options.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <span className="text-[11px] font-medium text-gray-400 mr-1">Suggested:</span>
+                        {q.suggested_options.map((opt, optIdx) => (
+                          <button
+                            key={optIdx}
+                            type="button"
+                            onClick={() => handleAnswerChange(q.id, opt)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
+                              answers[q.id] === opt
+                                ? "bg-amber-500/25 text-amber-300 border-amber-400/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                                : "bg-white/5 hover:bg-white/10 text-gray-300 border-white/10 hover:border-white/20"
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     <textarea
                       rows={3}
                       value={answers[q.id] || ""}
                       onChange={(e) => handleAnswerChange(q.id, e.target.value)}
-                      placeholder="Type your answer here..."
-                      className="w-full p-4 rounded-xl bg-black/40 border border-white/10 text-white text-sm focus:border-amber-400 focus:outline-none transition resize-none placeholder-gray-500"
+                      placeholder="Type or select a suggested option above..."
+                      className="w-full p-4 rounded-xl bg-black/40 border border-white/10 text-white text-sm focus:border-amber-400 focus:outline-none transition resize-none placeholder-gray-500 leading-relaxed"
                     />
                   </div>
                 </div>
