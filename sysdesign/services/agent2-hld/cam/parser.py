@@ -58,10 +58,59 @@ def _attempt_json_repair(json_str: str) -> str:
     fixed = json_str
     # Remove single line comments // ...
     fixed = re.sub(r'//.*?$', '', fixed, flags=re.MULTILINE)
+    # Remove multi-line comments /* ... */
+    fixed = re.sub(r'/\*.*?\*/', '', fixed, flags=re.DOTALL)
     # Remove trailing commas before } or ] (including across newlines)
     fixed = re.sub(r',\s*([\}\]])', r'\1', fixed)
     fixed = re.sub(r',\s*([\n\r\s]*[\}\]])', r'\1', fixed)
     return fixed
+
+
+def extract_and_parse_json(raw_text: str) -> dict:
+    """
+    Extract and parse JSON object from LLM response with multiple fallback repair passes.
+    """
+    json_str = extract_json_from_text(raw_text)
+
+    # Pass 1: Direct JSON parse
+    try:
+        data = json.loads(json_str)
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, Exception):
+        pass
+
+    # Pass 2: Cleaned with JSON repair (trailing commas, comments)
+    fixed_str = _attempt_json_repair(json_str)
+    try:
+        data = json.loads(fixed_str)
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, Exception):
+        pass
+
+    # Pass 3: Extract innermost or outermost curly braces from raw text
+    first_brace = raw_text.find("{")
+    last_brace = raw_text.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        sliced = raw_text[first_brace:last_brace + 1]
+        try:
+            data = json.loads(sliced)
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, Exception):
+            pass
+
+        fixed_sliced = _attempt_json_repair(sliced)
+        try:
+            data = json.loads(fixed_sliced)
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, Exception) as err:
+            raise CAMParseError(f"Could not parse valid JSON from LLM output: {err}")
+
+    raise CAMParseError("No valid JSON object found in response")
+
 
 
 def normalize_boundary(layer_name: Optional[str], boundary_name: Optional[str]) -> Boundary:
