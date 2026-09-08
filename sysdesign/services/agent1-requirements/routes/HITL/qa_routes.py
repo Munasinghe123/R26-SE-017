@@ -122,20 +122,22 @@ async def submit_question_answers(
         config=config
     )
 
-    # Mark this project's analysis as completed if DB pool is active.
-    if getattr(db, "pool", None) and project_id:
+    # Mark this meeting as completed if DB pool is active.
+    if getattr(db, "pool", None) and thread_id:
         try:
+            import uuid
+            m_uuid = uuid.UUID(thread_id)
             async with db.pool.acquire() as connection:
                 await connection.execute(
                     """
-                    UPDATE projects
-                    SET analysis_status = 'completed'
+                    UPDATE meetings
+                    SET status = 'completed', updated_at = now()
                     WHERE id = $1
                     """,
-                    project_id
+                    m_uuid
                 )
-        except Exception as e:
-            print(f"[qa_routes] Warning: Failed to update project analysis_status: {e}")
+        except Exception:
+            pass
 
     return {
         "thread_id": thread_id,
