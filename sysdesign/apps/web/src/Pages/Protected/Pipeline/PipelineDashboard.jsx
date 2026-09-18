@@ -200,7 +200,7 @@ export default function PipelineDashboard() {
             className="text-5xl font-bold text-white"
             style={{ fontFamily: "Orbitron, sans-serif" }}
           >
-            Pipeline <span className="text-cyan-300">Dashboard</span>
+            Project <span className="text-cyan-300">Progress</span>
           </h1>
           <p className="text-white/50 text-sm tracking-widest uppercase">
             Job ID: <span className="text-cyan-400 font-mono">{jobId}</span>
