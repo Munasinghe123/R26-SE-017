@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
-import audio from "../Images/audio.png";
+import audio from "../../Images/audio.png";
 
 function UploadAudio() {
   const navigate = useNavigate();

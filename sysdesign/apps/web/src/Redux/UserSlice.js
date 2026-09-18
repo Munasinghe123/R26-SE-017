@@ -14,6 +14,14 @@ const userSlice = createSlice({
       state.isAuthenticated = true;
     },
 
+    updateUser: (state, action) => {
+      if (state.userInfo) {
+        state.userInfo = { ...state.userInfo, ...action.payload };
+      } else {
+        state.userInfo = action.payload;
+      }
+    },
+
     logout: (state) => {
       state.userInfo = null;
       state.isAuthenticated = false;
@@ -21,5 +29,5 @@ const userSlice = createSlice({
   },
 });
 
-export const { loginSuccess, logout } = userSlice.actions;
+export const { loginSuccess, updateUser, logout } = userSlice.actions;
 export default userSlice.reducer;

@@ -39,7 +39,7 @@ async def get_requirements_evaluation(meeting_id: str):
     from services.evaluation import evaluate_requirements_suite
     # First get the requirements
     req_data = await get_requirements(meeting_id)
-    raw_reqs = req_data.get("requirements") or {}
+    raw_reqs = req_data.get("final_requirements") or req_data.get("requirements") or {}
     res = await run_in_threadpool(evaluate_requirements_suite, raw_reqs)
     return res
 
