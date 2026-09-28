@@ -8,14 +8,15 @@ import {
   KeyRound,
   MoveRight,
   MoveLeft,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { useDispatch }  from 'react-redux';
-import { loginSuccess } from '../Redux/UserSlice';
+import { useDispatch } from "react-redux";
+import { loginSuccess } from "../Redux/UserSlice";
 import { useNavigate } from "react-router-dom";
 import { decideRoute } from "../components/DecideRoute";
-
 
 export default function GetStarted() {
   const dispatch = useDispatch();
@@ -23,6 +24,9 @@ export default function GetStarted() {
 
   const [isLogin, setIsLogin] = useState(true);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
+  const [isRegisterLoading, setIsRegisterLoading] = useState(false);
 
   //form data
   const [name, setName] = useState("");
@@ -41,14 +45,12 @@ export default function GetStarted() {
     e.preventDefault();
 
     try {
-      if (
-        name.trim() === "" ||
-        email.trim() === "" ||
-        password.trim() === ""
-      ) {
+      if (name.trim() === "" || email.trim() === "" || password.trim() === "") {
         alert("Please fill in all fields.");
         return;
       }
+
+      setIsRegisterLoading(true);
 
       console.log("registering", { name, email, password });
 
@@ -67,6 +69,8 @@ export default function GetStarted() {
     } catch (error) {
       const message = error.response?.data?.error || "Registration failed";
       toast.error(message);
+    } finally {
+      setIsRegisterLoading(false)
     }
   };
 
@@ -78,6 +82,8 @@ export default function GetStarted() {
         alert("Please fill in all fields.");
         return;
       }
+
+      setIsLoginLoading(true);
 
       const response = await axios.post(
         "/login",
@@ -102,6 +108,8 @@ export default function GetStarted() {
     } catch (error) {
       const message = error.response?.data?.error || "Login failed";
       toast.error(message);
+    } finally {
+      setIsLoginLoading(false);
     }
   };
 
@@ -141,8 +149,12 @@ export default function GetStarted() {
                       onChange={(e) => setPassword(e.target.value)}
                     />
 
-                    <button className="w-full py-3 bg-cyan-600 text-white rounded-md hover:bg-white hover:text-cyan-500 transition-colors">
-                      Login
+                    <button
+                      type="submit"
+                      disabled={isLoginLoading}
+                      className="w-full py-3 bg-cyan-600 text-white rounded-md hover:bg-white hover:text-cyan-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isLoginLoading ? "Logging in..." : "Login"}
                     </button>
 
                     <button
@@ -184,10 +196,11 @@ export default function GetStarted() {
                     />
 
                     <button
-                      className="w-full  py-3 bg-cyan-600 text-white rounded-md hover:bg-white hover:text-cyan-500 transition-colors"
                       type="submit"
+                      disabled={isRegisterLoading}
+                      className="w-full py-3 bg-cyan-600 text-white rounded-md hover:bg-white hover:text-cyan-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      Register
+                      {isRegisterLoading ? "Registering..." : "Register"}
                     </button>
 
                     <button className="flex items-center justify-center gap-2 w-full py-3 bg-cyan-600 text-white rounded-md hover:bg-white hover:text-cyan-600 transition-colors">
@@ -315,13 +328,15 @@ export default function GetStarted() {
                     onChange={(e) => setEmail(e.target.value)}
                     icon={Mail}
                   />
-                  <FloatingInput
-                    label="Password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    icon={KeyRound}
-                  />
+                  <div className="relative">
+                    <FloatingInput
+                      label="Password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      icon={KeyRound}
+                    />
+                  </div>
 
                   <button
                     className="w-full py-3 bg-cyan-600 text-white rounded-md hover:bg-white hover:text-cyan-500 transition-colors"

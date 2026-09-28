@@ -20,6 +20,8 @@ async def register_ba(
 ):
     email = email.strip().lower()
     name = name.strip()
+    
+    print("register hit", email, name, password)
 
     # Basic validation
     if not email:

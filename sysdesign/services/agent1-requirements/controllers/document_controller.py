@@ -52,6 +52,12 @@ async def handle_document_upload(file, project_id=None):
             state = graph.get_state(config)
             if state and state.values:
                 cview = state.values.get("client_view")
+        if not cview and reqs:
+            try:
+                from services.HITL.client_view import build_client_view
+                cview = build_client_view(reqs)
+            except Exception as cv_err:
+                print(f"Warning: could not build client_view: {cv_err}")
         await save_meeting_requirements(meeting_id, reqs, client_view=cview, version=1, project_id=project_id)
     except Exception as exc:
         print(f"Warning: could not persist meeting requirements: {exc}")

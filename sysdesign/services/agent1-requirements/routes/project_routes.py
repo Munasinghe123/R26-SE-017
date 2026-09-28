@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from uuid import UUID
 
-from services.project_service import create_project_service, get_projects_by_user_service
+from services.project_service import create_project_service,get_user_projects_service
 
 project_routes = APIRouter()
 
@@ -26,8 +26,15 @@ async def create_project(
 
 from typing import Optional
 
-@project_routes.get("/projects")
-async def get_projects(
-    userId: Optional[str] = None
+# @project_routes.get("/projects")
+# async def get_projects(
+#     userId: Optional[str] = None
+# ):
+#     return await get_projects_by_user_service(userId)
+
+
+@project_routes.get("/projects/user/{user_id}")
+async def get_projects_by_user(
+    user_id: str
 ):
-    return await get_projects_by_user_service(userId)
+    return await get_user_projects_service(user_id)

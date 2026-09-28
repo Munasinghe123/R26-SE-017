@@ -16,7 +16,7 @@ import {
   BarChart3,
   FileCheck2
 } from "lucide-react";
-import QualityEvaluationModal from "../../Components/QualityEvaluationModal";
+import QualityEvaluationModal from "../../../components/Project-Dashboard/Modals/QualityEvaluationModal";
 
 const AGENT1 = import.meta.env.VITE_AGENT1_URL || "http://127.0.0.1:8001";
 

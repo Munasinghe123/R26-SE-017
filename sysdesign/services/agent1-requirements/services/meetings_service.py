@@ -120,6 +120,7 @@ async def get_meeting_requirements(meeting_id: str) -> Optional[Dict[str, Any]]:
                         cview = json.loads(cview)
                     return {
                         "id": str(row["id"]),
+                        "project_id": str(row["project_id"]) if row["project_id"] else None,
                         "requirements": reqs,
                         "client_view": cview,
                         "version": row["version"] or 1,

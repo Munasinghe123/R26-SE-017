@@ -1,5 +1,5 @@
-import meeting from "../Images/Mode/meeting.jpg";
-import recording from "../Images/Mode/recording.jpg";
+import meeting from "../../Images/Mode/meeting.jpg";
+import recording from "../../Images/Mode/recording.jpg";
 import { useNavigate, useLocation } from "react-router-dom";
 
 export default function SelectMode() {

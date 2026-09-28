@@ -122,22 +122,43 @@ async def submit_question_answers(
         config=config
     )
 
+    new_snapshot = graph.get_state(config)
+    final_reqs = None
+    if new_snapshot and new_snapshot.values:
+        final_reqs = new_snapshot.values.get("final_requirements") or new_snapshot.values.get("requirements")
+
     # Mark this meeting as completed if DB pool is active.
     if getattr(db, "pool", None) and thread_id:
         try:
-            import uuid
-            m_uuid = uuid.UUID(thread_id)
-            async with db.pool.acquire() as connection:
-                await connection.execute(
-                    """
-                    UPDATE meetings
-                    SET status = 'completed', updated_at = now()
-                    WHERE id = $1
-                    """,
-                    m_uuid
-                )
-        except Exception:
-            pass
+            import uuid, json
+            m_uuid = None
+            try:
+                m_uuid = uuid.UUID(thread_id)
+            except Exception:
+                pass
+            if m_uuid:
+                async with db.pool.acquire() as connection:
+                    if final_reqs:
+                        await connection.execute(
+                            """
+                            UPDATE meetings
+                            SET status = 'completed', requirements = $2::jsonb, updated_at = now()
+                            WHERE id = $1 OR project_id = $1
+                            """,
+                            m_uuid,
+                            json.dumps(final_reqs, default=str)
+                        )
+                    else:
+                        await connection.execute(
+                            """
+                            UPDATE meetings
+                            SET status = 'completed', updated_at = now()
+                            WHERE id = $1 OR project_id = $1
+                            """,
+                            m_uuid
+                        )
+        except Exception as e:
+            print(f"Warning: could not mark meeting completed in DB: {e}")
 
     return {
         "thread_id": thread_id,
