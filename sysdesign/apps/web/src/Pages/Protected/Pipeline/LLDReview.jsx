@@ -676,40 +676,6 @@ OrderController -> DatabaseRepository: save()
                 )}
               </div>
             </div>
-
-            {/* Database Tables and Column Schemas */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {lld?.entities?.map((ent, idx) => (
-                <div key={idx} className="p-6 rounded-2xl border border-cyan-400/20 bg-black/60 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-white/10 pb-3">
-                    <Database size={18} className="text-cyan-400" />
-                    <h4 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
-                      Table: {ent.name}
-                    </h4>
-                  </div>
-
-                  <div className="space-y-1.5 font-mono text-xs">
-                    <div className="grid grid-cols-4 text-[10px] uppercase font-bold text-white/40 px-2 pb-1">
-                      <span>Column</span>
-                      <span>Type</span>
-                      <span>Key</span>
-                      <span>FK Ref</span>
-                    </div>
-                    {ent.columns?.map((col, ci) => (
-                      <div key={ci} className="grid grid-cols-4 items-center p-2 rounded bg-white/5 border border-white/5 text-[11px]">
-                        <span className="text-white font-bold">{col.name}</span>
-                        <span className="text-cyan-300">{col.type}</span>
-                        <span>
-                          {col.pk && <span className="text-[9px] px-1.5 py-0.5 bg-amber-400/20 text-amber-300 font-bold rounded">PK</span>}
-                          {col.fk && !col.pk && <span className="text-[9px] px-1.5 py-0.5 bg-violet-400/20 text-violet-300 font-bold rounded">FK</span>}
-                        </span>
-                        <span className="text-[10px] text-white/40 truncate">{col.fk || "—"}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
