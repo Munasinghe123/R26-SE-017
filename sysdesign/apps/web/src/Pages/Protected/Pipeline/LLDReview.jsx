@@ -496,56 +496,6 @@ REL_CONTAINS -N- ORDER_ITEMS
                 )}
               </div>
             </div>
-
-            {/* Structured Class Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {lld?.classes?.map((cls, idx) => (
-                <div key={idx} className="p-5 rounded-2xl border border-cyan-400/20 bg-black/60 space-y-4">
-                  <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                    <div>
-                      <h4 className="text-sm font-bold text-white font-mono">{cls.name}</h4>
-                      <p className="text-[10px] text-white/40 font-mono">{cls.package || "package"}</p>
-                    </div>
-                    <span className="text-[10px] uppercase font-bold text-violet-300 bg-violet-400/10 px-2 py-0.5 rounded-full border border-violet-400/20">
-                      {cls.stereotype || "entity"}
-                    </span>
-                  </div>
-
-                  {/* Attributes */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-white/40">Attributes</span>
-                    {cls.attributes?.length > 0 ? (
-                      cls.attributes.map((attr, ai) => (
-                        <div key={ai} className="flex justify-between text-[11px] font-mono text-white/70 bg-white/5 p-1.5 rounded">
-                          <span><strong className="text-red-400">-</strong> {attr.name}</span>
-                          <span className="text-cyan-300">{attr.type}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-[10px] text-white/30 italic">No attributes defined</p>
-                    )}
-                  </div>
-
-                  {/* Methods */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-white/40">Methods</span>
-                    {cls.methods?.length > 0 ? (
-                      cls.methods.map((m, mi) => (
-                        <div key={mi} className="text-[11px] font-mono bg-white/5 p-1.5 rounded space-y-0.5">
-                          <div className="flex justify-between">
-                            <span className="text-green-400">+ {m.name}</span>
-                            <span className="text-pink-300">{m.returns || "void"}</span>
-                          </div>
-                          <p className="text-[10px] text-white/40 truncate">({m.params?.join(", ")})</p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-[10px] text-white/30 italic">No methods defined</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
