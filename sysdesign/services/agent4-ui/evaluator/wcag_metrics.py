@@ -26,6 +26,8 @@ import json
 import os
 import tempfile
 import re
+import logging
+
 from bs4 import BeautifulSoup
 
 

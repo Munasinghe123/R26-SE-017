@@ -118,34 +118,47 @@ export default function PipelineDashboard() {
     esRef.current = es;
 
     es.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      setEvent(data.event);
+      try {
+        const data = JSON.parse(e.data);
+        setEvent(data.event);
 
-      if (data.job) {
-        setJob(data.job);
-        // Build stages map from array
-        const stageMap = {};
-        (data.job.stages || []).forEach(s => { stageMap[s.stage] = s; });
-        setStages(stageMap);
-      }
+        if (data.job) {
+          setJob(data.job);
+          // Build stages map from array
+          const stageMap = {};
+          (data.job.stages || []).forEach(s => { stageMap[s.stage] = s; });
+          setStages(stageMap);
+        }
 
-      if (data.stage) addLog(`[${data.stage.toUpperCase()}] → ${data.status}`);
-      if (data.reason) addLog(`⚠ ${data.reason}`);
-      if (data.error)  addLog(`✗ Error: ${data.error}`);
-      if (data.architecture) setArchitecture(data.architecture);
+        if (data.log) {
+          addLog(data.log);
+        } else if (data.message) {
+          addLog(data.message);
+        } else if (data.stage && data.status) {
+          addLog(`[${data.stage.toUpperCase()}] → ${data.status.toUpperCase()}`);
+        }
 
-      if (data.event === "complete") {
-        addLog("✓ Pipeline complete! Redirecting to results...");
-        setTimeout(() => navigate(`/pipeline/${jobId}/architecture`), 1800);
-      }
+        if (data.reason) addLog(`⚠ ${data.reason}`);
+        if (data.error)  addLog(`✗ Error: ${data.error}`);
+        if (data.architecture) setArchitecture(data.architecture);
 
-      if (data.event === "needs_review") {
-        addLog("⚠ Architecture quality gate triggered. Review required.");
-        setTimeout(() => navigate(`/pipeline/${jobId}/architecture`), 2000);
+        if (data.event === "complete") {
+          addLog("✓ Pipeline complete! Redirecting to architecture review...");
+          setTimeout(() => navigate(`/pipeline/${jobId}/architecture`), 1800);
+        }
+
+        if (data.event === "needs_review") {
+          addLog("⚠ Architecture quality gate triggered. Review required.");
+          setTimeout(() => navigate(`/pipeline/${jobId}/architecture`), 2000);
+        }
+      } catch (err) {
+        console.error("SSE parse error", err);
       }
     };
 
-    es.onerror = () => addLog("SSE connection lost — reconnecting...");
+    es.onerror = () => {
+      // SSE reconnecting silently
+    };
 
     return () => es.close();
   }, [jobId, navigate, addLog]);
@@ -187,7 +200,7 @@ export default function PipelineDashboard() {
             className="text-5xl font-bold text-white"
             style={{ fontFamily: "Orbitron, sans-serif" }}
           >
-            Pipeline <span className="text-cyan-300">Dashboard</span>
+            Project <span className="text-cyan-300">Progress</span>
           </h1>
           <p className="text-white/50 text-sm tracking-widest uppercase">
             Job ID: <span className="text-cyan-400 font-mono">{jobId}</span>

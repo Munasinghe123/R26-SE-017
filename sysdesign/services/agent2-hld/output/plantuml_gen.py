@@ -18,7 +18,7 @@ def generate_plantuml(architecture: dict, title: str = "") -> str:
     style = architecture.get("architecture_style", "Architecture")
     layers = architecture.get("layers", [])
     components = architecture.get("components", [])
-    interactions = architecture.get("interactions", [])
+    connectors = architecture.get("connectors", []) or architecture.get("interactions", [])
 
     title = title or f"{style} Architecture"
 
@@ -41,38 +41,38 @@ def generate_plantuml(architecture: dict, title: str = "") -> str:
     lines.append("}")
     lines.append("")
 
-    # Group components by layer
+    # Group components by layer/boundary
     layer_components = {}
     for comp in components:
-        layer = comp.get("layer", "Unknown")
+        layer = comp.get("layer", comp.get("boundary", "Default Layer"))
         if layer not in layer_components:
             layer_components[layer] = []
         layer_components[layer].append(comp)
 
     # Create packages for each layer
-    for layer in layers:
-        layer_name = layer.get("name", "Unknown")
-        alias = layer_name.replace(" ", "_").replace("-", "_")
-        comps = layer_components.get(layer_name, [])
+    for layer_name, comps in layer_components.items():
+        alias = str(layer_name).replace(" ", "_").replace("-", "_")
 
         lines.append(f'package "{layer_name}" as {alias} {{')
         for comp in comps:
             comp_name = comp.get("name", "Unknown")
             comp_alias = comp_name.replace(" ", "_").replace("-", "_")
-            resp = comp.get("responsibility", "")
+            resps = comp.get("responsibilities", [])
+            resp_str = resps[0] if isinstance(resps, list) and resps else comp.get("responsibility", "")
             lines.append(f'  [{comp_name}] as {comp_alias}')
-            if resp:
-                lines.append(f'  note right of {comp_alias} : {resp[:60]}')
+            if resp_str:
+                lines.append(f'  note right of {comp_alias} : {resp_str[:60]}')
         lines.append("}")
         lines.append("")
 
-    # Add interactions
-    lines.append("' === Interactions ===")
-    for inter in interactions:
-        from_c = inter.get("from", "").replace(" ", "_").replace("-", "_")
-        to_c = inter.get("to", "").replace(" ", "_").replace("-", "_")
-        itype = inter.get("type", "")
-        lines.append(f'{from_c} --> {to_c} : {itype}')
+    # Add connectors / interactions
+    lines.append("' === Connectors ===")
+    for conn in connectors:
+        fc = (conn.get("from_component") or conn.get("from") or "").replace(" ", "_").replace("-", "_")
+        tc = (conn.get("to_component") or conn.get("to") or "").replace(" ", "_").replace("-", "_")
+        ctype = conn.get("connector_type") or conn.get("type") or ""
+        if fc and tc:
+            lines.append(f'{fc} --> {tc} : {ctype}')
 
     lines.append("")
     lines.append("@enduml")

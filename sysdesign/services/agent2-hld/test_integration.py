@@ -1,14 +1,20 @@
 """
-Quick integration test — verifies the full evaluation pipeline
-with a mock architecture (no LLM needed).
+HLA Agent — Integration Test
+Tests the full pipeline without requiring live API calls.
 """
-import sys, json
+
+import sys
+import json
+import io
 from pathlib import Path
+
+# Reconfigure stdout/stderr for Windows console unicode support
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import THRESHOLDS
-from prompt.builder import build_architecture_prompt
-from parsing.parser import parse_architecture
+from config import INPUT_DIR, THRESHOLDS, WEIGHTS
 from evaluation import evaluate_architecture
 from evaluation.cas import rank_candidates
 from output.report import generate_report
@@ -16,80 +22,135 @@ from output.plantuml_gen import generate_plantuml
 from output.mermaid_gen import generate_mermaid
 from output.radar import generate_radar_chart
 
-# Load sample input
-with open("input/sample_food_delivery.json", "r") as f:
-    requirements = json.load(f)
+print("=== HLA AGENT INTEGRATION TEST ===")
 
-# Mock architecture (simulating what an LLM would produce)
+# Load sample input
+sample_file = INPUT_DIR / "sample_food_delivery.json"
+with open(sample_file, "r", encoding="utf-8") as f:
+    requirements = json.load(f)
+print(f"✅ Loaded sample: {requirements['project']}")
+
+# Mock parsed architecture
 mock_arch = {
-    "architecture_style": "Microservices",
+    "architecture_style": "Layered Architecture",
+    "pros_and_cons": "Good separation of concerns with clear layer boundaries.",
     "layers": [
-        {"name": "Presentation", "order": 1},
-        {"name": "API Gateway", "order": 2},
-        {"name": "Business Logic", "order": 3},
-        {"name": "Data Access", "order": 4},
-        {"name": "Infrastructure", "order": 5}
+        {"name": "Presentation Layer", "order": 1},
+        {"name": "Application Layer", "order": 2},
+        {"name": "Domain Layer", "order": 3},
+        {"name": "Data Access Layer", "order": 4},
     ],
     "components": [
-        {"name": "WebAppController", "layer": "Presentation", "responsibility": "Handles user interface rendering and client-side interactions for customers"},
-        {"name": "MobileAppController", "layer": "Presentation", "responsibility": "Manages mobile application views and push notification display"},
-        {"name": "APIGatewayService", "layer": "API Gateway", "responsibility": "Routes incoming API requests and handles authentication and rate limiting"},
-        {"name": "OrderService", "layer": "Business Logic", "responsibility": "Manages order creation validation lifecycle tracking and status updates"},
-        {"name": "PaymentService", "layer": "Business Logic", "responsibility": "Processes secure payment transactions with encryption and fraud detection"},
-        {"name": "DeliveryTrackingService", "layer": "Business Logic", "responsibility": "Tracks delivery driver location in real time on map"},
-        {"name": "RestaurantService", "layer": "Business Logic", "responsibility": "Manages restaurant profiles menu items and pricing information"},
-        {"name": "NotificationService", "layer": "Business Logic", "responsibility": "Sends push notifications emails and SMS for order status changes"},
-        {"name": "UserManagementService", "layer": "Business Logic", "responsibility": "Handles user registration authentication and admin management of users"},
-        {"name": "ReviewRatingService", "layer": "Business Logic", "responsibility": "Manages customer reviews and ratings for restaurants and drivers"},
-        {"name": "DriverService", "layer": "Business Logic", "responsibility": "Manages driver profiles delivery acceptance and completion workflows"},
-        {"name": "OrderRepository", "layer": "Data Access", "responsibility": "Provides data access operations for order persistence and retrieval"},
-        {"name": "UserRepository", "layer": "Data Access", "responsibility": "Handles database operations for user and driver data storage"},
-        {"name": "CacheManager", "layer": "Infrastructure", "responsibility": "Redis-based caching layer for performance optimization of frequent queries"},
-        {"name": "LoadBalancerProxy", "layer": "Infrastructure", "responsibility": "Distributes incoming traffic across multiple service instances for scalability"},
-        {"name": "MessageBrokerService", "layer": "Infrastructure", "responsibility": "RabbitMQ message queue for async event-driven communication between services"}
+        {
+            "name": "OrderApiGateway",
+            "layer": "Presentation Layer",
+            "boundary": "presentation",
+            "element_type": "gateway",
+            "responsibilities": ["Routes external HTTP requests", "Handles API rate limiting and authentication"],
+            "provided_interfaces": ["POST /orders", "GET /orders/{id}"],
+            "required_interfaces": ["OrderService"],
+            "requirement_ids": ["FR-1"]
+        },
+        {
+            "name": "OrderService",
+            "layer": "Application Layer",
+            "boundary": "business_logic",
+            "element_type": "service",
+            "responsibilities": ["Manages order lifecycle and status", "Coordinates payment and delivery service calls"],
+            "provided_interfaces": ["OrderManagementAPI"],
+            "required_interfaces": ["PaymentGatewayService", "OrderRepository"],
+            "requirement_ids": ["FR-1", "FR-2"]
+        },
+        {
+            "name": "PaymentGatewayService",
+            "layer": "Application Layer",
+            "boundary": "business_logic",
+            "element_type": "service",
+            "responsibilities": ["Integrates with external payment provider", "Processes transactions securely"],
+            "provided_interfaces": ["PaymentAPI"],
+            "required_interfaces": ["PaymentRepository"],
+            "requirement_ids": ["FR-3"]
+        },
+        {
+            "name": "DeliveryService",
+            "layer": "Domain Layer",
+            "boundary": "business_logic",
+            "element_type": "service",
+            "responsibilities": ["Assigns drivers to orders based on proximity", "Tracks real-time delivery status"],
+            "provided_interfaces": ["DeliveryTrackingAPI"],
+            "required_interfaces": ["DeliveryRepository"],
+            "requirement_ids": ["FR-4"]
+        },
+        {
+            "name": "OrderRepository",
+            "layer": "Data Access Layer",
+            "boundary": "data_access",
+            "element_type": "repository",
+            "responsibilities": ["Persists order state to database", "Provides transactional queries"],
+            "provided_interfaces": ["OrderDataStore"],
+            "required_interfaces": ["PostgreSQLDatabase"],
+            "requirement_ids": ["FR-1"]
+        },
+        {
+            "name": "PaymentRepository",
+            "layer": "Data Access Layer",
+            "boundary": "data_access",
+            "element_type": "repository",
+            "responsibilities": ["Persists payment transactions", "Stores audit records securely"],
+            "provided_interfaces": ["PaymentDataStore"],
+            "required_interfaces": ["PostgreSQLDatabase"],
+            "requirement_ids": ["FR-3"]
+        },
+        {
+            "name": "DeliveryRepository",
+            "layer": "Data Access Layer",
+            "boundary": "data_access",
+            "element_type": "repository",
+            "responsibilities": ["Persists driver locations and routes", "Stores delivery history"],
+            "provided_interfaces": ["DeliveryDataStore"],
+            "required_interfaces": ["PostgreSQLDatabase"],
+            "requirement_ids": ["FR-4"]
+        },
+        {
+            "name": "NotificationHandler",
+            "layer": "Application Layer",
+            "boundary": "business_logic",
+            "element_type": "handler",
+            "responsibilities": ["Sends push notifications to mobile clients", "Dispatches email receipts"],
+            "provided_interfaces": ["NotificationAPI"],
+            "required_interfaces": ["FCMProvider"],
+            "requirement_ids": ["FR-5"]
+        }
     ],
-    "interactions": [
-        {"from": "WebAppController", "to": "APIGatewayService", "type": "REST", "direction": "down"},
-        {"from": "MobileAppController", "to": "APIGatewayService", "type": "REST", "direction": "down"},
-        {"from": "APIGatewayService", "to": "OrderService", "type": "REST", "direction": "down"},
-        {"from": "APIGatewayService", "to": "UserManagementService", "type": "REST", "direction": "down"},
-        {"from": "APIGatewayService", "to": "RestaurantService", "type": "REST", "direction": "down"},
-        {"from": "OrderService", "to": "PaymentService", "type": "REST", "direction": "lateral"},
-        {"from": "OrderService", "to": "NotificationService", "type": "Event", "direction": "lateral"},
-        {"from": "OrderService", "to": "DeliveryTrackingService", "type": "Event", "direction": "lateral"},
-        {"from": "OrderService", "to": "OrderRepository", "type": "Direct Call", "direction": "down"},
-        {"from": "UserManagementService", "to": "UserRepository", "type": "Direct Call", "direction": "down"},
-        {"from": "DeliveryTrackingService", "to": "DriverService", "type": "REST", "direction": "lateral"},
-        {"from": "OrderService", "to": "CacheManager", "type": "Direct Call", "direction": "down"},
-        {"from": "NotificationService", "to": "MessageBrokerService", "type": "Message Queue", "direction": "down"}
+    "connectors": [
+        {"from_component": "OrderApiGateway", "to_component": "OrderService", "connector_type": "sync_call", "protocol": "REST"},
+        {"from_component": "OrderService", "to_component": "PaymentGatewayService", "connector_type": "sync_call", "protocol": "gRPC"},
+        {"from_component": "OrderService", "to_component": "OrderRepository", "connector_type": "sync_call", "protocol": "SQL"},
+        {"from_component": "OrderService", "to_component": "NotificationHandler", "connector_type": "async_message", "protocol": "AMQP"},
+        {"from_component": "PaymentGatewayService", "to_component": "PaymentRepository", "connector_type": "sync_call", "protocol": "SQL"},
+        {"from_component": "DeliveryService", "to_component": "DeliveryRepository", "connector_type": "sync_call", "protocol": "SQL"},
     ]
 }
 
-print("=" * 60)
-print("INTEGRATION TEST — Mock Architecture Evaluation")
-print("=" * 60)
-
-# Test prompt builder
-prompt = build_architecture_prompt(requirements)
-print(f"\n✅ Prompt built: {len(prompt)} chars")
-
 # Test evaluation
 scores = evaluate_architecture(mock_arch, requirements)
-print(f"\n📊 EVALUATION RESULTS:")
-print(f"   RCR  = {scores['RCR']:.4f}  (threshold: {THRESHOLDS['RCR']})")
-print(f"   NAS  = {scores['NAS']:.4f}  (threshold: {THRESHOLDS['NAS']})")
-print(f"   SMI  = {scores['SMI']:.4f}  (threshold: {THRESHOLDS['SMI']})")
-print(f"   LSCS = {scores['LSCS']:.4f}  (threshold: {THRESHOLDS['LSCS']})")
-print(f"   SCI  = {scores['SCI']:.4f}  (threshold: {THRESHOLDS['SCI']})")
+print(f"\n📊 EVALUATION RESULTS (6-Metric Framework):")
+print(f"   Detected Style: {scores.get('detected_style')}")
+print(f"   RTS  = {scores['RTS']:.4f}  (threshold: {THRESHOLDS['RTS']})")
+print(f"   QAC  = {scores['QAC']:.4f}  (threshold: {THRESHOLDS['QAC']})")
+print(f"   CI   = {scores['CI']:.4f}  (threshold: {THRESHOLDS['CI']})")
+print(f"   CoS  = {scores['CoS']:.4f}  (threshold: {THRESHOLDS['CoS']})")
+print(f"   SSM₁ ({scores['ssm1_name']}) = {scores['SSM1']:.4f}  (threshold: {THRESHOLDS['SSM1']})")
+print(f"   SSM₂ ({scores['ssm2_name']}) = {scores['SSM2']:.4f}  (threshold: {THRESHOLDS['SSM2']})")
 print(f"   ─────────────────────")
 print(f"   CAS  = {scores['CAS']:.4f}  (threshold: {THRESHOLDS['CAS']})")
 print(f"   Verdict: {scores['verdict']}")
 
 # Test ranking with 2 mock candidates
 candidates = [
-    {"model": "llama3.1", "candidate_num": 1, "architecture": mock_arch, "scores": scores},
-    {"model": "mistral", "candidate_num": 1, "architecture": mock_arch,
-     "scores": {**scores, "CAS": scores["CAS"] - 0.05, "RCR": scores["RCR"] - 0.1}},
+    {"model": "meta-llama/llama-3.1-8b-instruct:free", "candidate_num": 1, "architecture": mock_arch, "scores": scores},
+    {"model": "qwen/qwen-2.5-7b-instruct:free", "candidate_num": 1, "architecture": mock_arch,
+     "scores": {**scores, "CAS": scores["CAS"] - 0.05, "RTS": scores["RTS"] - 0.1}},
 ]
 ranked = rank_candidates(candidates)
 print(f"\n🏆 Ranking: {[(c['rank'], c['model'], c['scores']['CAS']) for c in ranked]}")
@@ -108,8 +169,6 @@ print(f"✅ Mermaid generated: {len(mmd)} chars")
 from config import RESULTS_DIR
 radar_path = str(RESULTS_DIR / "test_radar.png")
 generate_radar_chart(ranked, radar_path, "Test Radar")
-print(f"✅ Radar chart saved: {radar_path}")
+print(f"✅ Radar chart generated: {radar_path}")
 
-print(f"\n{'=' * 60}")
-print("ALL INTEGRATION TESTS PASSED ✅")
-print(f"{'=' * 60}")
+print("\n🎉 INTEGRATION TEST COMPLETED SUCCESSFULLY!")

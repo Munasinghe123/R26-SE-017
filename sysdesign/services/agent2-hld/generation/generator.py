@@ -11,8 +11,9 @@ from typing import Optional
 
 from config import (
     MODELS,
-    CANDIDATES_PER_MODEL,
+    MAX_CANDIDATES_PER_MODEL,
     GENERATION_OPTIONS,
+    GENERATION_SEEDS,
     MAX_GENERATION_RETRIES,
 )
 from providers import get_provider_for_model
@@ -22,10 +23,14 @@ logger = logging.getLogger(__name__)
 
 def _is_non_retryable_error(error: Exception) -> bool:
     """Return True for errors that should fail fast without retries."""
-    status = getattr(error, "status_code", None)
     text = str(error).lower()
 
-    if status in {400, 401, 402, 403, 404}:
+    # Rate-limiting, temporary upstream issues, and timeouts should ALWAYS be retried
+    if any(m in text for m in ["rate-limited", "rate limit", "429", "temporarily", "timeout", "service unavailable"]):
+        return False
+
+    status = getattr(error, "status_code", None)
+    if status in {401, 402, 403, 404}:
         return True
 
     non_retryable_markers = [
@@ -34,7 +39,6 @@ def _is_non_retryable_error(error: Exception) -> bool:
         "authentication",
         "permission",
         "not found",
-        "invalid_request_error",
     ]
     return any(marker in text for marker in non_retryable_markers)
 
@@ -67,14 +71,15 @@ class GenerationResult:
         }
 
 
-def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationResult:
+def generate_single(model: str, prompt: str, candidate_num: int, options_override: dict | None = None) -> GenerationResult:
     """
     Generate a single architecture candidate from one model.
 
     Args:
-        model: Model name (e.g., "gemini-2.0-flash", "llama-3.3-70b-versatile")
+        model: Model name (e.g., "meta-llama/llama-3.1-8b-instruct:free")
         prompt: Full structured prompt
         candidate_num: Which candidate number this is (1-based)
+        options_override: Optional generation options (e.g., custom seed/temp)
 
     Returns:
         GenerationResult with raw text or error
@@ -83,11 +88,17 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
     last_error = "Unknown error"
     attempts = []
 
+    options = {**GENERATION_OPTIONS}
+    if candidate_num <= len(GENERATION_SEEDS):
+        options["seed"] = GENERATION_SEEDS[candidate_num - 1]
+    if options_override:
+        options.update(options_override)
+
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
         try:
             logger.info(
                 f"[{provider.provider_name}/{model}] Generating candidate {candidate_num}, "
-                f"attempt {attempt}/{MAX_GENERATION_RETRIES}..."
+                f"attempt {attempt}/{MAX_GENERATION_RETRIES} (seed={options.get('seed')})..."
             )
 
             start_time = time.time()
@@ -97,7 +108,7 @@ def generate_single(model: str, prompt: str, candidate_num: int) -> GenerationRe
                 "timestamp": time.time(),
             })
 
-            raw_text = provider.generate(prompt, model, GENERATION_OPTIONS)
+            raw_text = provider.generate(prompt, model, options)
 
             duration_ms = (time.time() - start_time) * 1000
 
@@ -160,36 +171,41 @@ def generate_all(requirements: dict, models: list = None,
     Args:
         requirements: Requirements dict
         models: List of model names (defaults to config.MODELS)
-        candidates_per_model: How many candidates per model (defaults to config)
+        candidates_per_model: How many candidates per model (defaults to config.MAX_CANDIDATES_PER_MODEL)
         progress_callback: Optional callback(model, candidate_num, total, status)
 
     Returns:
         List of GenerationResult objects
     """
     models = models or MODELS
-    candidates_per_model = candidates_per_model or CANDIDATES_PER_MODEL
-
-    results = []
-    total = len(models) * candidates_per_model
-    current = 0
+    candidates_per_model = candidates_per_model or MAX_CANDIDATES_PER_MODEL
 
     from prompt.builder import build_architecture_prompt
+    from concurrent.futures import ThreadPoolExecutor
 
+    tasks = []
     for model in models:
         for candidate_num in range(1, candidates_per_model + 1):
-            current += 1
-
-            if progress_callback:
-                progress_callback(model, candidate_num, total, "generating")
-
-            # Dynamically build prompt per candidate_num for ATAM diversity
             prompt = build_architecture_prompt(requirements, candidate_num=candidate_num)
-            result = generate_single(model, prompt, candidate_num)
-            results.append(result)
+            tasks.append((model, prompt, candidate_num))
 
-            if progress_callback:
-                status = "success" if result.success else "failed"
-                progress_callback(model, candidate_num, total, status)
+    total = len(tasks)
+    logger.info(f"Triggering parallel candidate generation for {total} tasks...")
+
+    def run_task(task_args):
+        model, prompt, candidate_num = task_args
+        if progress_callback:
+            progress_callback(model, candidate_num, total, "generating")
+        
+        result = generate_single(model, prompt, candidate_num)
+        
+        if progress_callback:
+            status = "success" if result.success else "failed"
+            progress_callback(model, candidate_num, total, status)
+        return result
+
+    with ThreadPoolExecutor(max_workers=min(total, 8)) as executor:
+        results = list(executor.map(run_task, tasks))
 
     successful = sum(1 for r in results if r.success)
     logger.info(

@@ -2,17 +2,16 @@ import React from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 
 import Home from "./Pages/Home";
-import UploadAudio from "./Pages/UploadAudio";
+import UploadAudio from "./Pages/Protected/UploadAudio";
 import Header from "./components/Header";
 import StarBackground from "./components/StartBackGround";
-import RequirementReview from "./Pages/client/RequirementReview";
+import RequirementReview from "./Pages/Protected/Dashboard/RequirementReview";
 import GetStarted from "./Pages/Get-Started";
-import SelectMode from "./Pages/Select-Mode";
-import TestMeeting from "./Pages/Test-Meeting";
-import UserDashboard from "./Pages/protected/Dashboard/User-Dashboard";
-import Footer from "./components/Footer";
+import SelectMode from "./Pages/Protected/Select-Mode";
+import TestMeeting from "./Pages/Protected/Test-Meeting";
 import ProjectDashboard from "./Pages/Protected/Dashboard/Project-Dashboard";
-import CreateProject from "./Pages/Protected/Create-Project";
+import UserPage from "./Pages/Protected/User/User-Page";
+import Footer from "./components/Footer";
 
 // ── New Pipeline Pages ─────────────────────────────────────────────────────
 import PipelineDashboard  from "./Pages/Protected/Pipeline/PipelineDashboard";
@@ -26,17 +25,17 @@ function AppLayout() {
   const location = useLocation();
 
   // Pages where we suppress the shared shell (Header / StarBackground / Footer)
-  const isMeetingUI      = location.pathname === "/test-meeting";
-  const isUserDashboard  = location.pathname === "/user-dashboard";
-  const isCreateProject  = location.pathname === "/create-project";
+  const isMeetingUI         = location.pathname === "/test-meeting";
+  const isUserDashboard     = location.pathname === "/user-dashboard";
+  const isProjectDashboard  = location.pathname.startsWith("/project-dashboard");
 
   // Pipeline pages get the StarBackground but no Footer (they're full-screen experiences)
   const isPipelinePage   = location.pathname.startsWith("/pipeline/");
 
   return (
     <>
-      {!isMeetingUI && <StarBackground />}
-      {!isMeetingUI && <Header />}
+      {!isMeetingUI && !isProjectDashboard && <StarBackground />}
+      {!isMeetingUI && !isProjectDashboard && <Header />}
 
       <Routes>
         {/* ── Public ────────────────────────────────────────────────── */}
@@ -47,9 +46,10 @@ function AppLayout() {
         <Route path="/test-meeting" element={<TestMeeting />} />
 
         {/* ── Protected — Dashboard ─────────────────────────────────── */}
-        <Route path="/user-dashboard"    element={<UserDashboard />} />
+        <Route path="/user"    element={<UserPage />} />
         <Route path="/project-dashboard" element={<ProjectDashboard />} />
-        <Route path="/create-project"    element={<CreateProject />} />
+        <Route path="/project-dashboard/:projectId" element={<ProjectDashboard />} />
+
 
         {/* ── Protected — Requirements Review (Agent 1 output) ─────── */}
         <Route
@@ -104,7 +104,7 @@ function AppLayout() {
       </Routes>
 
       {/* Footer: hide on meeting, dashboard, create-project, and pipeline pages */}
-      {!isMeetingUI && !isUserDashboard && !isCreateProject && !isPipelinePage && (
+      {!isMeetingUI && !isUserDashboard && !isPipelinePage && !isProjectDashboard && (
         <Footer />
       )}
     </>

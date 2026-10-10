@@ -1,6 +1,6 @@
 """
 HLA Agent — Radar Chart Generator
-Publication-quality radar chart comparing candidates across 5 metrics.
+Publication-quality radar chart comparing candidates across 6 metrics.
 """
 
 import numpy as np
@@ -24,15 +24,15 @@ FALLBACK_COLORS = ["#00C9A7", "#845EC2", "#FF6F00", "#E84393", "#0984E3", "#FDCB
 def generate_radar_chart(candidates: list, output_path: str,
                          title: str = "Architecture Evaluation — Radar Chart"):
     """
-    Generate a radar chart comparing candidates across 5 metrics.
+    Generate a radar chart comparing candidates across 6 metrics.
 
     Args:
         candidates: List of dicts with 'model', 'candidate_num', 'scores'
         output_path: File path to save PNG
         title: Chart title
     """
-    metric_keys = ["RCR", "NAS", "SMI", "LSCS", "SCI"]
-    metric_labels = ["RCR", "NAS", "SMI", "LSCS", "SCI"]
+    metric_keys = ["RTS", "QAC", "CI", "CoS", "SSM1", "SSM2"]
+    metric_labels = ["RTS", "QAC", "CI", "CoS", "SSM₁", "SSM₂"]
     num_metrics = len(metric_keys)
 
     angles = np.linspace(0, 2 * np.pi, num_metrics, endpoint=False).tolist()
@@ -57,7 +57,7 @@ def generate_radar_chart(candidates: list, output_path: str,
         values += values[:1]  # Close polygon
 
         color = MODEL_COLORS.get(model, FALLBACK_COLORS[i % len(FALLBACK_COLORS)])
-        label = f"{model} #{cnum} (Phase1 CAS={scores.get('CAS', 0):.3f})"
+        label = f"{model} #{cnum} (CAS={scores.get('CAS', 0):.3f})"
 
         ax.plot(angles, values, 'o-', linewidth=2.5, markersize=8,
                 color=color, label=label, alpha=0.85)

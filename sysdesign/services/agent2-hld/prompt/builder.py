@@ -4,11 +4,11 @@ Constructs the 5-layer structured prompt that forces LLMs
 to produce valid, parseable architecture JSON output.
 
 Layers:
-  1. Role Assignment — establish architect persona
-  2. Context Injection — inject all FR/NFR requirements
-  3. Output Schema Enforcement — strict JSON template
-  4. Constraint Specification — architecture rules
-  5. Quality Guardrails — completeness checks
+  1. Role Assignment & Optimization Lens
+  2. Context Injection (FRs & NFRs)
+  3. Output Schema Enforcement (JSON structure)
+  4. Architectural Constraints (Canonical Styles & Topology)
+  5. Quality Guardrails (Coverage & Provisions)
 """
 
 import json
@@ -17,334 +17,202 @@ from typing import Optional
 
 def build_architecture_prompt(requirements: dict, feedback: Optional[str] = None, candidate_num: int = 1) -> str:
     """
-    Build the full structured prompt from requirements JSON.
-
-    Args:
-        requirements: Dict with 'project', 'functional_requirements', 'non_functional_requirements'
-        feedback: Optional feedback string for regeneration loops (e.g., "Improve scalability")
-
-    Returns:
-        Complete prompt string ready to send to any LLM
+    Builds a robust 5-layer structured prompt enforcing valid, 
+    parseable high-level architecture JSON outputs without markdown wrapping.
     """
     project_name = requirements.get("project", "Unknown System")
     frs = requirements.get("functional_requirements", [])
     nfrs = requirements.get("non_functional_requirements", [])
+    feedback_text = f"\n\nREGENERATION FEEDBACK TO ADDRESS:\n{feedback}" if feedback else ""
 
-    # ── Layer 1: Role Assignment & NFR Prioritization ────────
-    # Common architecture review practice: to explore tradeoffs, ask for candidates
-    # optimized for different quality attributes (NFR lenses).
+    # ── Layer 1: Role Assignment & Objective Candidate Lens ────────
     if candidate_num == 1:
-        priority_lens = "OPTIMIZE FOR SIMPLICITY: Your primary goal is to find the most balanced, maintainable, and simple architecture that meets the baseline requirements without over-engineering."
+        priority_lens = (
+            "PRIMARY BEST-FIT ARCHITECTURE: Objectively analyze all functional and non-functional requirements "
+            "to select the single most optimal, natural architecture style that best matches the workload."
+        )
     else:
-        priority_lens = "OPTIMIZE FOR SCALE & DECOUPLING: Your primary goal is to maximize scalability, performance, and independent deployability, prioritizing distributed patterns even if it introduces complexity."
+        priority_lens = (
+            "ALTERNATIVE TRADEOFF ARCHITECTURE: Explore a secondary, viable architectural style that provides "
+            "a different structural perspective or tradeoff for these requirements (e.g., if Candidate 1 used "
+            "Microservices Architecture, consider Event-Driven Architecture or Modular Monolith)."
+        )
 
     role_layer = (
+        "# LAYER 1: ROLE ASSIGNMENT & OPTIMIZATION LENS\n"
         "You are a senior software architect with deep expertise across ALL architectural styles. "
-        "You evaluate each project's requirements objectively. "
-        f"For this specific candidate generation, {priority_lens} "
-        "You do NOT have a preference for any particular style — you choose based on the requirements and your assigned optimization goal."
+        "You evaluate each project's requirements objectively without architectural bias.\n"
+        f"For this specific candidate generation: **{priority_lens}**\n\n"
+        "STRICT OUTPUT RULE: Do NOT output markdown commentary, markdown code fences (like ```json), or preambles. "
+        "Output ONLY the raw, valid JSON object adhering strictly to the required schema."
     )
 
     # ── Layer 2: Context Injection ────────────────────────
-    fr_text = "\n".join(
-        f"  - [{fr['id']}] {fr['description']}" for fr in frs
-    )
-    nfr_text = "\n".join(
-        f"  - [{nfr['id']}] ({nfr['type']}) {nfr['target']}" for nfr in nfrs
-    )
+    fr_text = "\n".join(f"  - [{fr['id']}] {fr['description']}" for fr in frs)
+    nfr_text = "\n".join(f"  - [{nfr['id']}] ({nfr['type']}) {nfr['target']}" for nfr in nfrs)
 
     context_layer = (
-        f"You are designing a high-level architecture for: **{project_name}**\n\n"
+        f"# LAYER 2: SYSTEM REQUIREMENTS CONTEXT\n"
+        f"Project Name: **{project_name}**{feedback_text}\n\n"
         f"FUNCTIONAL REQUIREMENTS:\n{fr_text}\n\n"
         f"NON-FUNCTIONAL REQUIREMENTS:\n{nfr_text}"
     )
 
     # ── Layer 3: Output Schema Enforcement ────────────────
-    schema_layer = """
-OUTPUT FORMAT: You MUST respond with ONLY a valid JSON object. No explanations, no markdown, no code fences.
-The JSON MUST follow this EXACT schema:
+    schema_layer = """# LAYER 3: OUTPUT SCHEMA ENFORCEMENT
+OUTPUT FORMAT: You MUST respond with ONLY a valid, raw JSON object without markdown fences.
+The JSON structure MUST match this exact specification:
 
 {
-  "architecture_style": "<one of: Layered Architecture, Event-Driven Architecture, Microkernel Architecture, Microservices Architecture, Space-Based Architecture>",
-  "pros_and_cons": "<2-3 sentence expert explanation of why this architecture is a good or bad fit for this SPECIFIC scenario, outlining its ATAM tradeoffs>",
+  "architecture_style": "<one of: Layered Architecture, Event-Driven Architecture, Microservices Architecture, Modular Monolith, Pipe-and-Filter Architecture>",
+  "pros_and_cons": "<2-3 sentence expert explanation of why this style fits this scenario, detailing ATAM quality tradeoffs>",
   "layers": [
     {
-      "name": "<layer name>",
-      "order": <integer, 1 = topmost>
+      "name": "<layer name, e.g., Presentation, Business Logic, Data Access, Infrastructure>",
+      "order": <integer, 1 = topmost layer>
     }
   ],
   "components": [
     {
-      "name": "<PascalCase name ending with a role suffix like Service, Controller, Repository, Gateway, Handler, Manager, Engine, etc.>",
-      "layer": "<must match one of the layer names above>",
-      "responsibility": "<clear sentence of at least 8 words describing what this component does>"
+      "name": "<PascalCase name ending with a role suffix like Service, Controller, Repository, Gateway, Handler, Manager, Engine>",
+      "layer": "<MUST exactly match one of the string names defined in the layers array above>",
+      "boundary": "<one of: presentation, business_logic, data_access, infrastructure, cross_cutting>",
+      "element_type": "<one of: service, module, handler, gateway, repository, broker, controller, client>",
+      "responsibilities": ["<responsibility 1: clear explanatory sentence of at least 8 words>", "<responsibility 2>"],
+      "provided_interfaces": ["<e.g., POST /orders, GET /orders/{id}>"],
+      "required_interfaces": ["<e.g., OrderRepository, PaymentGateway>"],
+      "requirement_ids": ["<FR-1>", "<FR-2>"]
     }
   ],
-  "interactions": [
+  "connectors": [
     {
-      "from": "<component name (must match a component above)>",
-      "to": "<component name (must match a component above)>",
-      "type": "<one of: REST, gRPC, Event, Message Queue, Database, WebSocket, Direct Call>",
-      "direction": "<one of: down, up, lateral>"
+      "from_component": "<component name matching an item from the components array>",
+      "to_component": "<component name matching an item from the components array>",
+      "connector_type": "<one of: sync_call, async_message, event_publish, data_flow, shared_data>",
+      "protocol": "<e.g., REST, gRPC, AMQP, Kafka>",
+      "data_transferred": "<e.g., OrderRequest, PaymentResponse>"
+    }
+  ],
+  "quality_provisions": [
+    {
+      "nfr_id": "<NFR-1>",
+      "iso_characteristic": "<one of: performance_efficiency, reliability, security, maintainability, scalability>",
+      "responsible_component": "<component name matching an item from the components array>",
+      "mechanism": "<e.g., Redis read-through cache, Circuit breaker with Resilience4j>",
+      "evidence_strength": "<one of: high, medium, low>"
     }
   ]
-}
-"""
+}"""
 
     # ── Layer 4: Constraint Specification ─────────────────
-    constraint_layer = """
-ARCHITECTURE STYLE SELECTION — evaluate requirements FIRST, then choose:
-Use ONLY the canonical style options from Software Architecture Patterns, 2nd Edition (Mark Richards):
-Layered, Event-Driven, Microkernel, Microservices, Space-Based.
-- **Layered Architecture**: Best for systems with clear separation of concerns, moderate scale, CRUD-heavy workflows. DEFAULT choice unless requirements clearly demand otherwise.
-- **Event-Driven Architecture**: Best when requirements emphasize real-time notifications, async workflows, data streaming, or loosely coupled producers/consumers.
-- **Microkernel Architecture**: Best for extensible applications, product-based applications needing 3rd party plugins, or systems requiring isolated execution of dynamic rules.
-- **Microservices Architecture**: ONLY for systems with multiple independent business domains, teams working independently, or extreme horizontal scaling (>50k concurrent users across distinct services).
-- **Space-Based Architecture**: Best for systems requiring extremely high scalability and unpredictable concurrent user volumes, mitigating database bottlenecks via in-memory data grids.
+    constraint_layer = """# LAYER 4: ARCHITECTURAL CONSTRAINTS
+Evaluate requirements systematically, then choose strictly from these 5 canonical styles:
+- **Layered Architecture**: Best for clear separation of concerns, moderate scale, and standard CRUD workflows.
+- **Event-Driven Architecture**: Best for real-time notifications, async workflows, data streaming, or highly decoupled components.
+- **Microservices Architecture**: Reserved for systems with multiple complex, isolated domains or massive horizontal scale (>50k concurrent users across distinct subsystems).
+- **Modular Monolith**: Best for strong module boundaries within a single deployment unit, avoiding distributed network complexity.
+- **Pipe-and-Filter Architecture**: Best for transformation engines, sequential data pipelines, or stream processing.
 
-⚠️ DO NOT default to Microservices. For systems with fewer than 5 truly independent domains, prefer Layered or Microkernel. Simpler is better when requirements allow it.
-
-STRUCTURAL CONSTRAINTS — follow these strictly:
-1. Choose the SIMPLEST architecture style that fully satisfies ALL requirements.
-2. Define at least 3 distinct layers appropriate to your chosen style.
-3. Create at least 8 components distributed across layers.
-4. Every component name MUST end with a role suffix (Service, Controller, Repository, Gateway, Handler, Manager, Engine, Processor, etc.).
-5. Every component MUST have a clear, specific responsibility (at least 8 words).
-6. Define interactions that show how components communicate.
-7. Interactions should primarily flow DOWNWARD (higher layers call lower layers).
-8. Style-specific rules:
-   - Layered Architecture: ensure strict layer separation, no skipping layers.
-   - Event-Driven Architecture: include a Message Broker or Event Bus component.
-   - Microkernel Architecture: include a Core System and separate Plugin modules.
-   - Microservices Architecture: include API Gateway and Service Registry components.
-   - Space-Based Architecture: include Processing Unit and Virtualized Middleware components.
-"""
+STRUCTURAL CONSTRAINTS:
+1. Define at least 3 distinct layers inside the "layers" array.
+2. Generate at least 8 distinct components distributed across those layers.
+3. Every component name must terminate with an explicit structural suffix (e.g., Service, Controller, Broker, Repository).
+4. Connectors must accurately reflect structural execution flows."""
 
     # ── Layer 5: Quality Guardrails ───────────────────────
-    guardrail_layer = """
-QUALITY REQUIREMENTS:
-1. EVERY functional requirement must be addressable by at least one component.
-2. Non-functional requirements must be reflected in architectural decisions:
-   - Scalability → caching, connection pooling, read replicas, stateless design, load balancing, async processing
-   - Performance → caching layer, indexing, async processing, lazy loading, compression
-   - Security → authentication service, encryption, access control, input validation, audit logging
-   - Availability → redundancy, failover, health monitoring, graceful degradation, hot standby
-   - Reliability → retry mechanisms, transaction management, idempotent operations, data validation, backup strategies
-   - Maintainability → modular design, dependency injection, interface abstractions, repository pattern
-3. Components must NOT be generic placeholders. Each must have a specific, meaningful role.
-4. Layer boundaries must be respected — no circular dependencies.
-5. The architecture must be PRODUCTION-READY, not academic or toy-level.
+    guardrail_layer = """# LAYER 5: COVERAGE & INTEGRITY GUARDRAILS
+1. COMPLETE REQ COVERAGE: Every single functional requirement ID provided (FR-1, FR-2, etc.) MUST map to at least one component's "requirement_ids" field.
+2. REALISTIC PROVISIONS: Every non-functional requirement MUST map to a component architectural provision. Ensure:
+   - Scalability uses stateless designs, read replicas, load balancing, or async queues.
+   - Performance leverages explicit caching, specialized indexes, or low-latency protocols.
+   - Security references authentication filters, gateway proxies, validation engines, or encrypted storage handlers.
+   - Availability utilizes health checkers, circuit breakers, dead-letter queues, or active redundancy components.
+3. DATA INTEGRITY: Ensure there are no isolated components; all components must be interconnected using valid connectors."""
 
-RESPOND WITH ONLY THE JSON. NO OTHER TEXT.
-"""
+    return "\n\n".join([role_layer, context_layer, schema_layer, constraint_layer, guardrail_layer])
 
-    # Explicit NFR evidence guidance — ensure the LLM includes auditable mappings
-    # in component responsibilities so deterministic NAS can find explicit traces.
-    # NOTE: This MUST remain a free-text instruction (output still strictly JSON).
-    explicit_nfr_instruction = (
-        "\nEXPLICIT NFR MAPPING REQUIREMENT:\n"
-        "For EVERY non-functional requirement above, include an explicit hint inside at least one component's 'responsibility'. "
-        "Use a short phrase such as 'Supports NFR [NFR_ID] via <mechanism>' or 'Handles [NFR_ID]: <mechanism>'. "
-        "Examples: 'Supports NFR NFR1 via Redis cache', 'Handles NFR NFR3: OAuth gateway + TLS'. "
-        "This makes NFR-handling auditable and machine-detectable for evaluation.\n"
-    )
-    parts = [role_layer, context_layer, schema_layer, constraint_layer, guardrail_layer, explicit_nfr_instruction]
 
-    # ── Assemble the full prompt ──────────────────────────
-
-    # ── Regeneration feedback (if applicable) ─────────────
-    if feedback:
-        feedback_layer = (
-            f"\n⚠️ IMPORTANT — PREVIOUS ATTEMPT WAS REJECTED. Address these issues:\n"
-            f"{feedback}\n"
-            f"Generate an IMPROVED architecture that fixes these specific problems.\n"
-        )
-        parts.append(feedback_layer)
-
-    return "\n\n".join(parts)
+def build_feedback_from_scores(scores: dict) -> str:
+    """Build constructive feedback string for regeneration loops from score breakdown."""
+    low_metrics = [k for k, v in scores.items() if isinstance(v, (int, float)) and v < 0.6 and k != "CAS"]
+    if not low_metrics:
+        return "Improve general architectural cohesion and component interface specificity."
+    return f"Focus on improving the following low-scoring architectural quality metrics: {', '.join(low_metrics)}."
 
 
 def build_diagram_prompt(
-    *,
     architecture: dict,
-    requirements: dict,
-    diagram_kind: str,
-    title: str,
-    iteration: int,
+    requirements: Optional[dict] = None,
+    kind: str = "plantuml",
+    diagram_kind: Optional[str] = None,
+    title: Optional[str] = None,
+    iteration: int = 1,
     previous_diagram: Optional[str] = None,
     previous_diagram_cas: Optional[float] = None,
     feedback_issues: Optional[list[str]] = None,
     user_feedback: Optional[str] = None,
-    reference_diagram: Optional[str] = None,
+    notes: Optional[str] = None,
+    **kwargs,
 ) -> str:
-    """Build a diagram-generation prompt for either Mermaid or PlantUML.
+    """Build structured diagram generation or refinement prompt for PlantUML or Mermaid."""
+    d_kind = (diagram_kind or kind or "plantuml").lower()
+    project = title or (requirements.get("project") if isinstance(requirements, dict) else "System Architecture")
+    arch_style = architecture.get("architecture_style", "Layered Architecture")
+    comps = architecture.get("components", [])
+    conns = architecture.get("connectors", []) or architecture.get("interactions", [])
 
-    Constraints:
-    - Output must be ONLY the diagram source (no markdown, no code fences).
-    - Must align diagram structure/layout to the selected architecture style.
-    - Iteration 2 is an explicit improvement pass using deterministic feedback.
-    """
+    comp_list = "\n".join(f"- [{c.get('name')}] (Layer: {c.get('layer', 'Core')}, Boundary: {c.get('boundary', 'business_logic')})" for c in comps)
+    conn_list = "\n".join(f"- {c.get('from_component') or c.get('from')} --> {c.get('to_component') or c.get('to')} : {c.get('connector_type') or c.get('type', 'sync_call')}" for c in conns)
 
-    project_name = requirements.get("project", "System")
-    style = architecture.get("architecture_style", "Architecture")
-    layers = architecture.get("layers", []) or []
-    components = architecture.get("components", []) or []
-    interactions = architecture.get("interactions", []) or []
+    req_text = ""
+    if isinstance(requirements, dict):
+        frs = requirements.get("functional_requirements", [])
+        if frs:
+            req_text = "FUNCTIONAL REQUIREMENTS:\n" + "\n".join(f"  - [{fr.get('id')}] {fr.get('description')}" for fr in frs)
 
-    def safe_id(s: str) -> str:
-        return (s or "").strip().replace(" ", "_").replace("-", "_")
+    notes_combined = user_feedback or notes or ""
+    user_req = f"\nUSER REFINEMENT INSTRUCTION:\n{notes_combined}" if notes_combined else ""
 
-    layer_lines = []
-    for l in layers:
-        name = (l.get("name", "") or "").strip()
-        order = l.get("order", "")
-        if name:
-            layer_lines.append(f"- L{order}: {name}")
+    prev_text = ""
+    if previous_diagram:
+        prev_text = f"\nPREVIOUS DIAGRAM REVISION (Iteration {iteration - 1}, Score: {previous_diagram_cas or 'N/A'}):\n```\n{previous_diagram}\n```\n"
 
-    comp_lines = []
-    for c in components:
-        name = (c.get("name", "") or "").strip()
-        layer = (c.get("layer", "") or "").strip()
-        resp = (c.get("responsibility", "") or "").strip()
-        if name:
-            resp_short = (resp[:120] + "…") if len(resp) > 120 else resp
-            comp_lines.append(f"- {name} (layer={layer}, id={safe_id(name)}): {resp_short}")
+    issues_text = ""
+    if feedback_issues:
+        issues_text = "\nISSUES TO FIX IN THIS ITERATION:\n" + "\n".join(f"  - {iss}" for iss in feedback_issues)
 
-    inter_lines = []
-    for i in interactions:
-        f = (i.get("from", "") or "").strip()
-        t = (i.get("to", "") or "").strip()
-        typ = (i.get("type", "") or "").strip()
-        direction = (i.get("direction", "") or "").strip()
-        if f and t:
-            inter_lines.append(f"- {f} -> {t} (type={typ}, direction={direction})")
-
-    # Common role/context
-    role = (
-        "You are a principal software architect and UML/diagramming specialist. "
-        "You produce clear, industry-standard architecture diagrams for engineering and audit stakeholders."
-    )
-
-    context = (
-        f"PROJECT: {project_name}\n"
-        f"TITLE: {title}\n"
-        f"ARCHITECTURE STYLE (MUST ALIGN TO THIS): {style}\n\n"
-        f"LAYERS:\n" + ("\n".join(layer_lines) if layer_lines else "- (none)") + "\n\n"
-        f"COMPONENTS (authoritative list):\n" + ("\n".join(comp_lines) if comp_lines else "- (none)") + "\n\n"
-        f"INTERACTIONS (authoritative list):\n" + ("\n".join(inter_lines) if inter_lines else "- (none)")
-    )
-
-    if reference_diagram:
-        context += (
-            "\n\nREFERENCE DIAGRAM (approved / must stay consistent):\n"
-            + (reference_diagram.strip() + "\n")
+    if d_kind == "plantuml":
+        schema_rule = (
+            "CRITICAL OUTPUT RULE: You MUST output ONLY raw PlantUML source code.\n"
+            "- Start your response with exactly: @startuml\n"
+            "- End your response with exactly: @enduml\n"
+            "- Do NOT output JSON, markdown, prose, explanations, or any text outside @startuml...@enduml.\n"
+            "- Do NOT wrap the diagram in code fences (no ```).\n"
+            "- Use 'package' or 'rectangle' blocks to group components by their layer.\n"
+            "- Include real arrow relationships between components (-->).\n"
         )
-
-    # Style-alignment rules to make the diagram explicitly match the selected style.
-    style_rules = (
-        "STYLE-SPECIFIC DIAGRAM ALIGNMENT RULES:\n"
-        "- Layered Architecture: group components by layer and keep dependencies mostly downward between adjacent layers.\n"
-        "- Microservices Architecture: show an explicit API Gateway entry point and a Service Registry/Discovery; isolate services as separate groups/packages.\n"
-        "- Event-Driven Architecture: show an explicit Event Bus/Broker; producers/consumers should connect via the broker (avoid direct service-to-service for events).\n"
-        "- Microkernel Architecture: show a Core/Kernel and separate Plugin/Extension modules; plugins depend on the core.\n"
-        "- Space-Based Architecture: show Processing Units and a shared Data Grid/Virtualized Middleware; discourage direct DB coupling in the main flow.\n"
-    )
-
-    if diagram_kind not in {"mermaid", "plantuml"}:
-        raise ValueError(f"Unsupported diagram_kind: {diagram_kind}")
-
-    if diagram_kind == "mermaid":
-        schema = (
-            "OUTPUT FORMAT (Mermaid):\n"
-            "- Output ONLY valid Mermaid source. No markdown. No code fences.\n"
-            "- Use: flowchart TD (or LR).\n"
-            "- Use subgraph blocks for layers when layers exist.\n"
-            "- Use the provided component ids exactly as listed (id=...).\n"
-            "- Draw arrows for ALL interactions; label arrows with the interaction type.\n"
-            "- Keep it simple and readable for a GitHub README.\n"
-        )
-
     else:
-        schema = (
-            "OUTPUT FORMAT (PlantUML Component Diagram):\n"
-            "- Output ONLY valid PlantUML. No markdown. No code fences.\n"
-            "- MUST include @startuml and @enduml.\n"
-            "- MUST include: skinparam componentStyle rectangle\n"
-            "- Use package blocks for layers (or service boundaries), and place components inside.\n"
-            "- Declare components using: [ComponentName] as ComponentId (where ComponentId is the provided id=...).\n"
-            "- Add dependency arrows for ALL interactions; label arrows with the interaction type (REST/gRPC/Event/etc.).\n"
-            "- Prefer an industry-standard component diagram style (clear boundaries, consistent naming, minimal clutter).\n"
+        schema_rule = (
+            "CRITICAL OUTPUT RULE: You MUST output ONLY raw Mermaid source code.\n"
+            "- Start your response with exactly: graph TD\n"
+            "- Do NOT output JSON, markdown, prose, or any text before 'graph TD'.\n"
+            "- Use 'subgraph' blocks to group components by their layer.\n"
         )
 
-    improvement = ""
-    if iteration >= 2:
-        issues_txt = "\n".join(f"- {x}" for x in (feedback_issues or [])) or "- (no issues provided)"
-        prev_score_txt = f"{previous_diagram_cas:.4f}" if previous_diagram_cas is not None else "(not provided)"
-        extra_user_feedback = (user_feedback or "").strip()
-        user_feedback_block = f"\nUSER NOTES:\n{extra_user_feedback}\n" if extra_user_feedback else ""
-        improvement = (
-            "\nITERATION 2 (IMPROVEMENT PASS):\n"
-            f"- Previous Diagram_CAS: {prev_score_txt}\n"
-            "- You MUST improve the diagram by fixing the issues below while keeping it valid.\n"
-            "- Do not remove correct content; prefer adding missing components/interactions and adding missing style structure.\n"
-            "- Even if the issue list looks small, do a strict compliance pass: ensure EVERY interaction is present and labeled, and the diagram structure clearly reflects the selected architecture style.\n"
-            "ISSUES TO FIX:\n"
-            f"{issues_txt}\n\n"
-            f"{user_feedback_block}\n"
-            "PREVIOUS DIAGRAM (for editing):\n"
-            f"{previous_diagram or ''}\n"
-        )
+    return (
+        f"SYSTEM: You are a software architecture diagramming engine. "
+        f"You output ONLY valid {d_kind.upper()} diagram syntax. "
+        f"You NEVER output JSON. You NEVER explain. You ONLY output diagram code.\n\n"
+        f"# DIAGRAM GENERATION TASK (Iteration {iteration})\n"
+        f"Project: {project}\n"
+        f"Architecture Style: {arch_style}\n\n"
+        f"{req_text}\n\n"
+        f"COMPONENTS:\n{comp_list}\n\n"
+        f"CONNECTORS:\n{conn_list}\n"
+        f"{prev_text}"
+        f"{issues_text}"
+        f"{user_req}\n\n"
+        f"TASK: Generate a complete, valid {d_kind.upper()} architectural diagram for the system above.\n"
+        f"{schema_rule}"
+    )
 
-    return "\n\n".join([role, context, style_rules, schema, improvement]).strip() + "\n"
-
-
-def build_feedback_from_scores(scores: dict, thresholds: dict) -> str:
-    """
-    Build a targeted feedback string from metric scores that fell below thresholds.
-
-    Args:
-        scores: Dict of metric_name → score (e.g., {"RCR": 0.6, "NAS": 0.5, ...})
-        thresholds: Dict of metric_name → threshold
-
-    Returns:
-        Feedback string describing what to improve
-    """
-    feedback_lines = []
-
-    metric_advice = {
-        "RCR": (
-            "REQUIREMENT COVERAGE IS LOW. Ensure EVERY functional requirement is addressed "
-            "by at least one component. Add specific service components for uncovered requirements."
-        ),
-        "NAS": (
-            "NFR ALIGNMENT IS WEAK. Add architectural elements that directly support non-functional "
-            "requirements: load balancers for scalability, caching for performance, auth services "
-            "for security, redundancy for availability."
-        ),
-        "SMI": (
-            "MODULARITY IS POOR. Reduce cross-layer dependencies. Keep components within the same "
-            "layer communicating internally. Minimize direct calls between distant layers."
-        ),
-        "LSCS": (
-            "LAYER SEPARATION IS VIOLATED. Ensure interactions flow DOWNWARD only. Lower layers "
-            "must NOT call higher layers. Remove any upward dependencies or circular calls."
-        ),
-        "SCI": (
-            "STRUCTURAL CLARITY IS LOW. Use clear naming conventions: every component name must "
-            "end with Service, Controller, Repository, Gateway, Handler, etc. Every component "
-            "must have a detailed responsibility description (at least 8 words)."
-        ),
-    }
-
-    for metric, score in scores.items():
-        if metric in thresholds and score < thresholds[metric]:
-            shortfall = thresholds[metric] - score
-            feedback_lines.append(
-                f"- {metric} scored {score:.2f} (need ≥ {thresholds[metric]:.2f}, "
-                f"shortfall: {shortfall:.2f}). {metric_advice.get(metric, 'Improve this metric.')}"
-            )
-
-    if not feedback_lines:
-        return ""
-
-    return "\n".join(feedback_lines)

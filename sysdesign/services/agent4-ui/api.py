@@ -93,6 +93,17 @@ def plan(req: PlanRequest):
     try:
         with capture_logs() as buf:
             _log(buf, "Planning phase started.")
+
+            # Clear previous session outputs
+            for folder in ["generated_screens", "score_reports"]:
+                folder_path = os.path.join(BASE, "outputs", folder)
+                if os.path.exists(folder_path):
+                    shutil.rmtree(folder_path)
+                os.makedirs(folder_path, exist_ok=True)
+
+            old_plan = os.path.join(BASE, "outputs", "screen_plan.json")
+            if os.path.exists(old_plan):
+                os.remove(old_plan)
             req_path = os.path.join(BASE, "samples", "sample_requirements.json")
             with open(req_path, "w", encoding="utf-8") as f:
                 json.dump(req.requirements, f, indent=2)
@@ -289,42 +300,47 @@ def evaluate_screens(req: EvaluateRequest):
             _log(buf, f"Evaluation phase started. Found {len(html_files)} screen(s).")
 
             reports = []
+            errors = []
             for file in html_files:
                 sid = file.replace(".html", "")
                 if req.screenIds and sid not in req.screenIds:
                     continue
 
-                _log(buf, f"\n=== Evaluating: {sid} ===")
-                with open(os.path.join(screens_dir, file), "r", encoding="utf-8") as f:
-                    html = f.read()
+                try:
+                    _log(buf, f"\n=== Evaluating: {sid} ===")
+                    with open(os.path.join(screens_dir, file), "r", encoding="utf-8") as f:
+                        html = f.read()
 
-                _log(buf, "Running ISO 9241-11 metrics...")
-                _log(buf, "Running Nielsen heuristic metrics...")
-                _log(buf, "Running WCAG 2.2 metrics (axe-core + BS4)...")
+                    _log(buf, "Running ISO 9241-11 metrics...")
+                    _log(buf, "Running Nielsen heuristic metrics...")
+                    _log(buf, "Running WCAG 2.2 metrics (axe-core + BS4)...")
 
-                report = evaluate(html, iteration_number=1)
+                    report = evaluate(html, iteration_number=1)
 
-                _log(buf, f"ISO score:     {report['iso_score']}/100")
-                _log(buf, f"Nielsen score: {report['nielsen_score']}/100")
-                _log(buf, f"WCAG score:    {report['wcag_score']}/100")
-                _log(buf, f"Total score:   {report['total_score']}/100  (threshold: {report['threshold']})")
-                _log(buf, f"Status:        {'PASSED ✓' if report['passed'] else 'NEEDS REFINEMENT ✗'}")
-                _log(buf, f"Weakest:       {report['weakest_standard']} → {report['weakest_metric']}")
+                    _log(buf, f"Total score:   {report['total_score']}/100  (threshold: {report['threshold']})")
+                    _log(buf, f"Status:        {'PASSED ✓' if report['passed'] else 'NEEDS REFINEMENT ✗'}")
 
-                wcag = report.get('wcag_details', {})
-                if wcag.get('reliability') == 'partial':
-                    _log(buf, "WARNING: axe-core unavailable — WCAG score is partial (BS4 checks only).")
-                elif wcag.get('axe_available'):
-                    _log(buf, f"Axe violations: {wcag.get('violations_count', 0)}")
+                    wcag = report.get('wcag_details', {})
+                    if wcag.get('reliability') == 'partial':
+                        _log(buf, "WARNING: axe-core unavailable — WCAG score is partial (BS4 checks only).")
 
-                report_path = os.path.join(reports_dir, f"{sid}_score_report.json")
-                save_score_report(report, report_path)
-                _log(buf, f"Report saved to {report_path}")
-                reports.append({"screenId": sid, "report": report})
+                    report_path = os.path.join(reports_dir, f"{sid}_score_report.json")
+                    save_score_report(report, report_path)
+                    _log(buf, f"Report saved to {report_path}")
+                    reports.append({"screenId": sid, "report": report})
 
-            _log(buf, f"\nEvaluation complete. {len(reports)} report(s) saved.")
+                except Exception as screen_err:
+                    # A single screen failing (e.g. axe-core / node hiccup)
+                    # must NOT wipe out the results already computed for
+                    # every other screen in this batch.
+                    _log(buf, f"ERROR evaluating {sid}: {screen_err}")
+                    errors.append({"screenId": sid, "error": str(screen_err)})
+                    continue
 
-        return {"reports": reports, "logs": {"stdout": buf.getvalue(), "stderr": ""}}
+            _log(buf, f"\nEvaluation complete. {len(reports)} succeeded, {len(errors)} failed.")
+
+        return {"reports": reports, "errors": errors, "logs": {"stdout": buf.getvalue(), "stderr": ""}}
+    
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))
@@ -421,10 +437,10 @@ def traceability(screenId: str):
 
         traceability_report = build_traceability_matrix(html, per_screen[0].get("functional_requirements", []))
         return {"screenId": screenId, "traceability": traceability_report}
+
     except HTTPException:
         raise
     except Exception as e:
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -477,6 +493,16 @@ def run(payload: UIRequest) -> dict:
     uploads to Cloudinary, and returns UIPackage.
     """
     try:
+        # Clear previous session outputs
+        for folder in ["generated_screens", "score_reports"]:
+            folder_path = os.path.join(BASE, "outputs", folder)
+            if os.path.exists(folder_path):
+                shutil.rmtree(folder_path)
+            os.makedirs(folder_path, exist_ok=True)
+
+        old_plan = os.path.join(BASE, "outputs", "screen_plan.json")
+        if os.path.exists(old_plan):
+            os.remove(old_plan)
         req_dict = {
             "project_name": payload.project_name,
             "domain": payload.domain,
@@ -521,58 +547,50 @@ def run(payload: UIRequest) -> dict:
         traceability_matrices = {}
         artifact_uris = {}
 
-        # Generate and evaluate planned screens (up to 4 screens to keep execution efficient)
-        target_screens = screens[:4] if len(screens) > 4 else screens
+        # Generate all planned screens (previously capped at 4 — removed per user request)
+        target_screens = screens
         per_screen_reqs = screens_to_requirements(target_screens, normalized)
 
         for s_req in per_screen_reqs:
             s_id = s_req.get("screen_id", "screen")
             s_type = s_req.get("screen_type", "dashboard")
+
+            # Clear any stale score-report/history from a previous run for
+            # this screen_id, so UIReview never shows leftover 0-score data
+            # before the user has actually pressed Evaluate.
+            reports_dir = os.path.join(BASE, "outputs", "score_reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            for stale in (f"{s_id}_score_report.json", f"{s_id}_history.json"):
+                stale_path = os.path.join(reports_dir, stale)
+                if os.path.exists(stale_path):
+                    os.remove(stale_path)
+
             try:
                 html = generate_ui(s_req, s_type)
             except Exception as gen_err:
                 logging.warning(f"Failed to generate UI for {s_id}: {gen_err}")
                 html = f"<!DOCTYPE html><html><body class='p-8 bg-slate-900 text-white'><h1 class='text-2xl font-bold'>{s_req.get('screen_name')}</h1><p class='text-slate-400 mt-2'>{s_req.get('purpose')}</p></body></html>"
 
-            # Save HTML locally
             out_dir = os.path.join(BASE, "outputs", "generated_screens")
             os.makedirs(out_dir, exist_ok=True)
             with open(os.path.join(out_dir, f"{s_id}.html"), "w", encoding="utf-8") as f:
                 f.write(html)
 
-            # Evaluate with composite scorer
-            try:
-                rpt = evaluate(html, s_req.get("functional_requirements", []))
-            except Exception:
-                rpt = {
-                    "total_score": 88.0,
-                    "iso_score": 86.5,
-                    "nielsen_score": 88.0,
-                    "wcag_score": 90.0,
-                    "threshold": 85.0,
-                    "passed": True,
-                    "breakdown": {}
-                }
+            # NOTE: evaluation / score-report / traceability generation is
+            # intentionally SKIPPED here so /run stays fast (plan+generate only).
+            # These are triggered manually per-screen from UIReview.jsx, which
+            # calls /api/evaluate, /api/refine, /api/traceability directly —
+            # those endpoints read/write the exact same outputs/ files.
 
-            # Upload to Cloudinary under folder UI/screens
             c_url = upload_html_to_cloudinary(html, payload.job_id, s_id)
-            if c_url:
-                artifact_uris[s_id] = c_url
-            else:
-                artifact_uris[s_id] = f"/outputs/generated_screens/{s_id}.html"
+            artifact_uris[s_id] = c_url or f"/outputs/generated_screens/{s_id}.html"
 
             generated_screens[s_id] = html
-            eval_reports.append({"screenId": s_id, "screen_name": s_req.get("screen_name"), "report": rpt})
-            
-            # Traceability matrix
-            try:
-                trace_rpt = build_traceability_matrix(html, s_req.get("functional_requirements", []))
-                traceability_matrices[s_id] = trace_rpt
-            except Exception:
-                pass
 
         planned_pydantic = [PlannedScreen(**s) for s in screens]
-        overall_score = round(sum(r["report"].get("total_score", 85.0) for r in eval_reports) / max(len(eval_reports), 1), 1)
+        # eval_reports is empty at this point (evaluation happens manually later),
+        # so overall_score is just a placeholder — 0.0 means "not yet evaluated".
+        overall_score = round(sum(r["report"].get("total_score", 0.0) for r in eval_reports) / max(len(eval_reports), 1), 1)
 
         pkg = UIPackage(
             schema_version="1.0",

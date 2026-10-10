@@ -44,9 +44,11 @@ except Exception as e:
 try:
     from routes.input_routes import router
     from routes.refine_routes import refine_routes
+    from routes.HITL.meeting_routes import meeting_routes
+    from routes.HITL.qa_routes import qa_routes
     AI_AVAILABLE = True
 except Exception as e:
-    print(f"[WARNING] AI routes (input/refine) failed to load: {e}")
+    print(f"[WARNING] AI routes (input/refine/HITL) failed to load: {e}")
     AI_AVAILABLE = False
 
 # LiveKit routes — require livekit-api
@@ -96,6 +98,8 @@ if APPROVE_AVAILABLE:
 if AI_AVAILABLE:
     app.include_router(router)
     app.include_router(refine_routes)
+    app.include_router(meeting_routes)
+    app.include_router(qa_routes)
 
 if LIVEKIT_AVAILABLE:
     app.include_router(live_kit_routes)
