@@ -1,0 +1,5 @@
+Target,Evaluation Metric,Threshold,Measured Value,Result
+T1,Mean final composite score (ISO 30% + Nielsen 30% + WCAG 40%),>=85,89.00 / 100,PASS
+T2,Mean relative improvement per refinement iteration (refined scenarios only),>10%,+13.01%,PASS
+T2b,Mean score gain baseline -> final (refined scenarios),info,+10.20 points,Informational
+T3,Convergence within 5 iterations (all scenarios; errors count as failures),>90%,80.0% (4 of 5 converged),FAIL (4 of 5 converged)

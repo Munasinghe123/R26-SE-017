@@ -57,10 +57,11 @@ ISO_PROMPTS = {
 # ---------------------------------------------------------------------------
 NIELSEN_PROMPTS = {
     "system_status": (
-        "The page is missing visible system-status signals. Add a "
-        "<progress> element in the header, an aria-current=\"page\" "
-        "attribute on the active nav link, and an active/current/selected "
-        "class on the current nav item."
+        "The page is missing visible system-status signals. Make sure ALL of these exist: "
+        "(1) a <progress> element in the header; "
+        "(2) a small navigation or step indicator, even on login/auth pages, for example: "
+        "<nav aria-label=\"Progress\"><a href=\"#\" aria-current=\"page\" class=\"active font-semibold text-violet-600\">Sign in</a></nav>; "
+        "(3) the current item has aria-current=\"page\" and the class \"active\"."
     ),
     "user_control": (
         "There is no clearly marked exit path. Add at least one visible "

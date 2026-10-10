@@ -1,0 +1,9 @@
+# Usability Validation & Convergence Report
+
+| Scenario | Screen Type | Screen ID | Baseline Score | Final Score | Score Delta | Convergence Status | Score Progression | Rounds to Converge | Final ISO (30%) | Final Nielsen (30%) | Final WCAG (40%) | Relative Gain (%) | Baseline Weakest | Final Weakest | HTML Integrity | Error |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| S1 | Auth | login | 70/100 | 88/100 | +18 pts | CONVERGED (>=85 in 2 rds) | 70 -> 88 | 2 rounds | 96/100 | 69/100 | 97/100 | +25.71% | Nielsen: system_status | Nielsen: form_input_type | Complete | None |
+| S2 | Form | create_booking | 84/100 | 84/100 | 0 pts | STALLED (at 84/100) | 84 -> 84 -> 84 -> 84 -> 84 | 5 rounds | 88/100 | 72/100 | 91/100 | 0.00% | Nielsen: system_status | Nielsen: system_status | Complete | None |
+| S3 | List | manage_bookings | 83/100 | 88/100 | +5 pts | CONVERGED (>=85 in 3 rds) | 83 -> 84 -> 88 | 3 rounds | 92/100 | 81/100 | 91/100 | +2.98% | Nielsen: system_status | Nielsen: system_status | Truncated | None |
+| S4 | Detail | room_details | 83/100 | 93/100 | +10 pts | CONVERGED (>=85 in 2 rds) | 83 -> 93 | 2 rounds | 100/100 | 84/100 | 94/100 | +12.05% | Nielsen: user_control | Nielsen: minimalist_design | Complete | None |
+| S5 | List | room_inventory | 74/100 | 92/100 | +18 pts | CONVERGED (>=85 in 2 rds) | 74 -> 92 | 2 rounds | 100/100 | 81/100 | 94/100 | +24.32% | Nielsen: user_control | Nielsen: error_message | Truncated | None |

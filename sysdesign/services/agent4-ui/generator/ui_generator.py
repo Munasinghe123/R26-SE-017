@@ -16,7 +16,7 @@ if not os.getenv("OPENROUTER_API_KEY"):
 gen_llm = ChatOpenRouter(
     model="qwen/qwen3-coder",  # OpenRouter slug for Qwen3-Coder
     temperature=0.2,           # Low temperature ensures reliable UI syntax and structures
-    max_tokens=1800,           
+    max_tokens=4096,           # Increased from 1800 — full HTML needs more tokens
 )
 
 def _extract_html(raw: str) -> str:

@@ -1,0 +1,6 @@
+scenario_id,screen_type,screen_id,baseline_score,final_score,score_delta,iterations_to_converge,converged_ge_85,converged_within_5,regressed,iter1_score,iter2_score,iter3_score,iter4_score,iter5_score,final_iso,final_nielsen,final_wcag,weakest_standard_baseline,weakest_metric_baseline,final_weakest_standard,final_weakest_metric,baseline_complete_html,final_complete_html,attempts,mean_rel_improvement_pct,refined,error
+S1,auth,login,70,88,18,2,True,True,False,70,88,,,,96,69,97,Nielsen,system_status,Nielsen,form_input_type,True,True,1,25.71,True,
+S2,form,create_booking,84,84,0,5,False,False,False,84,84,84,84,84,88,72,91,Nielsen,system_status,Nielsen,system_status,True,True,1,0.0,True,
+S3,list,manage_bookings,83,88,5,3,True,True,False,83,84,88,,,92,81,91,Nielsen,system_status,Nielsen,system_status,False,False,3,2.98,True,
+S4,detail,room_details,83,93,10,2,True,True,False,83,93,,,,100,84,94,Nielsen,user_control,Nielsen,minimalist_design,True,True,1,12.05,True,
+S5,list,room_inventory,74,92,18,2,True,True,False,74,92,,,,100,81,94,Nielsen,user_control,Nielsen,error_message,False,False,3,24.32,True,
