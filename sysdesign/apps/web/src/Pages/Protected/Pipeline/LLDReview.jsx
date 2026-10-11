@@ -373,11 +373,6 @@ REL_CONTAINS -N- ORDER_ITEMS
                   <p className="text-sm font-bold text-pink-300">{winningCand?.name}</p>
                   <p className="text-xs text-white/50 font-mono">{winningCand?.model}</p>
                 </div>
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-[11px] text-white/40 uppercase">Reconciliation Engine</span>
-                  <p className="text-sm font-bold text-cyan-300">Clean Pass</p>
-                  <p className="text-xs text-white/50">PascalCase & camelCase verified</p>
-                </div>
               </div>
             </div>
 
