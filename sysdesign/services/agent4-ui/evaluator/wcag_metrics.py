@@ -99,10 +99,10 @@ import os
 import tempfile
 import shutil
 
-def run_axe_core(html_string: str) -> list:
+def run_axe_core(html_string: str):
     """
-    Runs axe-core via dedicated Node.js script (more reliable than CLI).
-    Falls back gracefully if Node is not available.
+    Returns a list of violations, or None if axe-core could not run.
+    None triggers the 'partial' WCAG formula in compute_wcag_score().
     """
     if not html_string or not html_string.strip():
         return []
@@ -114,9 +114,8 @@ def run_axe_core(html_string: str) -> list:
             temp_path = f.name
 
         node_script = os.path.join(os.path.dirname(__file__), 'axe_runner.js')
-        
+
         if not os.path.exists(node_script):
-            # Fallback to CLI if script not present
             axe_cmd = shutil.which('axe') or shutil.which('axe.cmd')
             if axe_cmd:
                 result = subprocess.run(
@@ -126,29 +125,30 @@ def run_axe_core(html_string: str) -> list:
                 if result.returncode == 0:
                     data = json.loads(result.stdout)
                     return data[0].get('violations', []) if data else []
-            return []
+            return None
 
-        # Call our Node.js script
         result = subprocess.run(
             ['node', node_script, temp_path],
             capture_output=True, text=True, timeout=45
         )
+        if result.returncode != 0:
+            logging.warning(f"[WCAG] axe runner failed: {result.stderr.strip()[:300]}")
+            return None
 
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            return data.get('violations', [])
-        else:
-            logging.debug(f"[WCAG] Node axe runner: {result.stderr}")
-            return []
+        data = json.loads(result.stdout)
+        if data.get('error'):
+            logging.warning(f"[WCAG] axe runner error: {data['error']}")
+            return None
+        return data.get('violations', [])
 
     except Exception as e:
-        logging.debug(f"[WCAG] Axe execution error: {e}")
-        return []
+        logging.warning(f"[WCAG] axe execution error: {e}")
+        return None
     finally:
         if temp_path and os.path.exists(temp_path):
             try:
                 os.unlink(temp_path)
-            except:
+            except Exception:
                 pass
 
 
