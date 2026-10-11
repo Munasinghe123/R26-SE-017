@@ -54,15 +54,29 @@ def system_status_score(soup: BeautifulSoup) -> int:
 
 
 def user_control_score(soup: BeautifulSoup) -> int:
-    CONTROL_TERMS = {
-        'cancel', 'back', 'reset', 'undo', 'go back',
-        'return', 'clear', 'dismiss', 'close',
-    }
-    found = {
-        id(el) for el in soup.find_all(True)
-        if any(term in el.get_text(strip=True).lower() for term in CONTROL_TERMS)
-    }
-    count = len(found)
+    """
+    H3 — User control and freedom.
+    Counts actual controls (button, link, button-like input) whose visible
+    label, aria-label, value or title contains an exit term as a whole word.
+    Only controls are counted, so parent containers are not double-counted.
+    """
+    import re
+    TERMS = re.compile(
+        r'\b(cancel|back|go back|reset|undo|return|clear|dismiss|close)\b', re.I
+    )
+    count = 0
+    for el in soup.find_all(['button', 'a', 'input']):
+        if el.name == 'input' and (el.get('type') or '').lower() not in ('button', 'reset', 'submit'):
+            continue
+        label = ' '.join(filter(None, [
+            el.get_text(' ', strip=True),
+            el.get('aria-label') or '',
+            el.get('value') or '',
+            el.get('title') or '',
+        ]))
+        if TERMS.search(label):
+            count += 1
+
     if count == 0:   return 0
     elif count == 1: return 2
     elif count == 2: return 3
