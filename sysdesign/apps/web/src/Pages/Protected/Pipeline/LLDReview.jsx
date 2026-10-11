@@ -374,11 +374,6 @@ REL_CONTAINS -N- ORDER_ITEMS
                   <p className="text-xs text-white/50 font-mono">{winningCand?.model}</p>
                 </div>
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-[11px] text-white/40 uppercase">Consistency Index</span>
-                  <p className="text-xl font-bold font-mono text-green-400">{(consistencyScore * 100).toFixed(1)}%</p>
-                  <p className="text-xs text-white/50">Zero Over-design violations</p>
-                </div>
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-[11px] text-white/40 uppercase">Reconciliation Engine</span>
                   <p className="text-sm font-bold text-cyan-300">Clean Pass</p>
                   <p className="text-xs text-white/50">PascalCase & camelCase verified</p>
