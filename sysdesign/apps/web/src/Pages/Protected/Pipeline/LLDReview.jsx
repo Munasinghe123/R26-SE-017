@@ -366,14 +366,6 @@ REL_CONTAINS -N- ORDER_ITEMS
                   Status: {lld?.reconciliation_status || "Clean Pass (Zero Over-design violations)"}
                 </span>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-[11px] text-white/40 uppercase">Selected Winner</span>
-                  <p className="text-sm font-bold text-pink-300">{winningCand?.name}</p>
-                  <p className="text-xs text-white/50 font-mono">{winningCand?.model}</p>
-                </div>
-              </div>
             </div>
 
             {/* 3 Candidate Cards Comparison */}
