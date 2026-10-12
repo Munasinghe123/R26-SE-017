@@ -225,13 +225,24 @@ def _coerce_non_functional_requirements(items) -> List[Dict]:
     normalized = []
     for item in items or []:
         if isinstance(item, dict):
-            nfr_type = item.get("type") or item.get("category") or "General"
+            nfr_type = (
+                item.get("type")
+                or item.get("iso_characteristic")
+                or item.get("quality_attribute")
+                or item.get("category")
+                or "General"
+            )
             desc = item.get("description") or item.get("text") or str(item)
             normalized.append({"type": str(nfr_type), "description": str(desc), **item})
         else:
             normalized.append({"type": "General", "description": str(item)})
     return normalized
 
+def _canon_fr_id(x) -> str:
+    """'FR-1', 'FR01', 'fr 1' -> 'fr1' so IDs from different agents match."""
+    s = re.sub(r'[^a-z0-9]', '', str(x).strip().lower())
+    m = re.match(r'^([a-z]+)0*(\d+)$', s)
+    return f"{m.group(1)}{m.group(2)}" if m else s
 
 def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> List[Dict]:
     """
@@ -240,11 +251,14 @@ def screens_to_requirements(screens: List[Dict], base_requirements: Dict) -> Lis
     """
     per_screen_reqs = []
 
-    globally_relevant_nfr_types = ["Accessibility", "Responsiveness", "Dark Mode", "Usability"]
+    globally_relevant_nfr_types = {
+        "accessibility", "responsiveness", "dark mode", "usability",
+        "performance_efficiency", "compatibility", "portability", "security",
+    }
     all_nfrs = _coerce_non_functional_requirements(base_requirements.get("non_functional_requirements", []))
     relevant_nfrs = [
         nfr for nfr in all_nfrs
-        if nfr.get("type") in globally_relevant_nfr_types
+        if str(nfr.get("type", "")).strip().lower() in globally_relevant_nfr_types
     ]
     if not relevant_nfrs:
         relevant_nfrs = all_nfrs
