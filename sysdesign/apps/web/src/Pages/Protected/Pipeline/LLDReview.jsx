@@ -395,8 +395,6 @@ REL_CONTAINS -N- ORDER_ITEMS
                     <p className="text-[11px] font-mono text-white/40">{cand.model}</p>
 
                     <div className="flex justify-between items-center pt-2 border-t border-white/10 text-xs">
-                      <span className="text-white/50">Quality Score:</span>
-                      <span className="font-mono font-bold text-cyan-300">{(cand.score * 100).toFixed(0)}%</span>
                     </div>
 
                     <p className="text-[11px] text-white/60 leading-relaxed">
