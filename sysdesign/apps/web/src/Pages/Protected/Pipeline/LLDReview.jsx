@@ -44,6 +44,7 @@ export default function LLDReview() {
   const [error, setError] = useState(null);
   const [selectedCandidate, setSelectedCandidate] = useState(1);
   const [openSourceCode, setOpenSourceCode] = useState({ class: false, er: false });
+  const [isGeneratingUI, setIsGeneratingUI] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
@@ -291,6 +292,21 @@ relationship "contains" as REL_CONTAINS {
 ORDERS -1- REL_CONTAINS
 REL_CONTAINS -N- ORDER_ITEMS
 @endchen`;
+
+  const handleGenerateUI = async () => {
+    setIsGeneratingUI(true);
+    try {
+      await fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-ui`, {
+        method: "POST",
+      });
+      navigate(`/pipeline/${jobId}`);
+    } catch (err) {
+      console.error("Failed to start UI generation:", err);
+      navigate(`/pipeline/${jobId}`);
+    } finally {
+      setIsGeneratingUI(false);
+    }
+  };
 
   return (
     <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
@@ -805,10 +821,11 @@ OrderController -> DatabaseRepository: save()
               ← Back to HLD
             </button>
             <button
-              onClick={() => navigate(`/pipeline/${jobId}/ui`)}
-              className="px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-400 text-black hover:bg-cyan-300 cursor-pointer"
+              onClick={handleGenerateUI}
+              disabled={isGeneratingUI}
+              className="px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-400 text-black hover:bg-cyan-300 cursor-pointer disabled:opacity-50"
             >
-              Review UI Prototypes (Agent 4) →
+              {isGeneratingUI ? "Generating UI..." : "Generate UI →"}
             </button>
           </div>
         </div>
