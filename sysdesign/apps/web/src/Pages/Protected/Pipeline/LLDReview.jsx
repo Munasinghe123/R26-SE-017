@@ -44,6 +44,7 @@ export default function LLDReview() {
   const [error, setError] = useState(null);
   const [selectedCandidate, setSelectedCandidate] = useState(1);
   const [openSourceCode, setOpenSourceCode] = useState({ class: false, er: false });
+  const [isGeneratingUI, setIsGeneratingUI] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
@@ -292,6 +293,21 @@ ORDERS -1- REL_CONTAINS
 REL_CONTAINS -N- ORDER_ITEMS
 @endchen`;
 
+  const handleGenerateUI = async () => {
+    setIsGeneratingUI(true);
+    try {
+      await fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-ui`, {
+        method: "POST",
+      });
+      navigate(`/pipeline/${jobId}`);
+    } catch (err) {
+      console.error("Failed to start UI generation:", err);
+      navigate(`/pipeline/${jobId}`);
+    } finally {
+      setIsGeneratingUI(false);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
@@ -353,39 +369,6 @@ REL_CONTAINS -N- ORDER_ITEMS
         {activeTab === "expert" && (
           <div className="space-y-6">
 
-            {/* DeepSeek Expert Decision Card */}
-            <div className="p-6 rounded-2xl border border-pink-500/30 bg-gradient-to-br from-pink-950/30 via-purple-950/20 to-black space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-pink-400">
-                  <Sparkles size={20} />
-                  <h3 className="text-sm font-bold tracking-widest uppercase" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                    Expert Selection Decision
-                  </h3>
-                </div>
-                <span className="text-xs font-mono text-pink-300 bg-pink-400/10 border border-pink-400/20 px-3 py-1 rounded-full">
-                  Status: {lld?.reconciliation_status || "Clean Pass (Zero Over-design violations)"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-[11px] text-white/40 uppercase">Selected Winner</span>
-                  <p className="text-sm font-bold text-pink-300">{winningCand?.name}</p>
-                  <p className="text-xs text-white/50 font-mono">{winningCand?.model}</p>
-                </div>
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-[11px] text-white/40 uppercase">Consistency Index</span>
-                  <p className="text-xl font-bold font-mono text-green-400">{(consistencyScore * 100).toFixed(1)}%</p>
-                  <p className="text-xs text-white/50">Zero Over-design violations</p>
-                </div>
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-[11px] text-white/40 uppercase">Reconciliation Engine</span>
-                  <p className="text-sm font-bold text-cyan-300">Clean Pass</p>
-                  <p className="text-xs text-white/50">PascalCase & camelCase verified</p>
-                </div>
-              </div>
-            </div>
-
             {/* 3 Candidate Cards Comparison */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-white/60" style={{ fontFamily: "Orbitron, sans-serif" }}>
@@ -412,8 +395,6 @@ REL_CONTAINS -N- ORDER_ITEMS
                     <p className="text-[11px] font-mono text-white/40">{cand.model}</p>
 
                     <div className="flex justify-between items-center pt-2 border-t border-white/10 text-xs">
-                      <span className="text-white/50">Quality Score:</span>
-                      <span className="font-mono font-bold text-cyan-300">{(cand.score * 100).toFixed(0)}%</span>
                     </div>
 
                     <p className="text-[11px] text-white/60 leading-relaxed">
@@ -495,56 +476,6 @@ REL_CONTAINS -N- ORDER_ITEMS
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Structured Class Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {lld?.classes?.map((cls, idx) => (
-                <div key={idx} className="p-5 rounded-2xl border border-cyan-400/20 bg-black/60 space-y-4">
-                  <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                    <div>
-                      <h4 className="text-sm font-bold text-white font-mono">{cls.name}</h4>
-                      <p className="text-[10px] text-white/40 font-mono">{cls.package || "package"}</p>
-                    </div>
-                    <span className="text-[10px] uppercase font-bold text-violet-300 bg-violet-400/10 px-2 py-0.5 rounded-full border border-violet-400/20">
-                      {cls.stereotype || "entity"}
-                    </span>
-                  </div>
-
-                  {/* Attributes */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-white/40">Attributes</span>
-                    {cls.attributes?.length > 0 ? (
-                      cls.attributes.map((attr, ai) => (
-                        <div key={ai} className="flex justify-between text-[11px] font-mono text-white/70 bg-white/5 p-1.5 rounded">
-                          <span><strong className="text-red-400">-</strong> {attr.name}</span>
-                          <span className="text-cyan-300">{attr.type}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-[10px] text-white/30 italic">No attributes defined</p>
-                    )}
-                  </div>
-
-                  {/* Methods */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-white/40">Methods</span>
-                    {cls.methods?.length > 0 ? (
-                      cls.methods.map((m, mi) => (
-                        <div key={mi} className="text-[11px] font-mono bg-white/5 p-1.5 rounded space-y-0.5">
-                          <div className="flex justify-between">
-                            <span className="text-green-400">+ {m.name}</span>
-                            <span className="text-pink-300">{m.returns || "void"}</span>
-                          </div>
-                          <p className="text-[10px] text-white/40 truncate">({m.params?.join(", ")})</p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-[10px] text-white/30 italic">No methods defined</p>
-                    )}
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         )}
@@ -726,40 +657,6 @@ OrderController -> DatabaseRepository: save()
                 )}
               </div>
             </div>
-
-            {/* Database Tables and Column Schemas */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {lld?.entities?.map((ent, idx) => (
-                <div key={idx} className="p-6 rounded-2xl border border-cyan-400/20 bg-black/60 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-white/10 pb-3">
-                    <Database size={18} className="text-cyan-400" />
-                    <h4 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
-                      Table: {ent.name}
-                    </h4>
-                  </div>
-
-                  <div className="space-y-1.5 font-mono text-xs">
-                    <div className="grid grid-cols-4 text-[10px] uppercase font-bold text-white/40 px-2 pb-1">
-                      <span>Column</span>
-                      <span>Type</span>
-                      <span>Key</span>
-                      <span>FK Ref</span>
-                    </div>
-                    {ent.columns?.map((col, ci) => (
-                      <div key={ci} className="grid grid-cols-4 items-center p-2 rounded bg-white/5 border border-white/5 text-[11px]">
-                        <span className="text-white font-bold">{col.name}</span>
-                        <span className="text-cyan-300">{col.type}</span>
-                        <span>
-                          {col.pk && <span className="text-[9px] px-1.5 py-0.5 bg-amber-400/20 text-amber-300 font-bold rounded">PK</span>}
-                          {col.fk && !col.pk && <span className="text-[9px] px-1.5 py-0.5 bg-violet-400/20 text-violet-300 font-bold rounded">FK</span>}
-                        </span>
-                        <span className="text-[10px] text-white/40 truncate">{col.fk || "—"}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
@@ -907,10 +804,11 @@ OrderController -> DatabaseRepository: save()
               ← Back to HLD
             </button>
             <button
-              onClick={() => navigate(`/pipeline/${jobId}/ui`)}
-              className="px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-400 text-black hover:bg-cyan-300 cursor-pointer"
+              onClick={handleGenerateUI}
+              disabled={isGeneratingUI}
+              className="px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-400 text-black hover:bg-cyan-300 cursor-pointer disabled:opacity-50"
             >
-              Review UI Prototypes (Agent 4) →
+              {isGeneratingUI ? "Generating UI..." : "Generate UI →"}
             </button>
           </div>
         </div>
