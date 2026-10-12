@@ -161,7 +161,7 @@ def generate(req: GenerateRequest):
             screen_req = per_screen[0]
             screen_type = screen_req.get("screen_type", "unknown")
 
-            _log(buf, "Sending prompt to LLM (model: llama-3.3-70b-versatile)...")
+            _log(buf, "Sending prompt to LLM (model: qwen/qwen3-coder via OpenRouter)...")
             start = time.time()
             html = generate_ui(screen_req, screen_type)
             elapsed = round(time.time() - start, 1)
