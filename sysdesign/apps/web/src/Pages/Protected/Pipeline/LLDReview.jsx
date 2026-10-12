@@ -372,12 +372,7 @@ REL_CONTAINS -N- ORDER_ITEMS
             {/* DeepSeek Expert Decision Card */}
             <div className="p-6 rounded-2xl border border-pink-500/30 bg-gradient-to-br from-pink-950/30 via-purple-950/20 to-black space-y-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-pink-400">
-                  <Sparkles size={20} />
-                  <h3 className="text-sm font-bold tracking-widest uppercase" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                    Expert Selection Decision
-                  </h3>
-                </div>
+
                 <span className="text-xs font-mono text-pink-300 bg-pink-400/10 border border-pink-400/20 px-3 py-1 rounded-full">
                   Status: {lld?.reconciliation_status || "Clean Pass (Zero Over-design violations)"}
                 </span>
