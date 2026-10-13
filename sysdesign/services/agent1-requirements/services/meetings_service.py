@@ -15,7 +15,8 @@ async def save_meeting_requirements(
     requirements: Dict[str, Any],
     client_view: Optional[Dict[str, Any]] = None,
     version: int = 1,
-    project_id: Optional[str] = None
+    project_id: Optional[str] = None,
+    status: str = "ready_for_review"
 ) -> str:
     """Save extracted or refined requirements to DB and local cache."""
     if not meeting_id:
@@ -29,7 +30,8 @@ async def save_meeting_requirements(
             "requirements": requirements,
             "client_view": client_view,
             "version": version,
-            "project_id": project_id
+            "project_id": project_id,
+            "status": status
         }
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(cache_data, f, indent=2, default=str)
@@ -63,6 +65,7 @@ async def save_meeting_requirements(
                         INSERT INTO meetings (id, project_id, status, requirements, client_view, version, updated_at)
                         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, now())
                         ON CONFLICT (id) DO UPDATE SET
+                            status = EXCLUDED.status,
                             requirements = EXCLUDED.requirements,
                             client_view = EXCLUDED.client_view,
                             version = EXCLUDED.version,
@@ -70,7 +73,7 @@ async def save_meeting_requirements(
                         """,
                         m_uuid,
                         p_uuid,
-                        "ready_for_review",
+                        status,
                         reqs_json,
                         cview_json,
                         version
