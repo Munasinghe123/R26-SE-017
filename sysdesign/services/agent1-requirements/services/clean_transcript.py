@@ -1,17 +1,6 @@
 import json
 import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-
-load_dotenv()
-
-
-llm = ChatOpenAI(
-    api_key=os.getenv('OPENROUTER_API_KEY'),
-    base_url='https://openrouter.ai/api/v1', 
-    model="meta-llama/llama-3.1-8b-instruct",
-    temperature=0
-)
+from services.llm import get_llm, llm
 
 def build_prompt(
     transcript: str,
