@@ -92,6 +92,23 @@ async def create_project_service(creator_id, data):
                 data.clientId
             )
 
+            # 6. Initialize meeting invitation record in meetings table
+            await connection.execute(
+                """
+                INSERT INTO meetings (
+                    id,
+                    project_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at
+                )
+                VALUES ($1, $1, 'invited', 1, now(), now())
+                ON CONFLICT (id) DO NOTHING;
+                """,
+                project["id"]
+            )
+
     return {
         "message": "Project created successfully",
         "project": {
@@ -204,11 +221,15 @@ async def get_user_projects_service(user_id):
                     p.product_owner_id,
                     p.client_id,
                     p.created_at,
+                    COALESCE(c.name, 'Client Partner') AS client_name,
+                    COALESCE(c.email, '') AS client_email,
                     m.id AS meeting_id,
-                    m.status AS meeting_status
+                    m.status AS meeting_status,
+                    m.input_method AS input_method
                 FROM projects p
+                LEFT JOIN users c ON p.client_id = c.id
                 LEFT JOIN LATERAL (
-                    SELECT id, status, updated_at
+                    SELECT id, status, (requirements->>'input_method') AS input_method, updated_at
                     FROM meetings
                     WHERE project_id = p.id OR id = p.id
                     ORDER BY updated_at DESC
@@ -231,11 +252,15 @@ async def get_user_projects_service(user_id):
                     p.product_owner_id,
                     p.client_id,
                     p.created_at,
+                    COALESCE(po.name, 'Business Analyst') AS product_owner_name,
+                    COALESCE(po.email, '') AS product_owner_email,
                     m.id AS meeting_id,
-                    m.status AS meeting_status
+                    m.status AS meeting_status,
+                    m.input_method AS input_method
                 FROM projects p
+                LEFT JOIN users po ON p.product_owner_id = po.id
                 LEFT JOIN LATERAL (
-                    SELECT id, status, updated_at
+                    SELECT id, status, (requirements->>'input_method') AS input_method, updated_at
                     FROM meetings
                     WHERE project_id = p.id OR id = p.id
                     ORDER BY updated_at DESC
@@ -253,12 +278,15 @@ async def get_user_projects_service(user_id):
         projects_data = []
         for p in projects:
             m_status = p.get("meeting_status")
+            inp_method = p.get("input_method") or ("meeting" if m_status == "completed" else None)
             if m_status == "ready_for_review":
                 analysis_status = "waiting"
             elif m_status == "completed":
                 analysis_status = "completed"
+            elif m_status == "invited":
+                analysis_status = "invited"
             else:
-                analysis_status = "idle"
+                analysis_status = "invited" if user["role"] == "CLIENT" else "idle"
 
             projects_data.append({
                 "id": str(p["id"]),
@@ -266,11 +294,19 @@ async def get_user_projects_service(user_id):
                 "description": p["description"],
                 "product_owner_id": str(p["product_owner_id"]),
                 "client_id": str(p["client_id"]),
+                "product_owner_name": p.get("product_owner_name") or "Business Analyst",
+                "product_owner_email": p.get("product_owner_email") or "",
+                "client_name": p.get("client_name") or "Client Partner",
+                "client_email": p.get("client_email") or "",
+                "room_name": f"proj-{str(p['id'])[:8]}",
                 "created_at": p["created_at"].isoformat() if hasattr(p["created_at"], "isoformat") else p["created_at"],
                 "latest_meeting_id": str(p["meeting_id"]) if p.get("meeting_id") else str(p["id"]),
                 "meeting_id": str(p["meeting_id"]) if p.get("meeting_id") else str(p["id"]),
+                "meeting_status": m_status or ("invited" if user["role"] == "CLIENT" else "idle"),
                 "analysis_status": analysis_status,
                 "status": analysis_status,
+                "input_method": inp_method,
+                "is_invited": True if user["role"] == "CLIENT" else False,
             })
 
     return {
