@@ -14,6 +14,7 @@ export default function CreateProjectModal({ isOpen = true, onClose, onCreated }
 
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClient, setSelectedClient] = useState(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
@@ -204,7 +205,7 @@ export default function CreateProjectModal({ isOpen = true, onClose, onCreated }
               <div className="relative">
                 <Search
                   size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400"
                 />
 
                 <div className="absolute left-11 top-1/2 h-7 w-0.5 -translate-y-1/2 bg-cyan-400/30" />
@@ -212,72 +213,135 @@ export default function CreateProjectModal({ isOpen = true, onClose, onCreated }
                 <input
                   type="text"
                   value={clientSearch}
+                  onFocus={() => setIsDropdownOpen(true)}
                   onChange={(e) => {
                     const value = e.target.value;
                     setClientSearch(value);
                     searchClients(value);
+                    setIsDropdownOpen(true);
                   }}
-                  placeholder="Search client by name or email..."
+                  placeholder="Click to browse clients or type to filter..."
                   className="w-full rounded-xl border border-cyan-400/20 bg-[#07151B] py-3.5 pl-14 pr-5 text-white outline-none transition placeholder:text-gray-500 focus:border-cyan-400/70 focus:ring-1 focus:ring-cyan-400/30 text-sm md:text-base"
                 />
 
-                {clientSearch.trim().length >= 2 && (
-                  <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-52 overflow-y-auto overflow-x-hidden rounded-xl border border-cyan-400/30 bg-[#07151B] shadow-2xl custom-scrollbar">
+                {isDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-60 overflow-y-auto overflow-x-hidden rounded-xl border border-cyan-400/30 bg-[#08121A] shadow-2xl custom-scrollbar backdrop-blur-xl">
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-cyan-950/40 text-[11px] font-semibold tracking-wider uppercase text-cyan-300">
+                      <span>Available Stakeholder Clients</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsDropdownOpen(false);
+                        }}
+                        className="text-gray-400 hover:text-white"
+                      >
+                        Close
+                      </button>
+                    </div>
+
                     {searchingClients && (
-                      <div className="px-5 py-3 text-sm text-gray-500">
-                        Searching clients...
+                      <div className="px-5 py-4 text-sm text-cyan-300/70 flex items-center gap-2">
+                        <div className="h-3 w-3 animate-spin rounded-full border border-cyan-400 border-t-transparent" />
+                        Loading clients...
                       </div>
                     )}
 
                     {!searchingClients && clientResults.length === 0 && (
-                      <div className="px-5 py-3 text-sm text-gray-500">
-                        No clients found.
+                      <div className="px-5 py-4 text-sm text-gray-400">
+                        No clients found matching "{clientSearch}".
                       </div>
                     )}
 
                     {!searchingClients &&
-                      clientResults.map((client) => (
-                        <button
-                          key={client.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedClient(client);
-                            setClientSearch("");
-                          }}
-                          className="flex w-full flex-col items-start px-5 py-3 text-left transition hover:bg-cyan-400/10 border-b border-white/5 last:border-0"
-                        >
-                          <span className="font-medium text-white text-sm">
-                            {client.name}
-                          </span>
+                      clientResults.map((client) => {
+                        const initials = (client.name || "C")
+                          .split(" ")
+                          .map((n) => n[0])
+                          .slice(0, 2)
+                          .join("")
+                          .toUpperCase();
 
-                          <span className="mt-0.5 text-xs text-gray-400">
-                            {client.email}
-                          </span>
-                        </button>
-                      ))}
+                        return (
+                          <button
+                            key={client.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedClient(client);
+                              setClientSearch("");
+                              setIsDropdownOpen(false);
+                            }}
+                            className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-cyan-500/15 border-b border-white/5 last:border-0 cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-xs font-bold shadow-[0_0_10px_rgba(34,211,238,0.2)]">
+                                {initials}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-medium text-white text-sm group-hover:text-cyan-300 transition-colors block truncate">
+                                  {client.name}
+                                </span>
+                                <span className="text-xs text-gray-400 block truncate">
+                                  {client.email}
+                                </span>
+                              </div>
+                            </div>
+
+                            <span
+                              className={`shrink-0 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
+                                client.role === "CLIENT"
+                                  ? "bg-cyan-500/20 border-cyan-400/40 text-cyan-300"
+                                  : "bg-white/10 border-white/20 text-gray-300"
+                              }`}
+                            >
+                              {client.role || "CLIENT"}
+                            </span>
+                          </button>
+                        );
+                      })}
                   </div>
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between rounded-xl border border-cyan-400/30 bg-[#07151B] px-5 py-3.5">
-                <div>
-                  <p className="font-medium text-white text-sm md:text-base">
-                    {selectedClient.name}
-                  </p>
+              <div className="rounded-xl border border-cyan-400/40 bg-gradient-to-r from-cyan-950/60 to-[#07151B] p-4 shadow-[0_0_20px_rgba(34,211,238,0.15)]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 border border-cyan-400/50 text-cyan-300 text-sm font-bold shadow-[0_0_15px_rgba(34,211,238,0.3)]">
+                      {(selectedClient.name || "C").slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-white text-sm md:text-base">
+                          {selectedClient.name}
+                        </p>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300">
+                          {selectedClient.role || "CLIENT"}
+                        </span>
+                      </div>
+                      <p className="text-xs md:text-sm text-cyan-300/80">
+                        {selectedClient.email}
+                      </p>
+                    </div>
+                  </div>
 
-                  <p className="mt-0.5 text-xs md:text-sm text-cyan-300/80">
-                    {selectedClient.email}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedClient(null);
+                      setIsDropdownOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition cursor-pointer"
+                    title="Change selected client"
+                  >
+                    <span>Change</span>
+                    <X size={14} />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedClient(null)}
-                  className="rounded-full p-1.5 text-gray-400 transition hover:bg-cyan-400/10 hover:text-cyan-300 cursor-pointer"
-                  aria-label="Remove selected client"
-                >
-                  <X size={18} />
-                </button>
+                <div className="mt-2.5 pt-2.5 border-t border-cyan-400/15 flex items-center gap-2 text-xs text-cyan-300/80">
+                  <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  <span>An invitation to the requirements elicitation meeting will be automatically linked to this client.</span>
+                </div>
               </div>
             )}
           </div>
