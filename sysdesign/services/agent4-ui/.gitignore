@@ -1,0 +1,7 @@
+
+# Agent 4 generated artifacts
+outputs/
+samples/sample_requirements.json
+results_*.csv
+results_*.md
+.env

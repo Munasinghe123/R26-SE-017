@@ -1,5 +1,6 @@
 import os
 import json
+import config
 from dotenv import load_dotenv
 from openrouter_client import ChatOpenRouter
 from langchain_core.prompts import ChatPromptTemplate
@@ -14,9 +15,9 @@ if not os.getenv("OPENROUTER_API_KEY"):
 
 # For HTML generation (quality matters) using Qwen3-Coder via OpenRouter
 gen_llm = ChatOpenRouter(
-    model="qwen/qwen3-coder",  # OpenRouter slug for Qwen3-Coder
-    temperature=0.2,           # Low temperature ensures reliable UI syntax and structures
-    max_tokens=1800,           
+    model=config.LLM_MODEL,
+    temperature=config.LLM_TEMPERATURE,
+    max_tokens=config.GENERATOR_MAX_TOKENS,
 )
 
 def _extract_html(raw: str) -> str:

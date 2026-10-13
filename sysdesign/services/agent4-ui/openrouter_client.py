@@ -1,14 +1,13 @@
-import os
-from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+import config
 
-load_dotenv()
 
 class ChatOpenRouter(ChatOpenAI):
-    def __init__(self, model: str = "qwen/qwen3-coder", temperature: float = 0.2, max_tokens: int = 1800, **kwargs):
-        api_key = kwargs.pop("api_key", None) or os.getenv("OPENROUTER_API_KEY")
+    def __init__(self, model: str = config.LLM_MODEL, temperature: float = config.LLM_TEMPERATURE,
+                 max_tokens: int = config.PLANNER_MAX_TOKENS, **kwargs):
+        api_key = kwargs.pop("api_key", None) or config.OPENROUTER_API_KEY
         super().__init__(
-            base_url="https://openrouter.ai/api/v1",
+            base_url=config.OPENROUTER_BASE_URL,
             api_key=api_key,
             model=model,
             temperature=temperature,
@@ -16,5 +15,6 @@ class ChatOpenRouter(ChatOpenAI):
             **kwargs
         )
 
-def get_openrouter_llm(model: str = "qwen/qwen3-coder", temperature: float = 0.2, max_tokens: int = 1800):
+def get_openrouter_llm(model: str = config.LLM_MODEL, temperature: float = config.LLM_TEMPERATURE,
+                       max_tokens: int = config.PLANNER_MAX_TOKENS):
     return ChatOpenRouter(model=model, temperature=temperature, max_tokens=max_tokens)
