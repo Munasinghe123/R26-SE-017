@@ -56,8 +56,10 @@ export default function UploadModal({ onClose, projectId, onSubmit }) {
       }
 
       setStatusText("Extraction Complete!");
+      const isAudio = Boolean(file?.name?.match(/\.(mp3|wav|m4a)$/i));
+      const inputMethod = isAudio ? "audio" : "document";
       if (onSubmit) {
-        onSubmit({ ...data, thread_id: threadId });
+        onSubmit({ ...data, thread_id: threadId, input_method: inputMethod });
       }
     } catch (err) {
       console.error("Extraction failed:", err);
