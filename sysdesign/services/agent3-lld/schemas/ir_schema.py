@@ -48,6 +48,7 @@ class Method:
 	name: str
 	parameters: list[MethodParameter] = field(default_factory=list)
 	visibility: Visibility = Visibility.PUBLIC
+	return_type: str = "void"
 
 
 @dataclass
@@ -55,6 +56,9 @@ class ClassRelationship:
 	target: str
 	rel_type: str = "association"
 	cardinality: str = ""
+	source_multiplicity: str = ""
+	target_multiplicity: str = ""
+	source: str = ""
 
 
 @dataclass
