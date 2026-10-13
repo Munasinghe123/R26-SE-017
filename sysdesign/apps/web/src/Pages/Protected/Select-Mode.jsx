@@ -20,7 +20,7 @@ export default function SelectMode() {
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center gap-40 p-8">
           <button 
-            onClick={() => navigate("/test-meeting", { state: { projectId } })}
+            onClick={() => navigate("/test-meeting", { state: { projectId, role: "ba", username: "Business Analyst" } })}
             className="group relative flex h-full aspect-[3/4] items-center justify-center cursor-pointer overflow-hidden"
           >
             <img
