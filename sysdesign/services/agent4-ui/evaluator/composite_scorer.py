@@ -31,6 +31,7 @@ and services. ETSI.
 import json
 import os
 from datetime import datetime
+import config
 
 from evaluator.iso_metrics import compute_iso_score
 from evaluator.nielsen_metrics import compute_nielsen_score
@@ -93,9 +94,9 @@ def evaluate(html_string: str, iteration_number: int = 1) -> dict:
 
     # Weighted composite
     total_score = (
-        iso_score     * 0.30
-        + nielsen_score * 0.30
-        + wcag_score    * 0.40
+        iso_score       * config.WEIGHT_ISO
+        + nielsen_score * config.WEIGHT_NIELSEN
+        + wcag_score    * config.WEIGHT_WCAG
     )
 
     # Identify weakest standard and its lowest sub-metric
@@ -109,7 +110,7 @@ def evaluate(html_string: str, iteration_number: int = 1) -> dict:
     else:
         weakest_metric = wcag_result.get('weakest_pour', 'unknown')
 
-    threshold = 85
+    threshold = config.SCORE_THRESHOLD
     passed = total_score >= threshold
 
     return {

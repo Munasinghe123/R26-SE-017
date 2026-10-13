@@ -29,6 +29,7 @@ import re
 import logging
 
 from bs4 import BeautifulSoup
+import config
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +121,7 @@ def run_axe_core(html_string: str):
             if axe_cmd:
                 result = subprocess.run(
                     [axe_cmd, temp_path, '--format', 'json', '--stdout'],
-                    capture_output=True, text=True, timeout=30
+                    capture_output=True, text=True, timeout=config.AXE_TIMEOUT
                 )
                 if result.returncode == 0:
                     data = json.loads(result.stdout)
@@ -128,8 +129,8 @@ def run_axe_core(html_string: str):
             return None
 
         result = subprocess.run(
-            ['node', node_script, temp_path],
-            capture_output=True, text=True, timeout=45
+            [config.NODE_BIN, node_script, temp_path],
+            capture_output=True, text=True, timeout=config.AXE_TIMEOUT
         )
         if result.returncode != 0:
             logging.warning(f"[WCAG] axe runner failed: {result.stderr.strip()[:300]}")

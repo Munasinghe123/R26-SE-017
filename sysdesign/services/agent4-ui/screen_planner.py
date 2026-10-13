@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import config
 from typing import List, Dict
 from dotenv import load_dotenv
 from openrouter_client import ChatOpenRouter
@@ -101,9 +102,9 @@ def _recover_truncated_json(raw: str) -> str:
 
 # For planning (bumped to 3000 tokens — a full screen plan needs ~1500-2000)
 fast_llm = ChatOpenRouter(
-    model="qwen/qwen3-coder",  # OpenRouter slug for Qwen3-Coder
-    temperature=0.2,            # Low temperature is great for reliable UI structure & code
-    max_tokens=1800,           # Retained your token limit
+    model=config.LLM_MODEL,
+    temperature=config.LLM_TEMPERATURE,
+    max_tokens=config.PLANNER_MAX_TOKENS,
 )
 
 def plan_screens(system_input: Dict) -> List[Dict]:

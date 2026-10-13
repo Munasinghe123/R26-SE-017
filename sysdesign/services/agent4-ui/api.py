@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
+import config
 
 # Change working directory so relative imports inside modules still work
 os.chdir(os.path.dirname(__file__))
@@ -34,7 +35,7 @@ app = FastAPI(title="UI/UX Usability Agent", version="1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -161,7 +162,7 @@ def generate(req: GenerateRequest):
             screen_req = per_screen[0]
             screen_type = screen_req.get("screen_type", "unknown")
 
-            _log(buf, "Sending prompt to LLM (model: qwen/qwen3-coder via OpenRouter)...")
+            _log(buf, f"Sending prompt to LLM (model: {config.LLM_MODEL} via OpenRouter)...")
             start = time.time()
             html = generate_ui(screen_req, screen_type)
             elapsed = round(time.time() - start, 1)
@@ -221,7 +222,7 @@ def refine(req: RefineRequest):
             else:
                 _log(buf, "No existing HTML found — will generate a first pass before refining.")
 
-            _log(buf, "Running refinement loop (up to 5 iterations)...")
+            _log(buf, f"Running refinement loop (up to {config.MAX_REFINEMENT_ITERATIONS} iterations)...")
             start = time.time()
             result = run_refinement_loop(screen_req, screen_type, initial_html=initial_html)
             elapsed = round(time.time() - start, 1)
@@ -612,6 +613,6 @@ def run(payload: UIRequest) -> dict:
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8004))
+    port = config.PORT
     uvicorn.run("api:app", host="0.0.0.0", port=port, reload=True)
 
