@@ -1,0 +1,119 @@
+{
+  "requirements": {
+    "project_name": "PayGuard Autonomous Fraud Detection & Payment Gateway",
+    "job_id": "job-payguard-202",
+    "functional_requirements": [
+      {
+        "id": "FR-1",
+        "title": "Real-Time Transaction Scoring",
+        "description": "The system shall evaluate payment transactions in real time using ML risk inference models and assign a dynamic fraud probability score."
+      },
+      {
+        "id": "FR-2",
+        "title": "Adaptive Multi-Factor Challenge",
+        "description": "The system shall trigger biometric or SMS one-time password challenges for transactions evaluated above the baseline risk threshold."
+      },
+      {
+        "id": "FR-3",
+        "title": "Merchant Dispute & Chargeback Workflow",
+        "description": "The system shall provide authorized merchants with a dispute resolution interface to submit supporting documentation and evidence for contested charges."
+      },
+      {
+        "id": "FR-4",
+        "title": "Regulatory Anti-Money Laundering (AML) Reporting",
+        "description": "The system shall generate automated Suspicious Activity Reports (SAR) for cumulative cross-border wire transfers exceeding statutory thresholds."
+      }
+    ],
+    "non_functional_requirements": [
+      {
+        "id": "NFR-1",
+        "iso_characteristic": "performance_efficiency",
+        "description": "The scoring engine must deliver sub-second risk evaluations during high-volume merchant checkout peaks.",
+        "target_metric": "99th percentile transaction inference latency under 120ms at 5,000 requests per second"
+      },
+      {
+        "id": "NFR-2",
+        "iso_characteristic": "security",
+        "description": "All payment card numbers and transaction payloads must adhere strictly to PCI-DSS Level 1 compliance.",
+        "target_metric": "Hardware Security Module (HSM) AES-GCM-256 tokenization with zero plaintext primary account number persistence"
+      },
+      {
+        "id": "NFR-3",
+        "iso_characteristic": "reliability",
+        "description": "The authorization core must maintain continuous operational uptime across multi-region clusters.",
+        "target_metric": "99.999% uptime availability with zero data loss (RPO = 0, RTO < 5 seconds)"
+      },
+      {
+        "id": "NFR-4",
+        "iso_characteristic": "maintainability",
+        "description": "Fraud detection rules and ML models must be hot-reloadable without service restart.",
+        "target_metric": "Zero-downtime model swap completed within 10 seconds across active gateway nodes"
+      }
+    ],
+    "design_constraints": [
+      "Containerized microservices running on Python 3.11+ with gRPC and REST endpoints",
+      "Strict PCI-DSS v4.0 and GDPR Article 25 regulatory compliance",
+      "PostgreSQL with TimescaleDB extension for audit logs and ledger idempotency"
+    ],
+    "external_interfaces": [
+      "Visa Direct & Mastercard Send Processing Networks",
+      "SWIFT Financial Messaging Interoperability Gateway",
+      "Twilio Authy Multi-Factor Authentication Service",
+      "AWS KMS / CloudHSM Cryptographic Key Management"
+    ],
+    "assumptions_and_dependencies": [
+      "Payment clearing networks respond to authorization calls within 2.5 seconds",
+      "Merchant integration uses TLS 1.3 mutual authentication (mTLS)"
+    ]
+  },
+  "hld_annex": {
+    "schema_version": "1.0",
+    "job_id": "job-payguard-202",
+    "agent": "hld",
+    "component_responsibility_matrix": [
+      {
+        "component": "Edge Ingestion & Rate Limiter",
+        "layer": "Edge / Ingress",
+        "responsibilities": "TLS termination, mTLS validation, token rate limiting, and replay attack prevention"
+      },
+      {
+        "component": "Real-Time Fraud Inference Engine",
+        "layer": "ML & Analytics",
+        "responsibilities": "Feature extraction, ML model evaluation, risk scoring, and challenge decision matrix"
+      },
+      {
+        "component": "Payment Settlement Core",
+        "layer": "Financial Core Logic",
+        "responsibilities": "Double-entry transaction ledgers, currency conversions, and network gateway dispatch"
+      },
+      {
+        "component": "AML Compliance & Audit Service",
+        "layer": "Governance & Regulatory",
+        "responsibilities": "SAR report generation, regulatory audit trails, and immutable ledger archiving"
+      }
+    ],
+    "quality_evidence": {
+      "CAS": "0.935",
+      "RTS": "0.960",
+      "QAC": "0.920",
+      "CI": "0.890",
+      "CoS": "0.945"
+    },
+    "artifact_uris": {
+      "architecture_diagram": "https://res.cloudinary.com/dzd61ded5/image/upload/sample_architecture.png"
+    }
+  },
+  "lld_annex": {
+    "artifact_uris": {
+      "class_diagram": "https://res.cloudinary.com/dzd61ded5/image/upload/sample_class.png",
+      "er_diagram": "https://res.cloudinary.com/dzd61ded5/image/upload/sample_er.png",
+      "sequence_diagram": "https://res.cloudinary.com/dzd61ded5/image/upload/sample_sequence.png"
+    }
+  },
+  "ui_annex": {
+    "artifact_uris": {
+      "fraud_investigation_console": "https://res.cloudinary.com/dzd61ded5/image/upload/sample_ui_dashboard.png",
+      "merchant_dispute_portal": "https://res.cloudinary.com/dzd61ded5/image/upload/sample_ui_merchant.png"
+    }
+  }
+}
