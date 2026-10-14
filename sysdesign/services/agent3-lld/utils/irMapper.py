@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import logging
 import re
 from schemas.ir_schema import (
     IntermediateRepresentation,
@@ -7,6 +6,7 @@ from schemas.ir_schema import (
     ClassRelationship,
     Method,
     MethodParameter,
+    Visibility,
     LogicBlock,
     LogicBlockType,
     ParticipantType,
@@ -18,22 +18,124 @@ from schemas.ir_schema import (
     EntityRelationship,
 )
 
+logger = logging.getLogger(__name__)
+
+METHOD_PATTERN = re.compile(
+    r"^\s*(?:([+\-#~])\s*)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\((.*?)\)(?:\s*:\s*([a-zA-Z0-9_<>,\s\[\]*&?]+))?\s*$"
+)
+
+
+def _split_parameters(args_block: str) -> list[str]:
+    params = []
+    current = []
+    depth = 0
+    for ch in args_block:
+        if ch in ('<', '[', '('):
+            depth += 1
+            current.append(ch)
+        elif ch in ('>', ']', ')'):
+            depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0:
+            params.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        p = "".join(current).strip()
+        if p:
+            params.append(p)
+    return params
+
+
+def _parse_param(param_str: str) -> tuple[str, str]:
+    p = param_str.strip()
+    if not p:
+        return "", ""
+    if ":" in p:
+        parts = p.split(":", 1)
+        return parts[0].strip(), parts[1].strip()
+    parts = p.split()
+    if len(parts) == 2:
+        return parts[1].strip(), parts[0].strip()
+    return p, ""
+
+
+def _map_visibility(prefix: str | None) -> Visibility:
+    if not prefix:
+        return Visibility.PUBLIC
+    prefix_clean = prefix.strip().lower()
+    if prefix_clean in ("-", "private"):
+        return Visibility.PRIVATE
+    if prefix_clean in ("#", "protected"):
+        return Visibility.PROTECTED
+    if prefix_clean in ("~", "package"):
+        return Visibility.PACKAGE
+    return Visibility.PUBLIC
+
+
+def _parse_method_object(raw_method: object) -> Method:
+    if isinstance(raw_method, dict):
+        name = str(raw_method.get("name", "")).strip()
+        return_type = str(raw_method.get("return_type", raw_method.get("returns", raw_method.get("type", "void")))).strip() or "void"
+        visibility = _map_visibility(str(raw_method.get("visibility", "public")))
+        params_raw = raw_method.get("parameters", raw_method.get("params", [])) or []
+        parameters: list[MethodParameter] = []
+        for p in params_raw:
+            if isinstance(p, dict):
+                p_name = str(p.get("name", "")).strip()
+                p_type = str(p.get("data_type", p.get("type", ""))).strip()
+                if p_name:
+                    parameters.append(MethodParameter(name=p_name, data_type=p_type))
+            elif isinstance(p, str):
+                p_name, p_type = _parse_param(p)
+                if p_name:
+                    parameters.append(MethodParameter(name=p_name, data_type=p_type))
+        return Method(
+            name=name,
+            parameters=parameters,
+            visibility=visibility,
+            return_type=return_type,
+        )
+
+    text = str(raw_method or "").strip()
+    if not text:
+        return Method(name="")
+
+    match = METHOD_PATTERN.match(text)
+    if match:
+        vis_char, name, args_raw, ret_type = match.groups()
+        visibility = _map_visibility(vis_char)
+        param_strings = _split_parameters(args_raw or "")
+        parameters = []
+        for ps in param_strings:
+            p_name, p_type = _parse_param(ps)
+            if p_name:
+                parameters.append(MethodParameter(name=p_name, data_type=p_type))
+        return Method(
+            name=name,
+            parameters=parameters,
+            visibility=visibility,
+            return_type=ret_type.strip() if ret_type else "void",
+        )
+
+    # Fallback for plain method text without parentheses
+    clean_text = text
+    visibility = Visibility.PUBLIC
+    if clean_text and clean_text[0] in ("+", "-", "#", "~"):
+        visibility = _map_visibility(clean_text[0])
+        clean_text = clean_text[1:].strip()
+    return Method(
+        name=clean_text or text,
+        parameters=[],
+        visibility=visibility,
+        return_type="void",
+    )
+
 
 def _parse_method_signature(text: str) -> tuple[str, list[str]]:
-    if not text:
-        return "", []
-
-    match = re.match(r"\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\((.*?)\)\s*$", text)
-    if not match:
-        return text.strip(), []
-
-    name = match.group(1).strip()
-    args_block = match.group(2).strip()
-    if not args_block:
-        return name, []
-
-    args = [arg.strip() for arg in args_block.split(",") if arg.strip()]
-    return name, args
+    method = _parse_method_object(text)
+    return method.name, [p.name for p in method.parameters]
 
 
 def _ensure_class(class_index: dict[str, ClassIR], name: str) -> ClassIR:
@@ -161,16 +263,9 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
         raw_methods = raw_cls.get("methods", []) or []
         methods: list[Method] = []
         for raw_method in raw_methods:
-            method_text = str(raw_method).strip()
-            if not method_text:
-                continue
-
-            method_name, args = _parse_method_signature(method_text)
-            parameters = [MethodParameter(name=arg) for arg in args]
-            methods.append(Method(
-                name=method_name or method_text,
-                parameters=parameters,
-            ))
+            method_obj = _parse_method_object(raw_method)
+            if method_obj and method_obj.name:
+                methods.append(method_obj)
 
         cls = ClassIR(
             name=name,
@@ -190,14 +285,25 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
 
         rel_type = str(rel.get("type", "association"))
         cardinality = str(rel.get("cardinality", ""))
-        cls = _ensure_class(class_index, source)
-        if cls not in classes:
-            classes.append(cls)
+        source_mult = str(rel.get("source_multiplicity", ""))
+        target_mult = str(rel.get("target_multiplicity", ""))
 
+        if source not in class_index:
+            logger.warning("UNDEFINED_RELATIONSHIP_SOURCE: Relationship source '%s' is not defined in classes.", source)
+            continue
+
+        if target not in class_index:
+            logger.warning("UNDEFINED_RELATIONSHIP_TARGET: Relationship target '%s' is not defined in classes.", target)
+            continue
+
+        cls = class_index[source]
         cls.relationships.append(ClassRelationship(
             target=target,
+            source=source,
             rel_type=rel_type,
-            cardinality=cardinality,
+            cardinality=cardinality or target_mult,
+            source_multiplicity=source_mult,
+            target_multiplicity=target_mult or cardinality,
         ))
 
     # ------------------------------------
@@ -268,6 +374,15 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
     entities: list[EntityIR] = []
     entity_index: dict[str, EntityIR] = {}
 
+    raw_entity_relationships = er_diagram.get("relationships", []) or []
+    entity_rel_targets: dict[str, set[str]] = {}
+    for rel in raw_entity_relationships:
+        s = str(rel.get("source", "")).strip()
+        t = str(rel.get("target", "")).strip()
+        if s and t:
+            entity_rel_targets.setdefault(s, set()).add(t)
+            entity_rel_targets.setdefault(t, set()).add(s)
+
     for raw_entity in raw_entities:
         name = str(raw_entity.get("name", "")).strip()
         if not name:
@@ -275,11 +390,24 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
 
         primary_key = str(raw_entity.get("primary_key", "")).strip()
         raw_attrs = raw_entity.get("attributes", []) or []
+        related_targets = entity_rel_targets.get(name, set())
 
         attributes: list[EntityAttribute] = []
         for attr in raw_attrs:
             attr_name = str(attr).strip()
             if not attr_name:
+                continue
+
+            # Skip redundant attributes that duplicate explicit relationships
+            attr_norm = attr_name.lower().replace("_", "")
+            is_redundant = False
+            for target in related_targets:
+                target_norm = target.lower().replace("_", "")
+                if attr_norm in (target_norm, target_norm + "s", target_norm + "es", target_norm + "list", "list" + target_norm):
+                    is_redundant = True
+                    break
+            if is_redundant and attr_name != primary_key:
+                logger.info("FILTERED_REDUNDANT_ER_ATTRIBUTE: Filtered attribute '%s' from entity '%s'.", attr_name, name)
                 continue
 
             constraint = ""
@@ -315,10 +443,16 @@ def convert_to_ir(parsed_json: dict) -> IntermediateRepresentation:
         rel_name = str(rel.get("name", "")).strip()
         source_mult = str(rel.get("source_multiplicity", "")).strip()
         target_mult = str(rel.get("target_multiplicity", "")).strip()
-        entity = _ensure_entity(entity_index, source)
-        if entity not in entities:
-            entities.append(entity)
 
+        if source not in entity_index:
+            logger.warning("UNDEFINED_ENTITY_REFERENCE: Source entity '%s' is not defined in ER diagram.", source)
+            continue
+
+        if target not in entity_index:
+            logger.warning("UNDEFINED_ENTITY_REFERENCE: Target entity '%s' is not defined in ER diagram.", target)
+            continue
+
+        entity = entity_index[source]
         entity.relationships.append(EntityRelationship(
             target=target,
             name=rel_name,
