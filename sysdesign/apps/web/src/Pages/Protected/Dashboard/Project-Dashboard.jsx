@@ -105,18 +105,23 @@ export default function ProjectDashboard() {
 
     fetchProjects();
 
-    // Poll projects periodically every 5 seconds so client dashboard auto-updates
-    const interval = setInterval(fetchProjects, 5000);
-
-    // Also immediately refetch when a new in-app notification arrives
+    // Re-fetch immediately when a new notification arrives via SSE
     const handleNewNotification = () => {
       fetchProjects();
     };
     window.addEventListener("sysdesign:new-notification", handleNewNotification);
 
+    // Refresh when user returns to this tab
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchProjects();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
-      clearInterval(interval);
       window.removeEventListener("sysdesign:new-notification", handleNewNotification);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [currentUser?.id, currentUser?.role, dispatch]);
 
