@@ -270,37 +270,52 @@ def render_ieee_29148_markdown(
             lines.append(f"| **CI (Coupling Index)** | `{ci}` | Modularity Benchmark | Low Coupling |")
             lines.append(f"| **CoS (Cohesion Score)** | `{cos}` | Functional Cohesion | High Cohesion |")
             
-        diagram_uri = (hld_annex.get("artifact_uris") or {}).get("architecture_diagram")
+        diagram_uri = (hld_annex.get("artifact_uris") or {}).get("architecture_diagram") or (hld_annex.get("artifact_uris") or {}).get("c4_diagram")
         if diagram_uri:
             lines.append(f"\n- **C4 Architecture Model / Block Diagram:** {diagram_uri}")
+            is_img = any(diagram_uri.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]) or "image" in diagram_uri.lower() or diagram_uri.startswith("data:image/")
+            if is_img:
+                lines.append(f"\n#### High-Level Architecture Model")
+                lines.append(f"![High-Level Architecture Model]({diagram_uri})")
+                lines.append(f"*Figure: High-Level C4 Architecture / System Model*\n")
     else:
         lines.append("\n### Annex A: High-Level Architecture")
         lines.append("*Direct test mode: Architecture annex omitted or bypassed.*")
 
-    # Annex B: Low-Level Design & Database Models
+    # Annex B: Low-Level Design Diagrams & Models
     if lld_annex:
-        lines.append("\n### Annex B: Low-Level Design & Database Models")
-        lines.append("| Design Model / Artifact | Model Category | Governing Standard | Artifact Reference URI |")
-        lines.append("|---|---|---|---|")
-        for k, uri in (lld_annex.get("artifact_uris") or {}).items():
-            k_clean = k.replace("_", " ").title()
-            clause = "Logical Database Schema" if "er" in k.lower() else "UML Structural / Behavioral"
-            lines.append(f"| **{k_clean}** | Structural / Relational | {clause} | {uri} |")
-    else:
-        lines.append("\n### Annex B: Low-Level Design & Database Models")
-        lines.append("*Direct test mode: LLD annex omitted or bypassed.*")
+        lines.append("\n### Annex B: Low-Level Design Diagrams & Models")
+        
+        # Collect all diagram URIs
+        diag_map = dict(lld_annex.get("artifact_uris") or {})
+        diagrams_dict = lld_annex.get("diagrams") or {}
+        for d_key, d_val in diagrams_dict.items():
+            if isinstance(d_val, str) and d_val and d_key not in diag_map and f"{d_key}_diagram" not in diag_map:
+                diag_map[f"{d_key}_diagram"] = d_val
+            elif isinstance(d_val, list):
+                for idx, seq_entry in enumerate(d_val):
+                    seq_url = seq_entry if isinstance(seq_entry, str) else (seq_entry.get("png") or seq_entry.get("cloudinary_url") or "")
+                    if seq_url and f"sequence_{idx+1}" not in diag_map:
+                        diag_map[f"sequence_diagram_{idx+1}"] = seq_url
 
-    # Annex C: UI/UX Wireframes & Usability Specifications
-    if ui_annex:
-        lines.append("\n### Annex C: UI/UX Wireframes & Usability Specifications")
-        lines.append("| User Interface Screen | Workflow Context | Interactive Prototype URI |")
-        lines.append("|---|---|---|")
-        for k, uri in (ui_annex.get("artifact_uris") or {}).items():
-            k_clean = k.replace("_", " ").title()
-            lines.append(f"| **{k_clean}** | Responsive Web Interface | {uri} |")
+        # Embed each diagram as an actual image figure directly (no redundant URL table)
+        has_embedded_images = False
+        for k, uri in diag_map.items():
+            if not uri:
+                continue
+            is_image = any(uri.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]) or "image" in uri.lower() or uri.startswith("data:image/")
+            if is_image:
+                has_embedded_images = True
+                k_clean = k.replace("_", " ").title()
+                lines.append(f"\n#### {k_clean}")
+                lines.append(f"![{k_clean}]({uri})")
+                lines.append(f"*Figure: {k_clean}*\n")
+
+        if not has_embedded_images:
+            lines.append("*No visual diagram assets available for LLD.*")
     else:
-        lines.append("\n### Annex C: UI/UX Wireframes & Usability Specifications")
-        lines.append("*Direct test mode: UI annex omitted or bypassed.*")
+        lines.append("\n### Annex B: Low-Level Design Diagrams & Models")
+        lines.append("*Direct test mode: LLD annex omitted or bypassed.*")
 
     # Document Control Block & Lifecycle Footer
     lines.append("\n---\n")
