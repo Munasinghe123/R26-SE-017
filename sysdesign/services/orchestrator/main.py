@@ -1,10 +1,21 @@
 import asyncio
 import json
+import os
+from pathlib import Path
 import uuid
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from dotenv import load_dotenv
+
+# Ensure root .env is loaded
+_here = Path(__file__).resolve()
+for parent in [_here.parent, _here.parents[1], _here.parents[2]]:
+    _env_f = parent / ".env"
+    if _env_f.exists():
+        load_dotenv(_env_f)
+load_dotenv()
 
 from pipeline import (
     initialize_job,
@@ -18,6 +29,9 @@ from pipeline import (
     select_candidate,
     refine_diagram,
     call_stage_http,
+    update_stage_status,
+    _db_persist_stage,
+    DB_AVAILABLE,
     AGENT_URLS,
     JOB_STORE,
     JOB_ARTIFACTS,
@@ -195,6 +209,14 @@ async def test_srs_endpoint(job_id: str = "direct-test", payload: Optional[Dict[
 
     try:
         srs_result = await call_stage_http("srs", AGENT_URLS["srs"], srs_payload)
+        JOB_ARTIFACTS.setdefault(job_id, {})["srs"] = srs_result
+        if job_id in JOB_STORE:
+            update_stage_status(job_id, "srs", "complete")
+            if DB_AVAILABLE:
+                try:
+                    await _db_persist_stage(job_id, "srs", "complete", srs_result, 0)
+                except Exception:
+                    pass
         return {
             "status": "success",
             "job_id": job_id,
