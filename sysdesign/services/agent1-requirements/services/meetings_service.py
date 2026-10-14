@@ -112,7 +112,7 @@ async def save_meeting_requirements(
                                     )
 
                                     if not existing_notif:
-                                        await conn.execute(
+                                        notif_row = await conn.fetchrow(
                                             """
                                             INSERT INTO notifications (
                                                 id,
@@ -133,13 +133,19 @@ async def save_meeting_requirements(
                                                 $3,
                                                 FALSE,
                                                 now()
-                                            );
+                                            )
+                                            RETURNING id, user_id, title, message, type, project_id, is_read, created_at;
                                             """,
                                             client_id,
                                             f"Requirements for '{proj_name}' are ready for your review.",
                                             project["id"]
                                         )
                                         logger.info(f"Created 'Review Requirements' notification for client {client_id}.")
+                                        try:
+                                            from services.notification_service import push_notification_to_user
+                                            await push_notification_to_user(str(client_id), notif_row)
+                                        except Exception as sse_err:
+                                            logger.warning(f"Could not push SSE notification: {sse_err}")
                         except Exception as notif_err:
                             logger.warning(f"Could not create review notification for client: {notif_err}")
     except Exception as e:
