@@ -1,9 +1,17 @@
 import io
 import re
+import os
+import base64
+import logging
+import urllib.request
+from pathlib import Path
+from PIL import Image as PILImage
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+logger = logging.getLogger("srs-assembler.pdf_generator")
 
 
 def sanitize_pdf_text(text: str) -> str:
@@ -103,6 +111,65 @@ def _format_inline_markdown(text: str) -> str:
     return text
 
 
+def _fetch_and_create_image_flowable(
+    img_url: str,
+    alt_text: str,
+    max_width: float = 490,
+    max_height: float = 320,
+    caption_style: ParagraphStyle = None,
+) -> list:
+    """
+    Downloads or decodes an image from Cloudinary, base64 data URI, or local path,
+    calculates proportional dimensions, and returns ReportLab Flowables.
+    """
+    flowables = []
+    img_bytes = None
+
+    try:
+        if img_url.startswith("data:image/"):
+            # Base64 data URL
+            _, b64_data = img_url.split(",", 1)
+            img_bytes = base64.b64decode(b64_data)
+        elif img_url.startswith("http://") or img_url.startswith("https://"):
+            req = urllib.request.Request(
+                img_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SysDesign-SRS/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=12) as response:
+                img_bytes = response.read()
+        else:
+            local_path = Path(img_url)
+            if local_path.exists():
+                with open(local_path, "rb") as f:
+                    img_bytes = f.read()
+
+        if img_bytes:
+            with PILImage.open(io.BytesIO(img_bytes)) as pil_img:
+                orig_w, orig_h = pil_img.size
+                if orig_w > 0 and orig_h > 0:
+                    scale = min(max_width / orig_w, max_height / orig_h, 1.0)
+                    target_w = orig_w * scale
+                    target_h = orig_h * scale
+
+                    flowables.append(Spacer(1, 4))
+                    flowables.append(RLImage(io.BytesIO(img_bytes), width=target_w, height=target_h))
+                    flowables.append(Spacer(1, 2))
+    except Exception as exc:
+        logger.warning(f"Could not embed image '{alt_text}' from {img_url}: {exc}")
+
+    if not flowables:
+        # Fallback if download fails or URL isn't a valid image
+        fallback_text = f"<b>[Artifact Diagram: {alt_text}]</b> (URI: <font color='#0284c7'>{img_url}</font>)"
+        if caption_style:
+            flowables.append(Paragraph(fallback_text, caption_style))
+        flowables.append(Spacer(1, 4))
+    elif caption_style:
+        flowables.append(Paragraph(f"<i>Figure: {alt_text}</i>", caption_style))
+        flowables.append(Spacer(1, 6))
+
+    return flowables
+
+
 def generate_srs_pdf_bytes(srs_markdown: str, project_name: str, job_id: str) -> bytes:
     """
     Compiles an IEEE 29148 SRS markdown string into styled PDF bytes completely in-memory.
@@ -160,6 +227,16 @@ def generate_srs_pdf_bytes(srs_markdown: str, project_name: str, job_id: str) ->
         spaceBefore=6,
         spaceAfter=2,
     )
+    h4_style = ParagraphStyle(
+        "SRS_H4",
+        parent=base_styles["Heading3"],
+        fontSize=9.5,
+        leading=12,
+        textColor=colors.HexColor("#0f172a"),
+        spaceBefore=8,
+        spaceAfter=2,
+        fontName="Helvetica-Bold",
+    )
     body_style = ParagraphStyle(
         "SRS_Body",
         parent=base_styles["BodyText"],
@@ -192,6 +269,15 @@ def generate_srs_pdf_bytes(srs_markdown: str, project_name: str, job_id: str) ->
         textColor=colors.white,
         fontName="Helvetica-Bold",
     )
+    figure_caption_style = ParagraphStyle(
+        "SRS_Caption",
+        parent=base_styles["BodyText"],
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#64748b"),
+        alignment=1,  # Center
+        spaceAfter=6,
+    )
 
     story = []
     lines = srs_markdown.split("\n")
@@ -207,6 +293,23 @@ def generate_srs_pdf_bytes(srs_markdown: str, project_name: str, job_id: str) ->
         # Horizontal Rule
         if line.startswith("---"):
             story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1"), spaceBefore=6, spaceAfter=8))
+            i += 1
+            continue
+
+        # Markdown Image Embedding: ![alt](url)
+        img_match = re.match(r"^!\[(.*?)\]\((.*?)\)$", line)
+        if img_match:
+            alt_text = img_match.group(1).strip()
+            img_url = img_match.group(2).strip()
+            flowables = _fetch_and_create_image_flowable(
+                img_url=img_url,
+                alt_text=alt_text,
+                max_width=490,
+                max_height=320,
+                caption_style=figure_caption_style,
+            )
+            for f in flowables:
+                story.append(f)
             i += 1
             continue
 
@@ -226,6 +329,10 @@ def generate_srs_pdf_bytes(srs_markdown: str, project_name: str, job_id: str) ->
             continue
         elif line.startswith("#### "):
             story.append(Paragraph(_format_inline_markdown(line[5:].strip()), h3_style))
+            i += 1
+            continue
+        elif line.startswith("##### "):
+            story.append(Paragraph(_format_inline_markdown(line[6:].strip()), h4_style))
             i += 1
             continue
 
