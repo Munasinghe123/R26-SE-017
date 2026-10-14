@@ -28,8 +28,6 @@ from graph.nodes import (
     validate_new_requirement_format_node,
     normalize_new_requirements_node,
     reconcile_requirements_node,
-    refine_node,
-    generate_srs_pdf_node,
 )
 from graph.router import route_workflow
 
@@ -78,8 +76,6 @@ def build_graph(checkpointer=None):
     builder.add_node("validate_new_requirement_format", validate_new_requirement_format_node)
     builder.add_node("normalize_new_requirements", normalize_new_requirements_node)
     builder.add_node("reconcile_requirements", reconcile_requirements_node)
-    # builder.add_node("build_srs", build_srs_node)
-    builder.add_node("generate_pdf", generate_srs_pdf_node)
 
     # ── entry ──────────────────────────────────────────────
     builder.set_entry_point("router")
@@ -130,10 +126,6 @@ def build_graph(checkpointer=None):
     builder.add_edge("validate_new_requirement_format", "normalize_new_requirements")
     builder.add_edge("normalize_new_requirements", "reconcile_requirements")
     builder.add_edge("reconcile_requirements", END)
-
-    # ── srs (optional) ─────────────────────────────────────
-    # builder.add_edge("build_srs", "generate_pdf")
-    builder.add_edge("generate_pdf", END)
 
     saver = checkpointer or default_checkpointer
     return builder.compile(checkpointer=saver)

@@ -3,7 +3,7 @@ import json
 from graph.state import GraphState
 from langgraph.types import interrupt
 
-from services.tanscribe import transcribe_audio
+from services.transcribe import transcribe_audio
 from services.extract.extract import (
     extract_requirements,
     extract_evidence,
@@ -14,8 +14,6 @@ from services.extract.extract import (
 )
 from services.extract.analyze_requirements import analyze_extracted_requirements
 from services.diarize import diarize_audio
-from services.srs.build_srs import build_srs
-from services.srs.generate_srs_pdf import create_pdf
 from services.read_document import read_document
 from services.speech_enhancement import enhance_speech
 from services.speaker_alignment import align_speakers
@@ -63,7 +61,10 @@ def speaker_alignment_node(state: GraphState):
 
 
 def diarization_node(state: GraphState):
-    speaker_segments = diarize_audio(state["audio_path"])
+    speaker_segments = diarize_audio(
+        state["audio_path"],
+        transcript_segments=state.get("transcript_segments")
+    )
     print("diarized")
     return {"speaker_segments": speaker_segments}
 
@@ -453,21 +454,4 @@ def reconcile_requirements_node(state: GraphState):
     }
 
 
-# ============================================================
-# SRS (legacy / optional)
-# ============================================================
 
-def refine_node(state: GraphState):
-    print("Feedback:", state.get("feedback"))
-    updated = refine_requirements(state.get("requirements"), state.get("feedback"))
-    print("refined", updated)
-    return {"requirements": updated}
-
-
-def generate_srs_pdf_node(state: GraphState):
-    pdf_path = create_pdf(
-        state.get("srs_text"),
-        state.get("meeting_id") or state.get("thread_id")
-    )
-    print("srs pdf built")
-    return {"pdf_path": pdf_path}

@@ -21,10 +21,16 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 from dotenv import load_dotenv
 
-# Load .env from repo root (two dirs up from packages/shared/)
+# Load .env looking upwards from this file
 _here = os.path.dirname(__file__)
-_root = os.path.abspath(os.path.join(_here, "..", ".."))
-load_dotenv(os.path.join(_root, ".env"))
+for p in [
+    os.path.abspath(os.path.join(_here, "..")),
+    os.path.abspath(os.path.join(_here, "..", "..")),
+    os.path.abspath(os.path.join(_here, "..", "..", "..")),
+]:
+    env_p = os.path.join(p, ".env")
+    if os.path.exists(env_p):
+        load_dotenv(env_p)
 
 logger = logging.getLogger("shared.db")
 

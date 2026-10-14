@@ -3,7 +3,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { useNavigate, useParams } from "react-router-dom";
 import beehiveBg from "../../../Images/beehive-bg.png";
 import requirmentsCard from "../../../Images/requirments-card.png";
-import { Rocket, FolderGit2, ShieldCheck } from "lucide-react";
+import { Rocket, FolderGit2, ShieldCheck, FileText } from "lucide-react";
 import api from "../../../api/api";
 import ProjectSidebar from "../../../components/Project-Dashboard/ProjectSidebar";
 import { updateUser } from "../../../Redux/UserSlice";
@@ -52,6 +52,26 @@ export default function ProjectDashboard() {
   const [qualityLoading, setQualityLoading] = useState(false);
   const [approvingHLD, setApprovingHLD] = useState(false);
   const [showClientReviewModal, setShowClientReviewModal] = useState(false);
+  const [returnToRequirementsOnCloseQuality, setReturnToRequirementsOnCloseQuality] = useState(false);
+
+  // Auto-open client review modal if query param ?review=true or custom event
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("review") === "true") {
+      setShowClientReviewModal(true);
+    }
+
+    const handleOpenReview = (e) => {
+      if (!e.detail?.projectId || e.detail.projectId === projectId) {
+        setShowClientReviewModal(true);
+      }
+    };
+
+    window.addEventListener("sysdesign:open-client-review", handleOpenReview);
+    return () => {
+      window.removeEventListener("sysdesign:open-client-review", handleOpenReview);
+    };
+  }, [projectId]);
 
   // --------------------------------------------------
   // Fetch projects
@@ -70,6 +90,11 @@ export default function ProjectDashboard() {
         console.log("Fetched projects:", response.data);
 
         setProjects(response.data?.projects ?? []);
+
+        // Sync role if backend upgraded user from USER to CLIENT
+        if (response.data?.role && response.data.role !== currentUser?.role) {
+          dispatch(updateUser({ role: response.data.role }));
+        }
       } catch (error) {
         console.error("Failed to fetch projects:", error);
         setProjects([]);
@@ -79,7 +104,26 @@ export default function ProjectDashboard() {
     };
 
     fetchProjects();
-  }, [currentUser?.id]);
+
+    // Re-fetch immediately when a new notification arrives via SSE
+    const handleNewNotification = () => {
+      fetchProjects();
+    };
+    window.addEventListener("sysdesign:new-notification", handleNewNotification);
+
+    // Refresh when user returns to this tab
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchProjects();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("sysdesign:new-notification", handleNewNotification);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [currentUser?.id, currentUser?.role, dispatch]);
 
   // --------------------------------------------------
   // Active project
@@ -104,6 +148,179 @@ export default function ProjectDashboard() {
 
   // Final requirements belonging ONLY to the selected project
   const projectFinalRequirements = id ? finalRequirements[id] : null;
+  const totalRequirementsCount =
+    projectFinalRequirements?.sections?.reduce(
+      (sum, sec) => sum + (sec.items?.length || 0),
+      0
+    ) || 0;
+
+  const normalizeRequirementsSections = (raw) => {
+    if (!raw) return [];
+
+    if (Array.isArray(raw.sections) && raw.sections.length > 0) {
+      return raw.sections.map((s) => ({
+        title: s.title || "Requirements",
+        items: (s.items || []).map((it, idx) => ({
+          id: it.id || it.requirement_id || `REQ-${idx + 1}`,
+          text:
+            it.text ||
+            it.description ||
+            it.statement ||
+            (typeof it === "string" ? it : JSON.stringify(it)),
+        })),
+      }));
+    }
+
+    const reqObj = raw.final_requirements || raw.requirements || raw;
+    const sections = [];
+
+    const frList = reqObj.functional || reqObj.functional_requirements;
+    if (Array.isArray(frList) && frList.length > 0) {
+      sections.push({
+        title: "Functional Requirements",
+        items: frList.map((it, idx) => ({
+          id: it.id || `FR-${idx + 1}`,
+          text:
+            it.description ||
+            it.text ||
+            it.statement ||
+            (typeof it === "string" ? it : JSON.stringify(it)),
+        })),
+      });
+    }
+
+    const nfrList = reqObj.non_functional || reqObj.non_functional_requirements;
+    if (Array.isArray(nfrList) && nfrList.length > 0) {
+      sections.push({
+        title: "Non-Functional Requirements",
+        items: nfrList.map((it, idx) => ({
+          id: it.id || `NFR-${idx + 1}`,
+          text:
+            it.description ||
+            it.text ||
+            it.statement ||
+            (typeof it === "string" ? it : JSON.stringify(it)),
+        })),
+      });
+    }
+
+    if (typeof reqObj === "object" && reqObj !== null && !Array.isArray(reqObj)) {
+      Object.keys(reqObj).forEach((key) => {
+        const skipKeys = [
+          "functional",
+          "functional_requirements",
+          "non_functional",
+          "non_functional_requirements",
+          "scope",
+          "input_method",
+          "metadata",
+          "version",
+          "project_name",
+          "job_id",
+          "uncertain",
+        ];
+        if (skipKeys.includes(key.toLowerCase())) return;
+
+        if (Array.isArray(reqObj[key]) && reqObj[key].length > 0) {
+          const formattedTitle = key
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (l) => l.toUpperCase());
+          sections.push({
+            title: formattedTitle,
+            items: reqObj[key].map((it, idx) => ({
+              id:
+                it.id ||
+                it.requirement_id ||
+                `${key.substring(0, 3).toUpperCase()}-${idx + 1}`,
+              text:
+                it.description ||
+                it.text ||
+                it.statement ||
+                (typeof it === "string" ? it : JSON.stringify(it)),
+            })),
+          });
+        }
+      });
+    }
+
+    if (sections.length === 0 && Array.isArray(reqObj) && reqObj.length > 0) {
+      sections.push({
+        title: "Extracted Requirements",
+        items: reqObj.map((it, idx) => ({
+          id: it.id || it.requirement_id || `REQ-${idx + 1}`,
+          text:
+            it.description ||
+            it.text ||
+            it.statement ||
+            (typeof it === "string" ? it : JSON.stringify(it)),
+        })),
+      });
+    }
+
+    if (sections.length === 0 && Array.isArray(raw.items) && raw.items.length > 0) {
+      sections.push({
+        title: "Requirements",
+        items: raw.items.map((it, idx) => ({
+          id: it.id || it.requirement_id || `REQ-${idx + 1}`,
+          text:
+            it.text ||
+            it.description ||
+            it.statement ||
+            (typeof it === "string" ? it : JSON.stringify(it)),
+        })),
+      });
+    }
+
+    return sections;
+  };
+
+  const handleOpenViewRequirements = async () => {
+    setShowFinalRequirements(true);
+    const targetMeetingId =
+      activeProject?.latest_meeting_id ||
+      activeProject?.meeting_id ||
+      activeProject?.thread_id ||
+      id ||
+      projectId;
+
+    if (!targetMeetingId) return;
+
+    if (
+      finalRequirements[id]?.sections &&
+      finalRequirements[id]?.sections.length > 0
+    ) {
+      return;
+    }
+
+    setFinalRequirementsLoading(true);
+    try {
+      let res;
+      try {
+        res = await api.get(`/requirements/${targetMeetingId}`);
+      } catch (err) {
+        console.warn("Direct requirements get failed, checking meetings endpoint:", err);
+        res = await api.get(`/meetings/${targetMeetingId}/review`);
+      }
+
+      const raw =
+        res?.data?.final_requirements ||
+        res?.data?.requirements ||
+        res?.data;
+      const sections = normalizeRequirementsSections(raw);
+
+      setFinalRequirements((prev) => ({
+        ...prev,
+        [id]: {
+          raw,
+          sections,
+        },
+      }));
+    } catch (error) {
+      console.error("Failed to load requirements for modal:", error);
+    } finally {
+      setFinalRequirementsLoading(false);
+    }
+  };
 
   // --------------------------------------------------
   // Quality Evaluation & HLD Handlers
@@ -355,45 +572,58 @@ export default function ProjectDashboard() {
                                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-300/20 border-t-cyan-300" />
                                 Submitted for Review
                               </div>
-                              {/* this button was added temporarily */}
-                              <button
-                                type="button"
-                                disabled={approvingHLD}
-                                onClick={handleDevContinueHLD}
-                                className="group mt-5 relative flex w-[270px] justify-center items-center gap-3 cursor-pointer py-3.5 text-sm font-medium uppercase tracking-[2px] text-white rounded-full border border-cyan-400/60 bg-black backdrop-blur-md overflow-hidden transition-all duration-300 hover:border-cyan-200 hover:shadow-[0_0_25px_rgba(34,211,238,0.5)] active:scale-95"
-                              >
-                                <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent" />
-                                {approvingHLD ? (
-                                  <>
-                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                    <span>Starting Pipeline...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Rocket
-                                      size={18}
-                                      className="relative z-10 text-cyan-300 group-hover:text-white transition-colors"
-                                    />
-                                    <span className="tracking-[2px]">
-                                      Continue for HLD (temp)
-                                    </span>
-                                  </>
-                                )}
-                              </button>
+                              <div className="mt-5 flex flex-wrap items-center gap-4">
+                                <button
+                                  type="button"
+                                  onClick={handleOpenViewRequirements}
+                                  className="group relative flex w-[270px] justify-center items-center gap-3 cursor-pointer py-3.5 text-sm font-semibold uppercase tracking-[2px] text-cyan-300 rounded-full border border-cyan-400/60 bg-cyan-950/40 backdrop-blur-md overflow-hidden transition-all duration-300 hover:border-cyan-300 hover:text-white hover:shadow-[0_0_25px_rgba(34,211,238,0.4)] active:scale-95"
+                                >
+                                  <FileText
+                                    size={18}
+                                    className="text-cyan-400 group-hover:scale-110 transition-transform duration-300"
+                                  />
+                                  <span>View Requirements</span>
+                                </button>
+                                {/* this button was added temporarily */}
+                                <button
+                                  type="button"
+                                  disabled={approvingHLD}
+                                  onClick={handleDevContinueHLD}
+                                  className="group relative flex w-[270px] justify-center items-center gap-3 cursor-pointer py-3.5 text-sm font-medium uppercase tracking-[2px] text-white rounded-full border border-cyan-400/60 bg-black backdrop-blur-md overflow-hidden transition-all duration-300 hover:border-cyan-200 hover:shadow-[0_0_25px_rgba(34,211,238,0.5)] active:scale-95"
+                                >
+                                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent" />
+                                  {approvingHLD ? (
+                                    <>
+                                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                      <span>Starting Pipeline...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Rocket
+                                        size={18}
+                                        className="relative z-10 text-cyan-300 group-hover:text-white transition-colors"
+                                      />
+                                      <span className="tracking-[2px]">
+                                        Continue for HLD (temp)
+                                      </span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                             </>
                           ) : analysisStatus === "completed" ? (
                             <div className="mt-6 flex flex-wrap items-center gap-4">
-                              {/* 1. Quality Evaluation Button */}
+                              {/* 1. View Requirements Button */}
                               <button
                                 type="button"
-                                onClick={handleOpenQualityEvaluation}
+                                onClick={handleOpenViewRequirements}
                                 className="group relative flex w-[270px] justify-center items-center gap-3 cursor-pointer py-3.5 text-sm font-semibold uppercase tracking-[2px] text-cyan-300 rounded-full border border-cyan-400/60 bg-cyan-950/40 backdrop-blur-md overflow-hidden transition-all duration-300 hover:border-cyan-300 hover:text-white hover:shadow-[0_0_25px_rgba(34,211,238,0.4)] active:scale-95"
                               >
-                                <ShieldCheck
+                                <FileText
                                   size={18}
                                   className="text-cyan-400 group-hover:scale-110 transition-transform duration-300"
                                 />
-                                <span>Quality Evaluation</span>
+                                <span>View Requirements</span>
                               </button>
 
                               {/* 2. Continue for HLD Button */}
@@ -511,7 +741,14 @@ export default function ProjectDashboard() {
 
       {showClientReviewModal && (
         <ClientRequirementReview
-          onClose={() => setShowClientReviewModal(false)}
+          onClose={() => {
+            setShowClientReviewModal(false);
+            const url = new URL(window.location.href);
+            if (url.searchParams.has("review")) {
+              url.searchParams.delete("review");
+              window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+            }
+          }}
           projectId={projectId}
         />
       )}
@@ -595,17 +832,23 @@ export default function ProjectDashboard() {
          ============================================================ */}
 
       {showFinalRequirements && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="relative flex max-h-[85vh] w-[850px] flex-col overflow-hidden rounded-3xl border border-cyan-400/20 bg-[#080A14] shadow-[0_0_60px_rgba(34,211,238,0.15)]">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+          onClick={() => setShowFinalRequirements(false)}
+        >
+          <div
+            className="relative flex max-h-[85vh] w-[850px] max-w-full flex-col overflow-hidden rounded-3xl border border-cyan-400/30 bg-[#080d19] shadow-[0_0_60px_rgba(34,211,238,0.2)] text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Modal header */}
-            <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-8 py-6">
+            <div className="flex shrink-0 items-center justify-between border-b border-cyan-400/20 px-8 py-6 bg-gradient-to-r from-cyan-950/40 via-[#080d19] to-black">
               <div>
-                <p className="text-xs uppercase tracking-[3px] text-cyan-300">
+                <p className="text-xs uppercase tracking-[3px] text-cyan-300 font-semibold">
                   Analysis Complete
                 </p>
                 <h2
                   style={{ fontFamily: "Orbitron, sans-serif" }}
-                  className="mt-2 text-3xl font-semibold text-white"
+                  className="mt-1 text-2xl md:text-3xl font-bold text-white tracking-wide"
                 >
                   Final Requirements
                 </h2>
@@ -614,43 +857,94 @@ export default function ProjectDashboard() {
               <button
                 type="button"
                 onClick={() => setShowFinalRequirements(false)}
-                className="rounded-full p-2 text-gray-500 transition hover:bg-white/5 hover:text-white cursor-pointer"
+                className="rounded-full p-2 text-gray-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                aria-label="Close modal"
               >
                 ✕
               </button>
             </div>
 
             {/* Modal content */}
-            <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar">
-              {projectFinalRequirements?.sections?.map((section) => (
-                <div key={section.title} className="mb-8 last:mb-0">
-                  <h3
-                    style={{ fontFamily: "Orbitron, sans-serif" }}
-                    className="mb-4 text-xl font-semibold text-cyan-300"
-                  >
-                    {section.title}
-                  </h3>
-
-                  <div className="space-y-4">
-                    {section.items?.map((item, index) => (
-                      <div
-                        key={item.id ?? index}
-                        className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4"
-                      >
-                        <div className="mb-2 flex items-center gap-3">
-                          <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-300">
-                            {item.id}
-                          </span>
-                        </div>
-
-                        <p className="text-sm leading-relaxed text-white/80">
-                          {item.text}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+            <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar space-y-8">
+              {finalRequirementsLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="h-10 w-10 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent mb-4" />
+                  <p className="text-sm font-semibold text-cyan-300 tracking-wide uppercase">
+                    Loading Extracted Requirements...
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Fetching latest verified software specifications
+                  </p>
                 </div>
-              ))}
+              ) : !projectFinalRequirements?.sections || projectFinalRequirements.sections.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center text-gray-400">
+                  <FileText size={40} className="text-gray-600 mb-3" />
+                  <p className="text-base font-semibold text-white">No Requirements Available</p>
+                  <p className="text-xs text-gray-500 mt-1 max-w-sm">
+                    The requirements extraction has completed, but no requirements were returned yet.
+                  </p>
+                </div>
+              ) : (
+                projectFinalRequirements.sections.map((section) => (
+                  <div key={section.title} className="space-y-4">
+                    <h3
+                      style={{ fontFamily: "Orbitron, sans-serif" }}
+                      className="text-lg md:text-xl font-semibold text-cyan-300 tracking-wide"
+                    >
+                      {section.title}
+                    </h3>
+
+                    <div className="space-y-3.5">
+                      {section.items?.map((item, index) => (
+                        <div
+                          key={item.id ?? index}
+                          className="rounded-2xl border border-white/10 bg-[#0c1524]/70 hover:border-cyan-400/40 hover:bg-[#0c1524] transition-all p-5"
+                        >
+                          <div className="mb-2.5">
+                            <span className="inline-block rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-300 tracking-wider">
+                              {item.id}
+                            </span>
+                          </div>
+
+                          <p className="text-sm leading-relaxed text-gray-200">
+                            {item.text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex shrink-0 items-center justify-between border-t border-cyan-400/20 bg-[#050b13] px-8 py-4">
+              <div className="text-xs md:text-sm text-gray-400 font-medium">
+                {totalRequirementsCount} Requirements Total
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowFinalRequirements(false)}
+                  className="rounded-full border border-white/20 bg-white/5 hover:bg-white/10 px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-300 hover:text-white transition cursor-pointer"
+                >
+                  Close
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFinalRequirements(false);
+                    setReturnToRequirementsOnCloseQuality(true);
+                    handleOpenQualityEvaluation();
+                  }}
+                  className="flex items-center gap-2 rounded-full border border-cyan-400/60 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-[0_0_25px_rgba(34,211,238,0.5)] transition duration-300 cursor-pointer active:scale-95"
+                >
+                  <ShieldCheck size={16} />
+                  <span>Evaluate Quality</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -661,7 +955,13 @@ export default function ProjectDashboard() {
          ============================================================ */}
       <QualityEvaluationModal
         isOpen={showQualityModal}
-        onClose={() => setShowQualityModal(false)}
+        onClose={() => {
+          setShowQualityModal(false);
+          if (returnToRequirementsOnCloseQuality) {
+            setShowFinalRequirements(true);
+            setReturnToRequirementsOnCloseQuality(false);
+          }
+        }}
         evaluationData={qualityEvaluationData}
         loading={qualityLoading}
       />

@@ -18,6 +18,7 @@ import {
   Send,
   CheckCheck,
   AlertTriangle,
+  Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -175,6 +176,8 @@ export default function ClientRequirementReview({ onClose, projectId }) {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({}); // { [question_id]: string }
   const [stage, setStage] = useState("review"); // "review" | "questions" | "completed"
+  const [finishing, setFinishing] = useState(false);
+  const [attemptedAnswersSubmit, setAttemptedAnswersSubmit] = useState(false);
 
   // ---- Fetch review and existing questions on load ------------------------
   const fetchReview = async () => {
@@ -328,9 +331,19 @@ export default function ClientRequirementReview({ onClose, projectId }) {
   };
 
   const handleSubmitAnswers = async () => {
+    setAttemptedAnswersSubmit(true);
     const unAnswered = questions.filter((q) => !answers[q.id]?.trim());
     if (unAnswered.length > 0) {
-      toast.error("Please provide answers to all clarification questions.");
+      toast.error(
+        `Please provide answers to all ${questions.length} clarification questions (${unAnswered.length} remaining).`,
+        { duration: 4000 }
+      );
+      // Auto-scroll to the first unanswered question card
+      const firstId = unAnswered[0].id;
+      const el = document.getElementById(`question-card-${firstId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
       return;
     }
 
@@ -343,12 +356,12 @@ export default function ClientRequirementReview({ onClose, projectId }) {
     try {
       setLoading(true);
       try {
-        await axios.post(`${AGENT1}/meetings/${projectId}/questions/answers`, {
+        await axios.post(`/meetings/${projectId}/questions/answers`, {
           answers: payload,
         });
       } catch (err) {
-        console.warn("Direct questions submit failed, trying proxy:", err);
-        await axios.post(`/meetings/${projectId}/questions/answers`, {
+        console.warn("Proxy questions submit failed, trying direct AGENT1 URL:", err);
+        await axios.post(`${AGENT1}/meetings/${projectId}/questions/answers`, {
           answers: payload,
         });
       }
@@ -365,13 +378,42 @@ export default function ClientRequirementReview({ onClose, projectId }) {
     }
   };
 
-  // ---- Guards --------------------------------------------------------------
-  <button
-    onClick={() => navigate("/project-dashboard")}
-    className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl transition cursor-pointer"
-  >
-    Go to Project Dashboard
-  </button>;
+  // ---- Complete Review & Return to Dashboard ------------------------------
+  const handleGoToDashboard = async () => {
+    if (finishing) return;
+    setFinishing(true);
+
+    try {
+      if (projectId) {
+        try {
+          await axios.post(`${AGENT1}/notifications/project/${projectId}/client-reviewed`);
+        } catch (err) {
+          console.warn("Direct notification call failed, trying proxy:", err);
+          await axios.post(`/notifications/project/${projectId}/client-reviewed`);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to notify product owner:", e);
+    }
+
+    if (onClose) {
+      onClose();
+    }
+
+    // Clean up ?review=true from search params
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("review")) {
+      url.searchParams.delete("review");
+      window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+    }
+
+    const targetUrl = projectId ? `/project-dashboard/${projectId}` : "/project-dashboard";
+    if (window.location.pathname === targetUrl && !window.location.search) {
+      window.location.reload();
+    } else {
+      window.location.href = targetUrl;
+    }
+  };
 
   if (fetching) {
     return (
@@ -398,6 +440,39 @@ export default function ClientRequirementReview({ onClose, projectId }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      {/* FLOATING IN-APP NOTIFICATION AT TOP OF PAGE: ONLY WHEN THESE 2 MODALS ARE PRESENT */}
+      {(stage === "review" || stage === "questions") && (
+        <div
+          className="fixed top-5 left-1/2 -translate-x-1/2 z-[150] w-[92%] max-w-lg pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-3.5 px-5 py-3 rounded-2xl bg-[#090D1A]/95 border border-amber-400/50 shadow-[0_0_35px_rgba(245,158,11,0.35)] backdrop-blur-xl">
+            <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/40 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400" />
+              </span>
+              <Clock size={16} className="animate-spin" style={{ animationDuration: "5s" }} />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/30">
+                  Notification
+                </span>
+                <span className="text-[11px] text-gray-400">
+                  {stage === "questions" ? "Clarifications Stage" : "Review Stage"}
+                </span>
+              </div>
+              <p className="text-xs md:text-sm font-semibold text-white tracking-wide mt-0.5 truncate">
+                Please wait until the process is complete.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-cyan-400/20 bg-[#080A14] shadow-[0_0_60px_rgba(34,211,238,0.2)]">
         <div className="overflow-y-auto custom-scrollbar p-4 md:p-8">
           <div className="mx-auto max-w-4xl space-y-8">
@@ -408,7 +483,7 @@ export default function ClientRequirementReview({ onClose, projectId }) {
                 <div>
                    <button
                 type="button"
-                onClick={onClose}
+                onClick={stage === "completed" ? handleGoToDashboard : onClose}
                 className="fixed right-8 top-6 z-[110] rounded-full border border-white/10 bg-black/60 p-2 text-gray-400 backdrop-blur-md transition hover:bg-white/10 hover:text-white"
                 aria-label="Close requirements review"
               >
@@ -448,6 +523,25 @@ export default function ClientRequirementReview({ onClose, projectId }) {
                     : "Review the requirements below. You can keep, edit, delete, or add new requirements before submitting your review."}
               </p>
             </div>
+
+            {/* IN-MODAL NOTIFICATION ALERT: ONLY WHEN THESE 2 MODALS ARE PRESENT */}
+            {(stage === "review" || stage === "questions") && (
+              <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.15)] animate-in fade-in duration-300">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 shrink-0">
+                  <Clock size={18} className="animate-spin text-amber-400" style={{ animationDuration: "4s" }} />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-xs md:text-sm font-bold text-amber-300 uppercase tracking-wide">
+                    Please wait until the process is complete.
+                  </h4>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    {stage === "questions"
+                      ? "Clarification questions are currently required. Please answer all questions below to finalize requirement reconciliation."
+                      : "Requirements are currently being reviewed. Submit your changes to analyze and reconcile."}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* STAGE 1: REQUIREMENTS REVIEW */}
             {stage === "review" && (
@@ -822,80 +916,120 @@ export default function ClientRequirementReview({ onClose, projectId }) {
                 </div>
 
                 <div className="space-y-6 pt-2">
-                  {questions.map((q, idx) => (
-                    <div
-                      key={q.id || idx}
-                      className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-4 shadow-lg hover:border-amber-400/30 transition-all"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="shrink-0 h-6 w-6 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-xs">
-                          {idx + 1}
+                  {questions.map((q, idx) => {
+                    const isUnanswered = attemptedAnswersSubmit && !answers[q.id]?.trim();
+                    return (
+                      <div
+                        key={q.id || idx}
+                        id={`question-card-${q.id}`}
+                        className={`p-6 rounded-2xl border space-y-4 shadow-lg transition-all ${
+                          isUnanswered
+                            ? "bg-amber-950/25 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.25)] ring-1 ring-amber-400"
+                            : "bg-white/5 border-white/10 hover:border-amber-400/30"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`shrink-0 h-6 w-6 rounded-full flex items-center justify-center font-bold text-xs ${
+                              isUnanswered
+                                ? "bg-amber-500 text-black font-extrabold"
+                                : "bg-amber-500/20 text-amber-300"
+                            }`}
+                          >
+                            {idx + 1}
+                          </div>
+                          <div className="space-y-1 w-full">
+                            <h4 className="text-sm font-semibold text-white leading-relaxed">
+                              {q.question}
+                            </h4>
+                            {q.reason && (
+                              <p className="text-xs text-amber-300/80 leading-relaxed">
+                                Context: {q.reason}
+                              </p>
+                            )}
+                            {q.requirement_text && (
+                              <div className="mt-2.5 p-3 rounded-xl bg-black/40 border border-white/10 text-xs text-cyan-200/90 leading-relaxed flex items-start gap-2">
+                                <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-400/30">
+                                  {q.client_action === "added"
+                                    ? "Added"
+                                    : q.client_action === "deleted"
+                                      ? "Deleted"
+                                      : "Edited"}
+                                </span>
+                                <span className="italic">
+                                  "{q.requirement_text}"
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="space-y-1 w-full">
-                          <h4 className="text-sm font-semibold text-white leading-relaxed">
-                            {q.question}
-                          </h4>
-                          {q.reason && (
-                            <p className="text-xs text-amber-300/80 leading-relaxed">
-                              Context: {q.reason}
+
+                        <div className="pl-9 space-y-3">
+                          {/* Suggested Options Chips */}
+                          {q.suggested_options &&
+                            Array.isArray(q.suggested_options) &&
+                            q.suggested_options.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-2 pt-1">
+                                <span className="text-[11px] font-medium text-gray-400 mr-1">
+                                  Suggested:
+                                </span>
+                                {q.suggested_options.map((opt, optIdx) => (
+                                  <button
+                                    key={optIdx}
+                                    type="button"
+                                    onClick={() => handleAnswerChange(q.id, opt)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
+                                      answers[q.id] === opt
+                                        ? "bg-amber-500/25 text-amber-300 border-amber-400/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                                        : "bg-white/5 hover:bg-white/10 text-gray-300 border-white/10 hover:border-white/20"
+                                    }`}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                          <textarea
+                            rows={3}
+                            value={answers[q.id] || ""}
+                            onChange={(e) =>
+                              handleAnswerChange(q.id, e.target.value)
+                            }
+                            placeholder="Type or select a suggested option above..."
+                            className={`w-full p-4 rounded-xl bg-black/40 border text-white text-sm transition resize-none placeholder-gray-500 leading-relaxed focus:outline-none ${
+                              isUnanswered
+                                ? "border-amber-400/80 focus:border-amber-300 ring-1 ring-amber-400/50"
+                                : "border-white/10 focus:border-amber-400"
+                            }`}
+                          />
+
+                          {isUnanswered && (
+                            <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 animate-pulse pt-0.5">
+                              <AlertTriangle size={13} />
+                              Please choose a suggested option or type an answer to this question.
                             </p>
                           )}
-                          {q.requirement_text && (
-                            <div className="mt-2.5 p-3 rounded-xl bg-black/40 border border-white/10 text-xs text-cyan-200/90 leading-relaxed flex items-start gap-2">
-                              <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-400/30">
-                                {q.client_action === "added"
-                                  ? "Added"
-                                  : q.client_action === "deleted"
-                                    ? "Deleted"
-                                    : "Edited"}
-                              </span>
-                              <span className="italic">
-                                "{q.requirement_text}"
-                              </span>
-                            </div>
-                          )}
                         </div>
                       </div>
-
-                      <div className="pl-9 space-y-3">
-                        {/* Suggested Options Chips */}
-                        {q.suggested_options &&
-                          Array.isArray(q.suggested_options) &&
-                          q.suggested_options.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-2 pt-1">
-                              <span className="text-[11px] font-medium text-gray-400 mr-1">
-                                Suggested:
-                              </span>
-                              {q.suggested_options.map((opt, optIdx) => (
-                                <button
-                                  key={optIdx}
-                                  type="button"
-                                  onClick={() => handleAnswerChange(q.id, opt)}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
-                                    answers[q.id] === opt
-                                      ? "bg-amber-500/25 text-amber-300 border-amber-400/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
-                                      : "bg-white/5 hover:bg-white/10 text-gray-300 border-white/10 hover:border-white/20"
-                                  }`}
-                                >
-                                  {opt}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                        <textarea
-                          rows={3}
-                          value={answers[q.id] || ""}
-                          onChange={(e) =>
-                            handleAnswerChange(q.id, e.target.value)
-                          }
-                          placeholder="Type or select a suggested option above..."
-                          className="w-full p-4 rounded-xl bg-black/40 border border-white/10 text-white text-sm focus:border-amber-400 focus:outline-none transition resize-none placeholder-gray-500 leading-relaxed"
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
+
+                {/* Validation summary banner if questions remain unanswered */}
+                {attemptedAnswersSubmit &&
+                  questions.filter((q) => !answers[q.id]?.trim()).length > 0 && (
+                    <div className="flex items-center gap-2.5 p-4 rounded-2xl bg-amber-500/10 border border-amber-400/40 text-amber-300 text-xs font-medium animate-in fade-in duration-200">
+                      <AlertTriangle size={18} className="shrink-0 text-amber-400 animate-bounce" />
+                      <span>
+                        Please answer all clarification questions above (
+                        <strong>
+                          {questions.filter((q) => !answers[q.id]?.trim()).length} of {questions.length} questions remaining
+                        </strong>
+                        ) before submitting.
+                      </span>
+                    </div>
+                  )}
 
                 <div className="flex items-center justify-between pt-4 border-t border-white/10">
                   <button
@@ -941,10 +1075,18 @@ export default function ClientRequirementReview({ onClose, projectId }) {
                   </p>
                 </div>
                 <button
-                  onClick={() => navigate("/project-dashboard")}
-                  className="px-8 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs uppercase tracking-wider transition cursor-pointer shadow-lg"
+                  onClick={handleGoToDashboard}
+                  disabled={finishing}
+                  className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs uppercase tracking-wider transition cursor-pointer shadow-lg disabled:opacity-50"
                 >
-                  Return to Dashboard
+                  {finishing ? (
+                    <>
+                      <div className="animate-spin h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full" />
+                      <span>Returning to Dashboard...</span>
+                    </>
+                  ) : (
+                    <span>Return to Dashboard</span>
+                  )}
                 </button>
               </div>
             )}

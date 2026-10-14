@@ -4,6 +4,7 @@ import { UserRound, LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../Redux/UserSlice";
+import NotificationBell from "./Notifications/NotificationBell";
 
 function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -77,6 +78,9 @@ function Header() {
               {user?.name || "User"} !
             </span>
           </div>
+
+          {/* Notifications */}
+          <NotificationBell />
 
           {/* Profile button */}
          

@@ -21,6 +21,10 @@ import UIReview           from "./Pages/Protected/Pipeline/UIReview";
 import DesignArtifacts    from "./Pages/Protected/Pipeline/DesignArtifacts";
 import SRSDownload        from "./Pages/Protected/Pipeline/SRSDownload";
 
+import { NotificationProvider } from "./context/NotificationContext";
+import NotificationToast from "./components/Notifications/NotificationToast";
+import { Toaster } from "react-hot-toast";
+
 function AppLayout() {
   const location = useLocation();
 
@@ -34,6 +38,21 @@ function AppLayout() {
 
   return (
     <>
+      <Toaster
+        position="top-right"
+        containerStyle={{ zIndex: 999999 }}
+        toastOptions={{
+          style: {
+            background: "#0B0F1E",
+            color: "#ffffff",
+            border: "1px solid rgba(34, 211, 238, 0.3)",
+            boxShadow: "0 0 25px rgba(0, 0, 0, 0.8)",
+            fontSize: "13px",
+            borderRadius: "12px",
+          },
+        }}
+      />
+      <NotificationToast />
       {!isMeetingUI && !isProjectDashboard && <StarBackground />}
       {!isMeetingUI && !isProjectDashboard && <Header />}
 
@@ -114,7 +133,9 @@ function AppLayout() {
 function App() {
   return (
     <BrowserRouter>
-      <AppLayout />
+      <NotificationProvider>
+        <AppLayout />
+      </NotificationProvider>
     </BrowserRouter>
   );
 }

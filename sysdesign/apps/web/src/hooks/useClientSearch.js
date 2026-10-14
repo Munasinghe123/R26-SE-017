@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import axios from "axios";
 
 export default function useClientSearch() {
@@ -7,23 +7,43 @@ export default function useClientSearch() {
   const cacheRef = useRef(new Map());
 
   const [results, setResults] = useState([]);
+  const [defaultClients, setDefaultClients] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const searchClients = (value) => {
-    const query = value.trim();
+  // Fetch initial clients on mount
+  const loadDefaultClients = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get("/users/search", { params: { q: "" } });
+      const clients = response.data || [];
+      setDefaultClients(clients);
+      setResults(clients);
+      cacheRef.current.set("", clients);
+    } catch (error) {
+      console.error("Failed to load initial clients:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    // Cancel pending debounce
+  useEffect(() => {
+    loadDefaultClients();
+  }, [loadDefaultClients]);
+
+  const searchClients = (value) => {
+    const query = (value || "").trim();
+
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
 
-    // Cancel previous API request
     if (abortRef.current) {
       abortRef.current.abort();
     }
 
-    if (query.length < 2) {
-      setResults([]);
+    // If query is empty, show default clients
+    if (!query) {
+      setResults(defaultClients);
       setLoading(false);
       return;
     }
@@ -42,43 +62,30 @@ export default function useClientSearch() {
       abortRef.current = controller;
 
       try {
-        const response = await axios.get(
-          "/users/search",
-          {
-            params: {
-              q: query,
-            },
-            signal: controller.signal,
-          }
-        );
+        const response = await axios.get("/users/search", {
+          params: { q: query },
+          signal: controller.signal,
+        });
 
-        console.log("search results", response);
-
-        const users = response.data;
-
+        const users = response.data || [];
         cacheRef.current.set(query.toLowerCase(), users);
-
         setResults(users);
       } catch (error) {
-        if (error.name === "CanceledError") {
+        if (error.name === "CanceledError" || error.name === "AbortError") {
           return;
         }
-
-        if (error.name === "AbortError") {
-          return;
-        }
-
         console.error("Client search failed:", error);
         setResults([]);
       } finally {
         setLoading(false);
       }
-    }, 350);
+    }, 250);
   };
 
   return {
     searchClients,
     results,
     loading,
+    reloadClients: loadDefaultClients,
   };
 }
