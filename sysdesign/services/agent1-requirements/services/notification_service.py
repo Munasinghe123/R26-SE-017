@@ -1,6 +1,110 @@
-import db.config as db
+import asyncio
+from collections import defaultdict
+from typing import Optional, Dict, Any, List, Set
+import uuid
 from uuid import UUID
-from typing import Optional, Dict, Any, List
+import db.config as db
+
+# In-memory pub/sub for SSE connections: user_id -> Set[asyncio.Queue]
+_active_user_connections: Dict[str, Set[asyncio.Queue]] = defaultdict(set)
+_manager_lock = asyncio.Lock()
+
+
+def serialize_notification(data: Any) -> Dict[str, Any]:
+    if not data:
+        return {}
+    d = dict(data)
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, (UUID, uuid.UUID)):
+            out[k] = str(v)
+        elif hasattr(v, "isoformat"):
+            out[k] = v.isoformat()
+        else:
+            out[k] = v
+    return out
+
+
+async def register_connection(user_id: str) -> asyncio.Queue:
+    queue = asyncio.Queue()
+    uid = str(user_id)
+    async with _manager_lock:
+        _active_user_connections[uid].add(queue)
+    return queue
+
+
+async def unregister_connection(user_id: str, queue: asyncio.Queue):
+    uid = str(user_id)
+    async with _manager_lock:
+        if uid in _active_user_connections:
+            _active_user_connections[uid].discard(queue)
+            if not _active_user_connections[uid]:
+                del _active_user_connections[uid]
+
+
+async def push_notification_to_user(user_id: str, notification: Any):
+    uid = str(user_id)
+    notif_data = serialize_notification(notification)
+
+    # Compute current unread count
+    unread_count = 1
+    try:
+        if db.pool:
+            async with db.pool.acquire() as conn:
+                urow = await conn.fetchrow(
+                    "SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1::uuid AND is_read = FALSE;",
+                    uuid.UUID(uid)
+                )
+                if urow:
+                    unread_count = urow["count"]
+    except Exception:
+        pass
+
+    payload = {
+        "event_type": "NEW_NOTIFICATION",
+        "notification": notif_data,
+        "unread_count": unread_count,
+    }
+
+    async with _manager_lock:
+        queues = list(_active_user_connections.get(uid, []))
+
+    for q in queues:
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            pass
+
+
+async def push_read_update_to_user(user_id: str, notification_id: Optional[str] = None):
+    uid = str(user_id)
+    unread_count = 0
+    try:
+        if db.pool:
+            async with db.pool.acquire() as conn:
+                urow = await conn.fetchrow(
+                    "SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1::uuid AND is_read = FALSE;",
+                    uuid.UUID(uid)
+                )
+                if urow:
+                    unread_count = urow["count"]
+    except Exception:
+        pass
+
+    payload = {
+        "event_type": "READ_UPDATE",
+        "notification_id": str(notification_id) if notification_id else None,
+        "unread_count": unread_count,
+    }
+
+    async with _manager_lock:
+        queues = list(_active_user_connections.get(uid, []))
+
+    for q in queues:
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            pass
 
 
 async def create_notification_service(
@@ -42,7 +146,7 @@ async def create_notification_service(
             project_id
         )
 
-        return {
+        notif_dict = {
             "id": str(row["id"]),
             "user_id": str(row["user_id"]),
             "title": row["title"],
@@ -52,6 +156,8 @@ async def create_notification_service(
             "is_read": row["is_read"],
             "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
         }
+        await push_notification_to_user(str(user_id), notif_dict)
+        return notif_dict
 
 
 async def get_user_notifications_service(user_id: str) -> Dict[str, Any]:
@@ -111,14 +217,18 @@ async def get_user_notifications_service(user_id: str) -> Dict[str, Any]:
 
 async def mark_notification_read_service(notification_id: str) -> Dict[str, Any]:
     async with db.pool.acquire() as connection:
-        await connection.execute(
+        row = await connection.fetchrow(
             """
             UPDATE notifications
             SET is_read = TRUE
-            WHERE id = $1::uuid;
+            WHERE id = $1::uuid
+            RETURNING user_id;
             """,
             notification_id
         )
+
+        if row and row.get("user_id"):
+            await push_read_update_to_user(str(row["user_id"]), notification_id)
 
         return {"message": "Notification marked as read", "id": notification_id}
 
@@ -134,6 +244,7 @@ async def mark_all_read_service(user_id: str) -> Dict[str, Any]:
             user_id
         )
 
+        await push_read_update_to_user(str(user_id))
         return {"message": "All notifications marked as read"}
 
 
@@ -234,12 +345,19 @@ async def notify_product_owner_review_complete_service(project_id: str) -> Dict[
             p_uuid
         )
 
-        return {
-            "ok": True,
+        notif_dict = {
             "id": str(row["id"]),
             "user_id": str(row["user_id"]),
             "title": row["title"],
             "message": row["message"],
             "type": row["type"],
             "project_id": str(row["project_id"]),
+            "is_read": row["is_read"],
+            "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+        }
+        await push_notification_to_user(str(product_owner_id), notif_dict)
+
+        return {
+            "ok": True,
+            **notif_dict
         }
