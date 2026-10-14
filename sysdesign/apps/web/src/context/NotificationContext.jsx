@@ -55,18 +55,85 @@ export function NotificationProvider({ children }) {
     }
   }, [currentUser?.id]);
 
-  // Polling every 5 seconds for in-app notifications
+  // Connect to Server-Sent Events (SSE) stream for zero-polling real-time updates
   useEffect(() => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
 
-    fetchNotifications();
+    const eventSource = new EventSource(`/notifications/stream/${currentUser.id}`);
 
-    const interval = setInterval(() => {
-      fetchNotifications();
-    }, 5000);
+    // Initial snapshot sent by the server on connection
+    eventSource.addEventListener("init", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unread_count || 0);
+        isFirstLoadRef.current = false;
+      } catch (err) {
+        console.warn("Failed to parse SSE init event:", err);
+      }
+    });
 
-    return () => clearInterval(interval);
-  }, [currentUser?.id, fetchNotifications]);
+    // Real-time live notifications pushed by the server
+    eventSource.addEventListener("notification", (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+
+        if (payload.event_type === "NEW_NOTIFICATION" && payload.notification) {
+          const newNotif = payload.notification;
+          setNotifications((prev) => [
+            newNotif,
+            ...prev.filter((n) => n.id !== newNotif.id),
+          ]);
+
+          if (typeof payload.unread_count === "number") {
+            setUnreadCount(payload.unread_count);
+          } else {
+            setUnreadCount((prev) => prev + 1);
+          }
+
+          // Trigger in-app toast
+          if (!alertedIdsRef.current.has(newNotif.id)) {
+            alertedIdsRef.current.add(newNotif.id);
+            setToastNotification(newNotif);
+          }
+
+          // Dispatch custom event for dashboard/other listeners
+          window.dispatchEvent(
+            new CustomEvent("sysdesign:new-notification", { detail: newNotif })
+          );
+        } else if (payload.event_type === "READ_UPDATE") {
+          if (payload.notification_id) {
+            setNotifications((prev) =>
+              prev.map((n) =>
+                n.id === payload.notification_id ? { ...n, is_read: true } : n
+              )
+            );
+          } else {
+            // All read
+            setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+          }
+
+          if (typeof payload.unread_count === "number") {
+            setUnreadCount(payload.unread_count);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to parse SSE notification event:", err);
+      }
+    });
+
+    eventSource.onerror = () => {
+      // EventSource automatically retries if connection drops
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [currentUser?.id]);
 
   // Mark single notification as read
   const markAsRead = async (notificationId) => {
