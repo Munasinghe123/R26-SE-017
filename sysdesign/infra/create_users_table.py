@@ -1,4 +1,4 @@
-﻿import asyncio, os, sys
+import asyncio, os, sys
 
 sys.path.insert(0, 'services/agent1-requirements')
 from dotenv import load_dotenv
@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 CREATE INDEX IF NOT EXISTS idx_projects_owner  ON projects(product_owner_id);
 CREATE INDEX IF NOT EXISTS idx_projects_client ON projects(client_id);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    message    TEXT NOT NULL,
+    type       TEXT NOT NULL DEFAULT 'PROJECT_ASSIGNED',
+    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    is_read    BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id    ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
 """
 
 async def main():

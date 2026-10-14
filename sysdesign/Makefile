@@ -21,7 +21,7 @@ PIP    = pip
 install:
 	$(PIP) install -e packages/contracts
 	$(PIP) install -e packages/shared
-	$(PIP) install -r services/agent1-requirements/requirements_final.txt
+	$(PIP) install -r services/agent1-requirements/requirements.txt
 	@echo "All packages installed."
 
 # ── Database ─────────────────────────────────────────────────────────────────

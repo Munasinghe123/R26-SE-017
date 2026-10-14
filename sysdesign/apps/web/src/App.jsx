@@ -21,6 +21,9 @@ import UIReview           from "./Pages/Protected/Pipeline/UIReview";
 import DesignArtifacts    from "./Pages/Protected/Pipeline/DesignArtifacts";
 import SRSDownload        from "./Pages/Protected/Pipeline/SRSDownload";
 
+import { NotificationProvider } from "./context/NotificationContext";
+import NotificationToast from "./components/Notifications/NotificationToast";
+
 function AppLayout() {
   const location = useLocation();
 
@@ -34,6 +37,7 @@ function AppLayout() {
 
   return (
     <>
+      <NotificationToast />
       {!isMeetingUI && !isProjectDashboard && <StarBackground />}
       {!isMeetingUI && !isProjectDashboard && <Header />}
 
@@ -114,7 +118,9 @@ function AppLayout() {
 function App() {
   return (
     <BrowserRouter>
-      <AppLayout />
+      <NotificationProvider>
+        <AppLayout />
+      </NotificationProvider>
     </BrowserRouter>
   );
 }

@@ -98,20 +98,38 @@ export default function SRSDownload() {
   const handleDownloadPDF = async () => {
     setDownloading("pdf");
     try {
-      const resp = await fetch(`${ORCHESTRATOR}/jobs/${jobId}/srs/pdf`);
+      const cloudUrl =
+        srs?.cloudinary_url ||
+        (typeof srs?.pdf_url === "string" && srs.pdf_url.startsWith("http") ? srs.pdf_url : null);
+
+      if (!cloudUrl) {
+        alert("Cloudinary PDF is not yet generated. Please wait for the pipeline to finish.");
+        return;
+      }
+
+      // Download directly from Cloudinary CDN
+      const resp = await fetch(cloudUrl);
       if (resp.ok) {
         const blob = await resp.blob();
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement("a");
         a.href     = url;
         a.download = `SRS_${jobId}.pdf`;
+        document.body.appendChild(a);
         a.click();
+        a.remove();
         URL.revokeObjectURL(url);
       } else {
-        alert("PDF not yet generated. The SRS service may still be processing.");
+        // Direct open in new tab if blob fetch blocked
+        window.open(cloudUrl, "_blank");
       }
     } catch {
-      alert("Could not download PDF. Ensure the SRS Assembler service is running.");
+      const cloudUrl = srs?.cloudinary_url || srs?.pdf_url;
+      if (cloudUrl) {
+        window.open(cloudUrl, "_blank");
+      } else {
+        alert("Could not load Cloudinary PDF document.");
+      }
     } finally {
       setDownloading(null);
     }

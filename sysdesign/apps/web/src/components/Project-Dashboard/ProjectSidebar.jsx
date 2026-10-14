@@ -15,6 +15,7 @@ import { useDispatch } from "react-redux";
 import { logout } from "../../Redux/UserSlice";
 import logo from "../../Images/logo.png";
 import { setCurrentProject } from "../../Redux/ProjectSlice";
+import NotificationBell from "../Notifications/NotificationBell";
 
 export default function ProjectSidebar({
   projects = [],
@@ -180,26 +181,33 @@ export default function ProjectSidebar({
 
       {/* Bottom Actions */}
       <div className="shrink-0 border-t border-white/10 p-3 space-y-1">
-        <div className="w-fit">
+        <div className="w-full space-y-1">
           {userRole === "PRODUCT_OWNER" && (
             <button
               type="button"
               onClick={onCreateProject}
               title="New Project"
               className={`
-              mb-2 flex items-center gap-3
+              mb-2 flex items-center gap-2.5
               rounded-xl font-medium
               text-black
               bg-gradient-to-r from-cyan-100 via-cyan-300 to-cyan-500
               transition-all
               hover:brightness-110 cursor-pointer shadow-md
-              ${isCollapsed ? "mx-auto h-10 w-10 justify-center p-0" : "w-full px-3.5 py-2.5 text-sm"}
+              ${isCollapsed ? "mx-auto h-10 w-10 justify-center p-0" : "w-fit px-4 py-2.5 text-sm"}
             `}
             >
               <Plus size={18} className="shrink-0" />
               {!isCollapsed && <span>New Project</span>}
             </button>
           )}
+
+          {/* Notifications */}
+          <NotificationBell
+            isCollapsed={isCollapsed}
+            showLabel={true}
+            placement="top-left"
+          />
 
           {/* Account Menu */}
           <div className="relative">

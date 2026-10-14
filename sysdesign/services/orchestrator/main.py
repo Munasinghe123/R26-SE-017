@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -17,6 +17,8 @@ from pipeline import (
     restore_job_from_db,
     select_candidate,
     refine_diagram,
+    call_stage_http,
+    AGENT_URLS,
     JOB_STORE,
     JOB_ARTIFACTS,
     JOB_LISTENERS,
@@ -82,6 +84,126 @@ async def start_srs(job_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="Job not found")
     background_tasks.add_task(run_stage_srs, job_id)
     return {"job_id": job_id, "status": "queued", "message": "SRS assembly queued"}
+
+
+@app.post("/jobs/{job_id}/test-srs")
+@app.post("/jobs/test-srs")
+async def test_srs_endpoint(job_id: str = "direct-test", payload: Optional[Dict[str, Any]] = None):
+    """
+    Temporary direct testing endpoint for the SRS Assembler.
+    Bypasses waiting for upstream stages (HLD, LLD, UI) to test SRS directly.
+    Can be called per project/job ID (e.g. /jobs/{project_id}/test-srs) with optional custom JSON.
+    """
+    payload = payload or {}
+
+    if "requirements" in payload:
+        srs_payload = payload
+    elif payload.get("functional_requirements") or payload.get("functional"):
+        srs_payload = {"requirements": payload}
+    else:
+        # Check if requirements exist in in-memory artifacts for this job_id
+        stored_reqs = JOB_ARTIFACTS.get(job_id, {}).get("requirements")
+        if stored_reqs:
+            srs_payload = {
+                "requirements": stored_reqs.model_dump(mode="json") if hasattr(stored_reqs, "model_dump") else stored_reqs
+            }
+        else:
+            # Fallback: try fetching from Agent 1 requirements endpoint
+            fetched_reqs = None
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(f"http://127.0.0.1:8001/requirements/{job_id}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        raw = data.get("final_requirements") or data.get("requirements") or {}
+                        raw_fr = raw.get("functional") or raw.get("functional_requirements") or []
+                        raw_nfr = raw.get("non_functional") or raw.get("non_functional_requirements") or []
+
+                        norm_fr = []
+                        for idx, fr in enumerate(raw_fr):
+                            if isinstance(fr, dict):
+                                norm_fr.append({
+                                    "id": fr.get("id", f"FR-{idx+1}"),
+                                    "title": fr.get("title", fr.get("description", f"Requirement {idx+1}")[:40]),
+                                    "description": fr.get("description", fr.get("text", str(fr))),
+                                })
+                            else:
+                                norm_fr.append({
+                                    "id": f"FR-{idx+1}",
+                                    "title": str(fr)[:40],
+                                    "description": str(fr),
+                                })
+
+                        norm_nfr = []
+                        for idx, nfr in enumerate(raw_nfr):
+                            if isinstance(nfr, dict):
+                                norm_nfr.append({
+                                    "id": nfr.get("id", f"NFR-{idx+1}"),
+                                    "iso_characteristic": nfr.get("iso_characteristic", "quality"),
+                                    "description": nfr.get("description", nfr.get("text", str(nfr))),
+                                })
+                            else:
+                                norm_nfr.append({
+                                    "id": f"NFR-{idx+1}",
+                                    "iso_characteristic": "quality",
+                                    "description": str(nfr),
+                                })
+
+                        fetched_reqs = {
+                            "project_name": data.get("project_name", f"Project {job_id[:8]}"),
+                            "job_id": job_id,
+                            "functional_requirements": norm_fr,
+                            "non_functional_requirements": norm_nfr,
+                        }
+            except Exception:
+                pass
+
+            if fetched_reqs and (fetched_reqs["functional_requirements"] or fetched_reqs["non_functional_requirements"]):
+                srs_payload = {"requirements": fetched_reqs}
+            else:
+                srs_payload = {
+                    "requirements": {
+                        "project_name": f"Project {job_id[:8] if len(job_id) > 8 else job_id}",
+                        "job_id": job_id,
+                        "functional_requirements": [
+                            {
+                                "id": "FR-1",
+                                "title": "User Authentication",
+                                "description": "The system shall allow users to log in securely using credentials."
+                            },
+                            {
+                                "id": "FR-2",
+                                "title": "Dashboard Overview",
+                                "description": "The system shall display project overview and status."
+                            }
+                        ],
+                        "non_functional_requirements": [
+                            {
+                                "id": "NFR-1",
+                                "iso_characteristic": "performance_efficiency",
+                                "description": "The system response time must not exceed 500ms under standard load."
+                            },
+                            {
+                                "id": "NFR-2",
+                                "iso_characteristic": "security",
+                                "description": "All API endpoints must enforce encrypted communication."
+                            }
+                        ]
+                    }
+                }
+
+    try:
+        srs_result = await call_stage_http("srs", AGENT_URLS["srs"], srs_payload)
+        return {
+            "status": "success",
+            "job_id": job_id,
+            "dispatched_payload": srs_payload,
+            "srs_response": srs_result
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"SRS Assembler test failed: {str(exc)}")
+
 
 
 @app.post("/jobs/{job_id}/retry-hld")

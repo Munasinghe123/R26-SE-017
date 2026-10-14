@@ -78,7 +78,70 @@ async def save_meeting_requirements(
                         cview_json,
                         version
                     )
-                logger.info(f"Persisted meeting {meeting_id} to database successfully.")
+                    logger.info(f"Persisted meeting {meeting_id} to database successfully.")
+
+                    # If status is ready_for_review, notify the client to review requirements
+                    if status == "ready_for_review":
+                        try:
+                            target_proj_id = p_uuid
+                            if not target_proj_id and m_uuid:
+                                p_row = await conn.fetchrow("SELECT id FROM projects WHERE id = $1;", m_uuid)
+                                if p_row:
+                                    target_proj_id = p_row["id"]
+                                else:
+                                    m_row = await conn.fetchrow("SELECT project_id FROM meetings WHERE id = $1;", m_uuid)
+                                    if m_row and m_row["project_id"]:
+                                        target_proj_id = m_row["project_id"]
+
+                            if target_proj_id:
+                                project = await conn.fetchrow(
+                                    "SELECT id, name, client_id FROM projects WHERE id = $1;",
+                                    target_proj_id
+                                )
+                                if project and project["client_id"]:
+                                    client_id = project["client_id"]
+                                    proj_name = project["name"] or "Project"
+
+                                    existing_notif = await conn.fetchrow(
+                                        """
+                                        SELECT id FROM notifications
+                                        WHERE user_id = $1 AND project_id = $2 AND type = 'REVIEW_REQUIREMENTS' AND is_read = FALSE;
+                                        """,
+                                        client_id,
+                                        project["id"]
+                                    )
+
+                                    if not existing_notif:
+                                        await conn.execute(
+                                            """
+                                            INSERT INTO notifications (
+                                                id,
+                                                user_id,
+                                                title,
+                                                message,
+                                                type,
+                                                project_id,
+                                                is_read,
+                                                created_at
+                                            )
+                                            VALUES (
+                                                gen_random_uuid(),
+                                                $1,
+                                                'Review Requirements',
+                                                $2,
+                                                'REVIEW_REQUIREMENTS',
+                                                $3,
+                                                FALSE,
+                                                now()
+                                            );
+                                            """,
+                                            client_id,
+                                            f"Requirements for '{proj_name}' are ready for your review.",
+                                            project["id"]
+                                        )
+                                        logger.info(f"Created 'Review Requirements' notification for client {client_id}.")
+                        except Exception as notif_err:
+                            logger.warning(f"Could not create review notification for client: {notif_err}")
     except Exception as e:
         logger.warning(f"Failed to persist meeting to database: {e}")
 

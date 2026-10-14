@@ -175,6 +175,7 @@ export default function ClientRequirementReview({ onClose, projectId }) {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({}); // { [question_id]: string }
   const [stage, setStage] = useState("review"); // "review" | "questions" | "completed"
+  const [finishing, setFinishing] = useState(false);
 
   // ---- Fetch review and existing questions on load ------------------------
   const fetchReview = async () => {
@@ -365,13 +366,42 @@ export default function ClientRequirementReview({ onClose, projectId }) {
     }
   };
 
-  // ---- Guards --------------------------------------------------------------
-  <button
-    onClick={() => navigate("/project-dashboard")}
-    className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl transition cursor-pointer"
-  >
-    Go to Project Dashboard
-  </button>;
+  // ---- Complete Review & Return to Dashboard ------------------------------
+  const handleGoToDashboard = async () => {
+    if (finishing) return;
+    setFinishing(true);
+
+    try {
+      if (projectId) {
+        try {
+          await axios.post(`${AGENT1}/notifications/project/${projectId}/client-reviewed`);
+        } catch (err) {
+          console.warn("Direct notification call failed, trying proxy:", err);
+          await axios.post(`/notifications/project/${projectId}/client-reviewed`);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to notify product owner:", e);
+    }
+
+    if (onClose) {
+      onClose();
+    }
+
+    // Clean up ?review=true from search params
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("review")) {
+      url.searchParams.delete("review");
+      window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+    }
+
+    const targetUrl = projectId ? `/project-dashboard/${projectId}` : "/project-dashboard";
+    if (window.location.pathname === targetUrl && !window.location.search) {
+      window.location.reload();
+    } else {
+      window.location.href = targetUrl;
+    }
+  };
 
   if (fetching) {
     return (
@@ -408,7 +438,7 @@ export default function ClientRequirementReview({ onClose, projectId }) {
                 <div>
                    <button
                 type="button"
-                onClick={onClose}
+                onClick={stage === "completed" ? handleGoToDashboard : onClose}
                 className="fixed right-8 top-6 z-[110] rounded-full border border-white/10 bg-black/60 p-2 text-gray-400 backdrop-blur-md transition hover:bg-white/10 hover:text-white"
                 aria-label="Close requirements review"
               >
@@ -941,10 +971,18 @@ export default function ClientRequirementReview({ onClose, projectId }) {
                   </p>
                 </div>
                 <button
-                  onClick={() => navigate("/project-dashboard")}
-                  className="px-8 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs uppercase tracking-wider transition cursor-pointer shadow-lg"
+                  onClick={handleGoToDashboard}
+                  disabled={finishing}
+                  className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs uppercase tracking-wider transition cursor-pointer shadow-lg disabled:opacity-50"
                 >
-                  Return to Dashboard
+                  {finishing ? (
+                    <>
+                      <div className="animate-spin h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full" />
+                      <span>Returning to Dashboard...</span>
+                    </>
+                  ) : (
+                    <span>Return to Dashboard</span>
+                  )}
                 </button>
               </div>
             )}
