@@ -1,4 +1,7 @@
-from fastapi import APIRouter, HTTPException
+import asyncio
+import json
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
@@ -9,6 +12,8 @@ from services.notification_service import (
     mark_all_read_service,
     create_notification_service,
     notify_product_owner_review_complete_service,
+    register_connection,
+    unregister_connection,
 )
 
 notification_routes = APIRouter()
@@ -68,4 +73,41 @@ async def notify_client_reviewed(project_id: str):
         return await notify_product_owner_review_complete_service(project_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@notification_routes.get("/notifications/stream/{user_id}")
+async def stream_notifications(user_id: str, request: Request):
+    queue = await register_connection(user_id)
+
+    async def event_generator():
+        try:
+            # 1. Immediately send current snapshot so client has latest data upon connecting
+            initial_data = await get_user_notifications_service(user_id)
+            yield f"event: init\ndata: {json.dumps(initial_data)}\n\n"
+
+            # 2. Wait for live notifications or send 20s keepalive pings
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=20.0)
+                    yield f"event: notification\ndata: {json.dumps(payload)}\n\n"
+                except asyncio.TimeoutError:
+                    # Keepalive comment to prevent socket timeout in proxies/browsers
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await unregister_connection(user_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
 
