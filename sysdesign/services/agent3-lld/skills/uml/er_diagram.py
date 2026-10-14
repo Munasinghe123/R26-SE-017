@@ -7,186 +7,468 @@ ER_GENERATION_SKILL = Skill(
     instructions="""
 ROLE
 
-Generate only the ER Diagram portion of the UML IR.
+Generate the ER Diagram portion of the UML IR.
 
-The ER Diagram represents the system's persistent logical data model.
-Model persistent entities, attributes, identifiers, foreign keys, and
-semantic relationships with accurate cardinality.
+The ER Diagram represents the logical persistent data model of the system/module.
+
+Model:
+
+- persistent domain entities
+- persistent attributes
+- identifiers and supplied foreign-key attributes
+- semantic entity relationships
+- exact relationship cardinality/participation
+
+Do not represent application architecture or runtime behavior.
+
 
 SOURCE OF TRUTH
 
-Use, in priority order:
+Use:
 
-1. Requirements/domain entities and attributes
-2. Domain relationships and business rules
-3. Validated Class Diagram
-4. Database strategy, when supplied
+Requirements/domain entities:
+    canonical persistent concepts and attributes
 
-Do not infer persistence from application architecture.
+Domain relationships/business rules:
+    relationship meaning and cardinality
 
-ENTITIES
+Validated Class Diagram:
+    canonical domain concepts and structural relationships
 
-Include only concepts that represent persistent domain/data.
+Database strategy:
+    persistence context where supplied
 
-Include examples such as:
-- Customer
-- Order
-- CartItem
+Do not convert architectural components into ER entities.
 
-Exclude:
-- UI/frontend
-- Controller
-- Service
-- Repository
-- API handlers
-- Actors
-- External services
-- Infrastructure components
 
-Do not create an entity unless the supplied information supports it as persistent data.
+ENTITY SELECTION
 
-ATTRIBUTES
+Normally include persistent domain/data concepts.
 
-Include persistent attributes supported by the source information.
-Preserve canonical names exactly.
+Examples:
 
-Do not invent attributes such as:
-- created_at
-- updated_at
-- deleted
-- metadata
-- version
+    Customer
+    Order
+    CartItem
 
-unless explicitly supplied.
+Normally exclude:
 
-PRIMARY KEYS
+    FrontendUI
+    Controller
+    Service
+    Repository
+    API handler
+    actor-only concepts
+    external services
+    infrastructure components
 
-Preserve explicit entity identifiers as primary keys.
-Do not invent alternative identifiers.
+A concept should become an ER entity only when it represents persistent data.
 
-FOREIGN KEYS
 
-Preserve explicitly supplied foreign-key attributes such as:
-- Order.customer_id
-- CartItem.order_id
+CLASS VS ER BOUNDARY
 
-Do not invent foreign keys solely because two entities are related.
+The Class Diagram may contain domain behavior.
 
-CLASS VS ER
+The ER Diagram contains persistent data structure only.
 
-ER contains persistent data only.
+Do not copy Class Diagram methods into ER entities.
 
-Do NOT include Class Diagram methods or application behavior.
-
-For example:
+Example:
 
 Class:
-    Order.calculateTotalPrice()
 
-ER:
+    Order.calculateTotalPrice()
+    Order.validateCartNotEmpty()
+
+ER Entity:
+
     Order
         order_id
         customer_id
         total_price
         status
 
+Methods do not belong in ER.
+
+
+ATTRIBUTES
+
+Use persistent attributes supported by requirements.
+
+Preserve supplied canonical attribute names.
+
+Do not invent common fields such as:
+
+    created_at
+    updated_at
+    deleted
+    metadata
+    version
+
+unless explicitly supplied.
+
+Do not add application/framework attributes.
+
+Do not include attributes in an entity that redundantly duplicate explicit
+ER relationships to separate entities. For example, if an entity has relationships
+to Speaker, Requirement, Feedback, or AnalysisResult, do NOT list speakers,
+requirements, feedback, or analysisResults as attributes of that entity. Foreign keys
+or explicit relationships represent these associations in ER models.
+
+
+PRIMARY KEYS
+
+When an explicit entity identifier is supplied, represent it as the primary key.
+
+Examples:
+
+    Customer.customer_id
+    Order.order_id
+    CartItem.cart_item_id
+
+Do not invent alternative identifiers when a canonical ID already exists.
+
+
+FOREIGN KEYS
+
+When foreign-key-style attributes are explicitly supplied by the domain/data
+requirements, preserve them.
+
+Examples:
+
+    Order.customer_id
+    CartItem.order_id
+
+These attributes should remain consistent with the corresponding entity relationships.
+
+Do not invent foreign-key attributes merely because two entities are related unless
+the schema or requirements require them.
+
+
 RELATIONSHIPS
 
-Every relationship must represent business/domain meaning.
+Every ER relationship must describe BUSINESS/DOMAIN meaning.
 
-Use semantic verbs or verb phrases derived from the requirements.
+Relationship names should be semantic verbs or verb phrases.
 
-Good:
+Good examples:
+
     Customer PLACES Order
     Order CONTAINS CartItem
+    User OWNS Account
     Student ENROLLS_IN Course
 
-Never use cardinality as a relationship name.
+Do NOT use cardinality as the relationship name.
 
-Invalid:
+Invalid relationship names:
+
     one-to-many
     many-to-many
     one-to-one
     1:N
     1:1
 
+Cardinality describes quantity.
+Relationship name describes meaning.
+
+Use relationship descriptions and business rules to derive a concise semantic name.
+
+
 CARDINALITY
 
-Derive both minimum and maximum participation from the requirements.
+Represent minimum and maximum participation precisely whenever supported by the IR.
 
-Use only:
-    1       = exactly one
-    0..1    = zero or one
-    0..*    = zero or more
-    1..*    = one or more
+Use:
 
-Preserve minimum participation.
+    1       exactly one
+    0..1    zero or one
+    0..*    zero or more
+    1..*    one or more
 
-Interpret requirements carefully:
+Do not discard minimum participation.
 
-"Each Order belongs to exactly one Customer"
-    Order -> Customer = 1
+Do NOT convert:
 
-"A Customer can have multiple Orders"
-    Customer -> Order = 0..*
+    one or more
 
-"An Order contains one or more CartItems"
-    Order -> CartItem = 1..*
+into merely:
 
-"Each CartItem belongs to exactly one Order"
-    CartItem -> Order = 1
+    N
+    *
+    0..*
 
-Do not change 1..* to 0..*.
-Do not make optional relationships mandatory.
+when `1..*` is supported.
 
-RELATIONSHIP CONSISTENCY
 
-Foreign keys, entities, and relationships must agree.
+CARDINALITY INTERPRETATION
 
 Example:
 
-Order.customer_id -> Customer
+    "Each Order belongs to exactly one Customer."
 
-combined with:
+means:
 
-"Each Order belongs to exactly one Customer"
+    Order -> Customer = exactly 1
 
-must produce:
+Example:
 
-Customer PLACES Order
-Customer -> Order = 0..*
-Order -> Customer = 1
+    "A Customer can have multiple Orders."
 
-Do not generate contradictory relationship semantics.
+means:
+
+    Customer -> Order = 0..*
+
+unless the requirements explicitly require every Customer to have at least one Order.
+
+Therefore:
+
+    Customer 1 ----- 0..* Order
+Lifecycle Multiplicity:
+Sessions, meetings, orders, and batches exist before child items, speakers,
+or requirements are extracted or identified. Multiplicity from container to
+extracted items must be 0..*, never mandatory 1..*.
+
+
+Example:
+
+    "Each CartItem belongs to exactly one Order."
+
+means:
+
+    CartItem -> Order = exactly 1
+
+Example:
+
+    "An Order contains one or more CartItems."
+
+means:
+
+    Order -> CartItem = 1..*
+
+Therefore:
+
+    Order 1 ----- 1..* CartItem
+
+
+MANDATORY PARTICIPATION
+
+Words such as:
+
+    exactly one
+    must
+    each X belongs to one Y
+    one or more
+    at least one
+
+indicate mandatory participation.
+
+Preserve those lower bounds.
+
+For example:
+
+    "An Order contains one or more CartItems."
+
+must not produce:
+
+    Order -> CartItem = 0..*
+
+because that would allow an Order with no CartItems.
+
+
+OPTIONAL PARTICIPATION
+
+Words such as:
+
+    may
+    can have
+    zero or more
+    optionally
+
+may indicate a lower bound of zero.
+
+Do not make participation mandatory without requirement support.
+
+
+RELATIONSHIP CONSISTENCY
+
+Foreign-key-style attributes and ER relationships must agree.
+
+If:
+
+    Order.customer_id
+
+references Customer, and requirements say each Order belongs to exactly one Customer,
+the relationship must reflect that requirement.
+
+If:
+
+    CartItem.order_id
+
+references Order, and every CartItem belongs to one Order, the relationship must
+reflect exactly one Order per CartItem.
+
+Do not generate contradictory attribute and relationship semantics.
+
+
+RELATIONSHIP NAMING
+
+Prefer names derived directly from requirement meaning.
+
+Examples:
+
+Requirement:
+
+    "A Customer can have multiple Orders."
+
+Relationship:
+
+    PLACES
+
+or another concise requirement-grounded semantic verb.
+
+Requirement:
+
+    "An Order contains one or more CartItems."
+
+Relationship:
+
+    CONTAINS
+
+Do not invent unrelated domain semantics.
+
+
+NO ARCHITECTURAL RELATIONSHIPS
+
+Do not generate ER relationships involving:
+
+    FrontendUI
+    Controller
+    Service
+    Repository
+    API
+    external actor
+    infrastructure component
+
+ER relationships are between persistent domain/data entities.
+
+
+NO METHODS
+
+ER entities contain data, not application/domain methods.
+
+Do not include:
+
+    calculateTotalPrice()
+    validateCartNotEmpty()
+    submitCheckout()
+    createOrder()
+
+in the ER Diagram.
+
+
+NO BEHAVIORAL FLOW
+
+Do not model:
+
+    request order
+    sequence calls
+    API calls
+    loops
+    validation flow
+    orchestration
+
+Those belong to Sequence Diagrams.
+
 
 CROSS-DIAGRAM CONSISTENCY
 
-Keep entity and attribute names consistent with the validated Class Diagram
-and supplied requirements.
+Persistent domain names should remain consistent with the Class Diagram.
 
-Do not rename:
-    Customer -> CustomerRecord
-    Order -> OrderTable
+Examples:
 
-Do not model application architecture or runtime behavior.
+    Customer
+    Order
+    CartItem
 
-FINAL VALIDATION
+Do not rename these to:
 
-Before returning the ER IR, verify:
+    CustomerRecord
+    OrderTable
+    ShoppingOrder
 
-- all entities are persistent domain data
-- no UI/controller/service/repository/API entity exists
-- no methods or behavioral flow are included
-- canonical attributes and identifiers are preserved
-- unsupported attributes/entities are not invented
-- semantic relationship names are used
-- cardinality contains correct minimum and maximum
-- exactly one = 1
-- zero or more = 0..*
-- one or more = 1..*
-- optional participation remains optional
-- foreign keys agree with relationships
-- business rules are not contradicted
+unless explicitly required.
+
+Persistent attributes should remain consistent with supplied requirements and the
+validated domain model.
+
+
+ORDER MANAGEMENT EXAMPLE
+
+Given entities:
+
+    Customer(customer_id)
+
+    Order(
+        order_id,
+        customer_id,
+        total_price,
+        status
+    )
+
+    CartItem(
+        cart_item_id,
+        order_id,
+        product_id,
+        quantity
+    )
+
+and requirements:
+
+    A Customer can have multiple Orders.
+    Each Order belongs to exactly one Customer.
+    An Order contains one or more CartItems.
+    Each CartItem belongs to exactly one Order.
+
+Expected semantic relationships:
+
+    Customer PLACES Order
+
+with:
+
+    Customer -> Order = 0..*
+    Order -> Customer = 1
+
+
+    Order CONTAINS CartItem
+
+with:
+
+    Order -> CartItem = 1..*
+    CartItem -> Order = 1
+
+Do NOT name either relationship:
+
+    one-to-many
+
+
+FINAL CHECK
+
+Before returning the ER Diagram verify:
+
+- every entity represents persistent domain data
+- no Controller/Service/Repository/UI component became an entity
+- methods are excluded
+- supplied identifiers are preserved
+- supplied persistent attributes are preserved
+- relationship names express semantic business meaning
+- relationship names are not cardinality labels
+- every cardinality preserves both minimum and maximum participation
+- "one or more" remains `1..*`
+- "exactly one" remains `1`
+- optional participation is not made mandatory
+- foreign-key attributes agree with relationships
+- no relationship contradicts explicit business rules
+- no unsupported entity, attribute, or relationship was invented
 
 Return only the ER Diagram portion required by the UML IR schema.
 """.strip(),
