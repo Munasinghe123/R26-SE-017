@@ -27,8 +27,11 @@ export default defineConfig({
       '/extract-requirements': { target: 'http://127.0.0.1:8001', changeOrigin: true },
       '/users':                { target: 'http://127.0.0.1:8001', changeOrigin: true },
       '/livekit':              { target: 'http://127.0.0.1:8001', changeOrigin: true },
+      '/live-meeting':         { target: 'http://127.0.0.1:8001', changeOrigin: true },
       '/test/':                { target: 'http://127.0.0.1:8001', changeOrigin: true },
       '/meetings':             { target: 'http://127.0.0.1:8001', changeOrigin: true },
+      '/notifications':        { target: 'http://127.0.0.1:8001', changeOrigin: true },
+     
     },
   },
 
