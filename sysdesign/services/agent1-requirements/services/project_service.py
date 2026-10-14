@@ -111,7 +111,7 @@ async def create_project_service(creator_id, data):
 
             # 7. Create in-app notification for the client
             po_name = creator["name"] if (creator and "name" in creator and creator["name"]) else "Product Owner"
-            await connection.execute(
+            notif_row = await connection.fetchrow(
                 """
                 INSERT INTO notifications (
                     id,
@@ -132,13 +132,19 @@ async def create_project_service(creator_id, data):
                     $4,
                     FALSE,
                     now()
-                );
+                )
+                RETURNING id, user_id, title, message, type, project_id, is_read, created_at;
                 """,
                 data.clientId,
                 "New Project Assigned",
                 f"You have been added to project '{project['name']}' by {po_name}.",
                 project["id"]
             )
+            try:
+                from services.notification_service import push_notification_to_user
+                await push_notification_to_user(str(data.clientId), notif_row)
+            except Exception as e:
+                pass
 
     return {
         "message": "Project created successfully",
@@ -397,18 +403,24 @@ async def assign_client_to_project_service(project_id: str, client_id: str, assi
                     assigner_name = assigner["name"]
 
             # Create notification
-            await connection.execute(
+            notif_row = await connection.fetchrow(
                 """
                 INSERT INTO notifications (
                     id, user_id, title, message, type, project_id, is_read, created_at
                 )
-                VALUES (gen_random_uuid(), $1::uuid, $2, $3, 'PROJECT_ASSIGNED', $4::uuid, FALSE, now());
+                VALUES (gen_random_uuid(), $1::uuid, $2, $3, 'PROJECT_ASSIGNED', $4::uuid, FALSE, now())
+                RETURNING id, user_id, title, message, type, project_id, is_read, created_at;
                 """,
                 client_id,
                 "New Project Assigned",
                 f"You have been added to project '{project['name']}' by {assigner_name}.",
                 project["id"]
             )
+            try:
+                from services.notification_service import push_notification_to_user
+                await push_notification_to_user(str(client_id), notif_row)
+            except Exception as e:
+                pass
 
             return {
                 "message": "Client assigned successfully",
