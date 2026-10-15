@@ -47,6 +47,59 @@ def _to_chen_cardinality(value):
 # CLASS DIAGRAM GENERATOR
 # ====================================
 
+def _format_class_method(method):
+    if not method:
+        return ""
+    if hasattr(method, "name"):
+        name = getattr(method, "name", "")
+        params = []
+        for p in getattr(method, "parameters", []) or []:
+            p_name = getattr(p, "name", str(p))
+            p_type = getattr(p, "data_type", "")
+            if p_type:
+                params.append(f"{p_name}: {p_type}")
+            else:
+                params.append(p_name)
+        params_str = ", ".join(params)
+        ret_type = getattr(method, "return_type", "void") or "void"
+        vis_val = getattr(method, "visibility", "+")
+        if hasattr(vis_val, "value"):
+            vis_val = vis_val.value
+        vis_map = {"public": "+", "private": "-", "protected": "#", "package": "~", "+": "+", "-": "-", "#": "#", "~": "~"}
+        vis = vis_map.get(str(vis_val).lower(), "+")
+        return f"{vis}{name}({params_str}): {ret_type}"
+    elif isinstance(method, dict):
+        name = str(method.get("name", "")).strip()
+        params = []
+        for p in method.get("parameters", method.get("params", [])) or []:
+            if isinstance(p, dict):
+                p_name = str(p.get("name", "")).strip()
+                p_type = str(p.get("data_type", p.get("type", ""))).strip()
+                if p_type:
+                    params.append(f"{p_name}: {p_type}")
+                elif p_name:
+                    params.append(p_name)
+            else:
+                params.append(str(p).strip())
+        params_str = ", ".join(params)
+        ret_type = str(method.get("return_type", method.get("returns", "void"))).strip() or "void"
+        vis_val = str(method.get("visibility", "+")).strip().lower()
+        vis_map = {"public": "+", "private": "-", "protected": "#", "package": "~", "+": "+", "-": "-", "#": "#", "~": "~"}
+        vis = vis_map.get(vis_val, "+")
+        return f"{vis}{name}({params_str}): {ret_type}"
+    else:
+        s = str(method).strip()
+        if not s:
+            return ""
+        if s[0] in ("+", "-", "#", "~"):
+            return s
+        return f"+{s}"
+
+
+# ====================================
+# CLASS DIAGRAM GENERATOR
+# ====================================
+
 def generate_class_plantuml(class_diagram):
 
     plantuml = "@startuml\n\n"
@@ -58,9 +111,11 @@ def generate_class_plantuml(class_diagram):
     # CLASS DEFINITIONS
     # ====================================
 
-    for cls in class_diagram.get("classes", []):
+    classes = class_diagram.get("classes", []) if isinstance(class_diagram, dict) else getattr(class_diagram, "classes", [])
 
-        class_name = _escape_name(cls.get("name"))
+    for cls in classes:
+
+        class_name = _escape_name(cls.get("name") if isinstance(cls, dict) else getattr(cls, "name", ""))
 
         if not class_name:
             continue
@@ -71,7 +126,8 @@ def generate_class_plantuml(class_diagram):
         # ATTRIBUTES
         # ----------------------------
 
-        for attr in cls.get("attributes", []):
+        attributes = cls.get("attributes", []) if isinstance(cls, dict) else getattr(cls, "attributes", [])
+        for attr in attributes:
 
             safe_attr = str(attr).replace('"', '\\"')
             plantuml += f"  +{safe_attr}\n"
@@ -82,10 +138,13 @@ def generate_class_plantuml(class_diagram):
         # METHODS
         # ----------------------------
 
-        for method in cls.get("methods", []):
+        methods = cls.get("methods", []) if isinstance(cls, dict) else getattr(cls, "methods", [])
+        for method in methods:
 
-            safe_method = str(method).replace('"', '\\"')
-            plantuml += f"  +{safe_method}\n"
+            formatted = _format_class_method(method)
+            if formatted:
+                safe_method = formatted.replace('"', '\\"')
+                plantuml += f"  {safe_method}\n"
 
         plantuml += "}\n\n"
 
@@ -93,77 +152,76 @@ def generate_class_plantuml(class_diagram):
     # RELATIONSHIPS
     # ====================================
 
-    for rel in class_diagram.get("relationships", []):
+    relationships = class_diagram.get("relationships", []) if isinstance(class_diagram, dict) else getattr(class_diagram, "relationships", [])
 
-        source = _escape_name(rel.get("source"))
-        target = _escape_name(rel.get("target"))
+    for rel in relationships:
+
+        source = _escape_name(rel.get("source") if isinstance(rel, dict) else getattr(rel, "source", getattr(rel, "source_class", "")))
+        target = _escape_name(rel.get("target") if isinstance(rel, dict) else getattr(rel, "target", getattr(rel, "target_class", "")))
 
         if not source or not target:
             continue
 
-        relationship_type = rel.get("type", "association")
-        cardinality = rel.get("cardinality", "")
+        raw_rel_type = rel.get("type", rel.get("rel_type", "association")) if isinstance(rel, dict) else getattr(rel, "rel_type", getattr(rel, "type", "association"))
+        if hasattr(raw_rel_type, "value"):
+            raw_rel_type = raw_rel_type.value
+        relationship_type = str(raw_rel_type).lower().strip()
+
+        source_mult = str(rel.get("source_multiplicity", "") if isinstance(rel, dict) else getattr(rel, "source_multiplicity", "")).strip()
+        target_mult = str((rel.get("target_multiplicity", "") or rel.get("cardinality", "")) if isinstance(rel, dict) else (getattr(rel, "target_multiplicity", "") or getattr(rel, "cardinality", ""))).strip()
 
         # ----------------------------
-        # RELATIONSHIP TYPES
+        # RELATIONSHIP TYPES & SEMANTICS
         # ----------------------------
+
+        ownership = str(rel.get("ownership", "") if isinstance(rel, dict) else getattr(rel, "ownership", "")).strip().lower()
+        owner = str(rel.get("owner", rel.get("whole", "")) if isinstance(rel, dict) else getattr(rel, "owner", getattr(rel, "whole", ""))).strip()
+        is_target_owner = ownership == "target" or owner == target
 
         if relationship_type == "inheritance":
 
-            arrow = "<|--"
+            parent = str(rel.get("parent", rel.get("superclass", "")) if isinstance(rel, dict) else getattr(rel, "parent", getattr(rel, "superclass", ""))).strip()
+            direction = str(rel.get("direction", "") if isinstance(rel, dict) else getattr(rel, "direction", "")).strip().lower()
+            if parent == target or direction in ("child_to_parent", "source_to_target"):
+                arrow = "--|>"
+            elif parent == source or direction in ("parent_to_child", "target_to_source"):
+                arrow = "<|--"
+            else:
+                arrow = "--|>"
+
+            plantuml += f"{source} {arrow} {target}\n"
+            continue
 
         elif relationship_type == "composition":
 
-            arrow = "*--"
+            arrow = "--*" if is_target_owner else "*--"
 
         elif relationship_type == "aggregation":
 
-            arrow = "o--"
+            arrow = "--o" if is_target_owner else "o--"
 
         elif relationship_type == "dependency":
 
             arrow = "..>"
+            plantuml += f"{source} {arrow} {target}\n"
+            continue
 
         else:
 
             arrow = "--"
 
-        if relationship_type == "dependency":
-            plantuml += f"{source} {arrow} {target}\n"
-            continue
-
         # ----------------------------
-        # CARDINALITIES
+        # CARDINALITIES (Preserve 1..*, do not invent '1' if omitted)
         # ----------------------------
 
-        left_cardinality = '"1"'
-        right_cardinality = '"1"'
-
-        if cardinality == "1..*":
-
-            right_cardinality = '"*"'
-
-        elif cardinality == "0..*":
-
-            right_cardinality = '"0..*"'
-
-        elif cardinality == "0..1":
-
-            right_cardinality = '"0..1"'
-
-        elif cardinality == "1":
-
-            right_cardinality = '"1"'
+        left_cardinality = f'"{source_mult}" ' if source_mult else ""
+        right_cardinality = f' "{target_mult}"' if target_mult else ""
 
         # ----------------------------
         # GENERATE RELATIONSHIP
         # ----------------------------
 
-        plantuml += (
-            f'{source} {left_cardinality} '
-            f'{arrow} {right_cardinality} '
-            f'{target}\n'
-        )
+        plantuml += f"{source} {left_cardinality}{arrow}{right_cardinality} {target}\n"
 
     plantuml += "\n@enduml"
 
@@ -187,7 +245,6 @@ def generate_sequence_plantuml(sequence_diagram):
 
     plantuml = "@startuml\n\n"
     plantuml += "hide footbox\n\n"
-    plantuml += "skinparam linetype ortho\n\n"
     plantuml += f"title {diagram_name}\n\n"
 
     def _participant_type_name(value):
@@ -213,6 +270,9 @@ def generate_sequence_plantuml(sequence_diagram):
     def _message_text(message):
         return str(message.get("message", "")).replace('"', '\\"')
 
+    # Track active participant lifelines to avoid unmatched/inappropriate deactivations
+    active_counts = {}
+
     def render_message(message, alias_lookup, indent=""):
         sender_name = str(message.get("from", "")).strip()
         receiver_name = str(message.get("to", "")).strip()
@@ -223,21 +283,38 @@ def generate_sequence_plantuml(sequence_diagram):
         if not sender or not receiver:
             return ""
 
-        # Requirement 7: Return arrows must be determined by structured message type
-        raw_type = str(message.get("type", "call")).strip().lower()
+        raw_type = message.get("type", "call")
+        if hasattr(raw_type, "value"):
+            raw_type = raw_type.value
+        raw_type = str(raw_type).strip().lower()
         arrow = "-->" if raw_type == "return" else "->"
 
         parts = [f"{indent}{sender} {arrow} {receiver}: {text}\n"]
         activates = bool(message.get("activate", message.get("activates_target", False)))
         deactivates = bool(message.get("deactivate", message.get("deactivates_target", False)))
 
-        if activates and not deactivates:
-            parts.append(f"{indent}activate {receiver}\n")
-        elif deactivates and not activates:
-            parts.append(f"{indent}deactivate {receiver}\n")
-        elif activates and deactivates:
-            parts.append(f"{indent}activate {receiver}\n")
-            parts.append(f"{indent}deactivate {receiver}\n")
+        # Lifecycle management:
+        # Calls activate the receiver (target)
+        # Returns deactivate the sender (the participant whose execution is completing)
+        if raw_type == "call":
+            if activates and not deactivates:
+                parts.append(f"{indent}activate {receiver}\n")
+                active_counts[receiver] = active_counts.get(receiver, 0) + 1
+            elif activates and deactivates:
+                # Immediate self-call or transient activation
+                parts.append(f"{indent}activate {receiver}\n")
+                parts.append(f"{indent}deactivate {receiver}\n")
+            elif deactivates and not activates:
+                # Target deactivation on call only if active
+                if active_counts.get(receiver, 0) > 0:
+                    parts.append(f"{indent}deactivate {receiver}\n")
+                    active_counts[receiver] -= 1
+        elif raw_type == "return":
+            # On return message, sender execution is ending. Never deactivate response receiver!
+            # Never deactivate a lifeline that was not activated!
+            if active_counts.get(sender, 0) > 0:
+                parts.append(f"{indent}deactivate {sender}\n")
+                active_counts[sender] -= 1
 
         return "".join(parts)
 
@@ -251,7 +328,7 @@ def generate_sequence_plantuml(sequence_diagram):
         nested_blocks = block.get("logic_blocks", []) or []
 
         if block_type == "else":
-            header = f"{indent}else {condition}".rstrip()
+            header = f"{indent}else [{condition}]".rstrip() if condition else f"{indent}else"
         elif block_type == "end":
             header = f"{indent}end"
         elif block_type == "loop":
@@ -281,7 +358,8 @@ def generate_sequence_plantuml(sequence_diagram):
                 if isinstance(nested_block, dict):
                     rendered.append(render_logic_block(nested_block, alias_lookup, indent=indent + "  "))
 
-        if block_type in {"alt", "loop", "opt"} and not any(str(item.get("block_type", item.get("type", ""))).strip().lower() == "else" for item in nested_blocks if isinstance(item, dict)):
+        # Every alt, loop, or opt block MUST be closed with end
+        if block_type in {"alt", "loop", "opt"}:
             rendered.append(f"{indent}end\n")
 
         return "".join(rendered)
@@ -337,6 +415,12 @@ def generate_sequence_plantuml(sequence_diagram):
             if isinstance(block, dict):
                 plantuml += render_logic_block(block, alias_lookup)
 
+    # Close any unclosed activations to ensure balanced PlantUML rendering
+    for participant_alias, count in list(active_counts.items()):
+        while count > 0:
+            plantuml += f"deactivate {participant_alias}\n"
+            count -= 1
+
     plantuml += "\n@enduml"
 
     return plantuml
@@ -357,6 +441,21 @@ def is_invalid_relationship_name(name: str | None) -> bool:
         return True
     cleaned = str(name).strip().lower().replace(" ", "-")
     return cleaned in INVALID_RELATIONSHIP_NAMES or cleaned.replace("-", "_") in INVALID_RELATIONSHIP_NAMES
+
+
+def is_architectural_component(name: str) -> bool:
+    """Classify if an entity represents an application architectural component.
+    Entities named 'Service' or 'Component' alone can be valid domain entities (e.g., service catalog, IT service).
+    Compound names like 'OrderService', 'UserController', 'OrderRepository' are architectural components."""
+    name_clean = str(name).strip()
+    name_lower = name_clean.lower()
+    if name_lower in ("service", "component"):
+        return False
+    arch_suffixes = ("controller", "service", "repository", "handler", "gateway", "interceptor", "adapter", "router", "frontend", "ui")
+    for sfx in arch_suffixes:
+        if name_lower.endswith(sfx) and len(name_lower) > len(sfx):
+            return True
+    return False
 
 
 # ====================================
@@ -389,20 +488,52 @@ def generate_er_plantuml(er_diagram):
     # ENTITIES
     # ====================================
 
-    entities = er_diagram.get("entities", [])
+    # Collect relationships upfront to identify redundant collection attributes
+    if hasattr(er_diagram, "entities"):
+        all_relationships = []
+        for ent in getattr(er_diagram, "entities", []) or []:
+            for rel in getattr(ent, "relationships", []) or []:
+                all_relationships.append({
+                    "source": getattr(rel, "source", ent.name),
+                    "target": getattr(rel, "target", ""),
+                })
+    elif isinstance(er_diagram, dict):
+        all_relationships = er_diagram.get("relationships", []) or []
+    else:
+        all_relationships = getattr(er_diagram, "relationships", []) or []
+
+    entity_targets_map: dict[str, set[str]] = {}
+    for r in all_relationships:
+        if isinstance(r, dict):
+            s = str(r.get("source", "")).strip()
+            t = str(r.get("target", "")).strip()
+            if s and t:
+                entity_targets_map.setdefault(s, set()).add(t)
+                entity_targets_map.setdefault(t, set()).add(s)
+
+    if hasattr(er_diagram, "entities"):
+        entities = getattr(er_diagram, "entities", []) or []
+    elif isinstance(er_diagram, dict):
+        entities = er_diagram.get("entities", []) or []
+    else:
+        entities = []
     entity_aliases = set()
 
     for entity in entities:
 
-        raw_name = entity.get("name", "")
+        raw_name = entity.get("name", "") if isinstance(entity, dict) else getattr(entity, "name", "")
+        raw_name_clean = str(raw_name).strip()
 
-        entity_name = _escape_name(raw_name)
-
-        if not entity_name:
+        if not raw_name_clean:
             continue
 
+        if is_architectural_component(raw_name_clean):
+            continue
+
+        entity_name = _escape_name(raw_name_clean)
+
         alias = (
-            raw_name.upper()
+            raw_name_clean.upper()
             .replace(" ", "_")
             .replace("-", "_")
         )
@@ -410,7 +541,7 @@ def generate_er_plantuml(er_diagram):
         entity_aliases.add(alias)
 
         plantuml += (
-            f'entity "{raw_name}" '
+            f'entity "{raw_name_clean}" '
             f'as {alias} {{\n'
         )
 
@@ -418,33 +549,42 @@ def generate_er_plantuml(er_diagram):
         # PRIMARY KEY
         # ----------------------------
 
-        primary_key = entity.get("primary_key")
+        attributes = entity.get("attributes", []) if isinstance(entity, dict) else getattr(entity, "attributes", [])
+        primary_key = str(entity.get("primary_key", "") if isinstance(entity, dict) else getattr(entity, "primary_key", "")).strip()
+
+        if not primary_key:
+            for attr in attributes:
+                constraint = attr.get("constraint", "") if isinstance(attr, dict) else getattr(attr, "constraint", "")
+                if constraint == "PK":
+                    primary_key = attr.get("name", "") if isinstance(attr, dict) else getattr(attr, "name", str(attr))
+                    break
 
         if primary_key:
-
-            safe_pk = (
-                str(primary_key)
-                .replace('"', '\\"')
-            )
-
-            plantuml += (
-                f'    {safe_pk} <<key>>\n'
-            )
+            safe_pk = primary_key.replace('"', '\\"')
+            plantuml += f'    {safe_pk} <<key>>\n'
 
         # ----------------------------
         # ATTRIBUTES
         # ----------------------------
 
-        for attr in entity.get("attributes", []):
+        for attr in attributes:
 
-            if attr == primary_key:
+            attr_name = str(getattr(attr, "name", attr.get("name", str(attr)) if isinstance(attr, dict) else str(attr))).strip()
+            if not attr_name or attr_name == primary_key:
                 continue
 
-            safe_attr = (
-                str(attr)
-                .replace('"', '\\"')
-            )
+            # Skip redundant attributes that duplicate explicit relationships
+            attr_norm = attr_name.lower().replace("_", "")
+            is_redundant = False
+            for target_name in entity_targets_map.get(raw_name_clean, set()):
+                target_norm = target_name.lower().replace("_", "")
+                if attr_norm in (target_norm, target_norm + "s", target_norm + "es", target_norm + "list", "list" + target_norm):
+                    is_redundant = True
+                    break
+            if is_redundant:
+                continue
 
+            safe_attr = attr_name.replace('"', '\\"')
             plantuml += f"    {safe_attr}\n"
 
         plantuml += "}\n\n"
@@ -453,10 +593,22 @@ def generate_er_plantuml(er_diagram):
     # RELATIONSHIPS
     # ====================================
 
-    relationships = er_diagram.get(
-        "relationships",
-        []
-    )
+    if hasattr(er_diagram, "entities"):
+        relationships = []
+        for ent in er_diagram.entities:
+            for rel in getattr(ent, "relationships", []):
+                relationships.append({
+                    "source": getattr(rel, "source", ent.name),
+                    "target": getattr(rel, "target", ""),
+                    "name": getattr(rel, "name", ""),
+                    "type": getattr(rel, "rel_type", "one-to-many"),
+                    "source_multiplicity": getattr(rel, "source_multiplicity", ""),
+                    "target_multiplicity": getattr(rel, "target_multiplicity", ""),
+                })
+    elif isinstance(er_diagram, dict):
+        relationships = er_diagram.get("relationships", []) or []
+    else:
+        relationships = getattr(er_diagram, "relationships", []) or []
 
     for index, rel in enumerate(relationships):
 
@@ -504,55 +656,47 @@ def generate_er_plantuml(er_diagram):
         )
 
         # ----------------------------
-        # CARDINALITIES
+        # CARDINALITIES (Preserve 1..* as (1,N), do not invent missing multiplicities)
         # ----------------------------
 
         source_multiplicity = str(rel.get("source_multiplicity", "")).strip()
         target_multiplicity = str(rel.get("target_multiplicity", "")).strip()
+        cardinality = str(rel.get("cardinality", "")).strip()
+        if not target_multiplicity and cardinality:
+            target_multiplicity = cardinality
 
-        if source_multiplicity or target_multiplicity:
-            left = _to_chen_cardinality(source_multiplicity or "1")
-            right = _to_chen_cardinality(target_multiplicity or "1")
-        elif rel_type == "one-to-one":
-
-            left = "1"
-            right = "1"
-
-        elif rel_type == "one-to-many":
-
-            left = "1"
-            right = "N"
-
-        elif rel_type == "many-to-one":
-
-            left = "N"
-            right = "1"
-
-        elif rel_type == "many-to-many":
-
-            left = "N"
-            right = "N"
-
-        else:
-
-            left = "1"
-            right = "N"
+        left = _to_chen_cardinality(source_multiplicity) if source_multiplicity else ""
+        right = _to_chen_cardinality(target_multiplicity) if target_multiplicity else ""
 
         # ----------------------------
         # CONNECT RELATIONSHIP
         # ----------------------------
 
-        plantuml += (
-            f"{relationship_name}"
-            f"-{left}- "
-            f"{source}\n"
-        )
+        if left:
+            plantuml += (
+                f"{relationship_name}"
+                f"-{left}- "
+                f"{source}\n"
+            )
+        else:
+            plantuml += (
+                f"{relationship_name}"
+                f"-- "
+                f"{source}\n"
+            )
 
-        plantuml += (
-            f"{relationship_name}"
-            f"-{right}- "
-            f"{target}\n\n"
-        )
+        if right:
+            plantuml += (
+                f"{relationship_name}"
+                f"-{right}- "
+                f"{target}\n\n"
+            )
+        else:
+            plantuml += (
+                f"{relationship_name}"
+                f"-- "
+                f"{target}\n\n"
+            )
 
     plantuml += "@endchen"
 

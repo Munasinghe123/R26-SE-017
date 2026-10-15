@@ -57,15 +57,43 @@ async def get_meeting_review(thread_id: str):
     snapshot, config = await get_or_hydrate_snapshot(thread_id)
 
     if not snapshot or not snapshot.values:
+        # Fallback to direct DB query if graph hydration was bypassed or failed
+        persisted = await get_meeting_requirements(thread_id)
+        if persisted and (persisted.get("requirements") or persisted.get("client_view")):
+            reqs = persisted.get("requirements")
+            cview = persisted.get("client_view")
+            if not cview and reqs:
+                try:
+                    cview = build_client_view(reqs)
+                except Exception as e:
+                    print(f"Warning: could not build client_view fallback: {e}")
+                    cview = reqs
+            return {
+                "thread_id": thread_id,
+                "project_id": persisted.get("project_id"),
+                "client_view": cview,
+                "requirements": reqs,
+            }
+
         raise HTTPException(
             status_code=404,
             detail="Meeting workflow not found"
         )
 
+    cview = snapshot.values.get("client_view")
+    reqs = snapshot.values.get("requirements")
+    if not cview and reqs:
+        try:
+            cview = build_client_view(reqs)
+        except Exception as e:
+            print(f"Warning: could not build client_view from snapshot: {e}")
+            cview = reqs
+
     return {
         "thread_id": thread_id,
         "project_id": snapshot.values.get("project_id"),
-        "client_view": snapshot.values.get("client_view"),
+        "client_view": cview,
+        "requirements": reqs,
     }
 
 
@@ -106,6 +134,45 @@ async def submit_meeting_review(
             questions = clarification_q.get("questions", [])
         elif isinstance(clarification_q, list):
             questions = clarification_q
+
+    final_reqs = None
+    if new_snapshot and new_snapshot.values:
+        final_reqs = new_snapshot.values.get("final_requirements") or new_snapshot.values.get("requirements")
+
+    # If completed (no questions needed), mark status as 'completed' in DB
+    if not questions:
+        try:
+            import db.config as db_mod
+            if getattr(db_mod, "pool", None) and thread_id:
+                import uuid, json
+                m_uuid = None
+                try:
+                    m_uuid = uuid.UUID(thread_id)
+                except Exception:
+                    pass
+                if m_uuid:
+                    async with db_mod.pool.acquire() as connection:
+                        if final_reqs:
+                            await connection.execute(
+                                """
+                                UPDATE meetings
+                                SET status = 'completed', requirements = $2::jsonb, updated_at = now()
+                                WHERE id = $1 OR project_id = $1
+                                """,
+                                m_uuid,
+                                json.dumps(final_reqs, default=str)
+                            )
+                        else:
+                            await connection.execute(
+                                """
+                                UPDATE meetings
+                                SET status = 'completed', updated_at = now()
+                                WHERE id = $1 OR project_id = $1
+                                """,
+                                m_uuid
+                            )
+        except Exception as e:
+            print(f"Warning: could not mark meeting completed in DB: {e}")
 
     return {
         "thread_id": thread_id,

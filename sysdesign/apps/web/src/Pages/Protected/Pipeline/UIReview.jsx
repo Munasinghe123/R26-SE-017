@@ -114,6 +114,7 @@ export default function UIReview() {
   const [highlightedFr, setHighlightedFr] = useState(searchParams.get("highlight") || "");
   const [showHtmlCode, setShowHtmlCode] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isGeneratingSRS, setIsGeneratingSRS] = useState(false);
 
   const iframeRef = useRef(null);
 
@@ -373,6 +374,21 @@ export default function UIReview() {
     URL.revokeObjectURL(url);
   } catch (err) {
     console.error("Failed to download report:", err);
+  }
+};
+
+const handleGenerateSRS = async () => {
+  setIsGeneratingSRS(true);
+
+  try {
+    await fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-srs`, {
+      method: "POST",
+    });
+  } catch (err) {
+    console.error("Failed to start SRS assembly:", err);
+  } finally {
+    setIsGeneratingSRS(false);
+    navigate(`/pipeline/${jobId}/srs`);
   }
 };
 
@@ -1235,8 +1251,12 @@ export default function UIReview() {
                     className="grid grid-cols-12 items-center p-3 bg-white/5 border border-white/5 rounded-xl text-xs"
                   >
                     <span className="col-span-2 text-cyan-300 font-bold">{row.fr_id}</span>
-                    <span className="col-span-4 text-white/80">{row.description}</span>
-                    <span className="col-span-4 text-white/50 text-[11px] truncate">{row.element}</span>
+                    <span className="col-span-4 text-white/80">{row.title || row.description}</span>
+                    <span className="col-span-4 text-white/50 text-[11px] truncate">
+                      {row.elements?.length > 0
+                        ? row.elements.map((el, i) => `<${el.tag}> ${el.label}`).join(", ")
+                        : "—"}
+                    </span>
                     <span className="col-span-2 text-right">
                       <span className="px-2 py-0.5 bg-green-400/20 text-green-300 font-bold text-[10px] rounded-full">
                         MATCHED
@@ -1334,10 +1354,12 @@ export default function UIReview() {
               ← Back to LLD
             </button>
             <button
-              onClick={() => navigate(`/pipeline/${jobId}/srs`)}
-              className="px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-400 text-black hover:bg-cyan-300 cursor-pointer"
+              onClick={handleGenerateSRS}
+              disabled={isGeneratingSRS}
+              className="flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-400 text-black hover:bg-cyan-300 cursor-pointer disabled:opacity-50"
             >
-              Generate Final SRS Document →
+              {isGeneratingSRS && <RefreshCw size={13} className="animate-spin" />}
+              {isGeneratingSRS ? "Starting Assembler..." : "Generate Final SRS Document →"}
             </button>
           </div>
         </div>

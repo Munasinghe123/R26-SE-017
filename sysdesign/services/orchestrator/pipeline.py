@@ -78,13 +78,16 @@ def get_job_state(job_id: str) -> Optional[JobState]:
 
 async def restore_job_from_db(job_id: str) -> Optional[JobState]:
     if not DB_AVAILABLE:
+        print("[restore_job_from_db] DB_AVAILABLE is False")
         return None
     try:
+        print(f"[restore_job_from_db] Looking up {job_id} in DB...")
         from shared.db import get_pool
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM jobs WHERE id = $1::uuid", job_id)
             if not row:
+                print(f"[restore_job_from_db] Job {job_id} not found in jobs table")
                 return None
             stages_rows = await conn.fetch("SELECT * FROM stage_runs WHERE job_id = $1::uuid ORDER BY started_at", job_id)
             stages = []
@@ -115,8 +118,10 @@ async def restore_job_from_db(job_id: str) -> Optional[JobState]:
                 ]
             )
             JOB_STORE[job_id] = job
+            print(f"[restore_job_from_db] Successfully restored {job_id}!")
             return job
     except Exception as e:
+        print(f"[restore_job_from_db] Failed to restore job {job_id} from DB: {e}")
         logger.warning(f"Failed to restore job {job_id} from DB: {e}")
         return None
 
@@ -462,46 +467,122 @@ async def run_stage_ui(job_id: str) -> None:
 
 async def run_stage_srs(job_id: str) -> None:
     job = JOB_STORE.get(job_id)
-    if not job: return
+    if not job:
+        job = await restore_job_from_db(job_id)
+    if not job:
+        logger.warning(f"run_stage_srs: Job {job_id} not found in store or database")
+        return
 
-    reqs: RequirementsPackage = JOB_ARTIFACTS[job_id].get("requirements")
-    arch: ArchitecturePackage = JOB_ARTIFACTS[job_id].get("architecture")
-    lld_annex = JOB_ARTIFACTS[job_id].get("lld")
-    ui_annex = JOB_ARTIFACTS[job_id].get("ui")
+    reqs = JOB_ARTIFACTS.get(job_id, {}).get("requirements")
+    arch = JOB_ARTIFACTS.get(job_id, {}).get("architecture") or JOB_ARTIFACTS.get(job_id, {}).get("hld")
+    lld_annex = JOB_ARTIFACTS.get(job_id, {}).get("lld")
+    ui_annex = JOB_ARTIFACTS.get(job_id, {}).get("ui")
 
     update_stage_status(job_id, "srs", "running")
     t0_srs = datetime.utcnow()
+    notify_listeners(job_id, {"event": "stage_start", "stage": "srs", "job": job.model_dump(mode="json")})
 
     try:
-        hld_annex = SRSDesignAnnex(
-            schema_version="1.0",
-            job_id=job_id,
-            agent="hld",
-            component_responsibility_matrix=[
-                {
-                    "component": c.name,
-                    "layer": c.boundary.value,
-                    "responsibilities": ", ".join(c.responsibilities),
-                }
-                for c in arch.components
-            ],
-            quality_evidence=arch.scores.model_dump(),
-            artifact_uris=arch.artifact_uris,
-        )
+        hld_payload = None
+        if arch:
+            try:
+                if isinstance(arch, ArchitecturePackage):
+                    hld_payload = SRSDesignAnnex(
+                        schema_version="1.0",
+                        job_id=job_id,
+                        agent="hld",
+                        component_responsibility_matrix=[
+                            {
+                                "component": c.name,
+                                "layer": c.boundary.value if hasattr(c.boundary, "value") else str(c.boundary),
+                                "responsibilities": ", ".join(c.responsibilities) if isinstance(c.responsibilities, list) else str(c.responsibilities),
+                            }
+                            for c in arch.components
+                        ],
+                        quality_evidence=arch.scores.model_dump() if hasattr(arch.scores, "model_dump") else arch.scores,
+                        artifact_uris=arch.artifact_uris,
+                    ).model_dump(mode="json")
+                elif isinstance(arch, dict):
+                    if "component_responsibility_matrix" in arch:
+                        hld_payload = arch
+                    else:
+                        matrix = []
+                        for c in arch.get("components", []):
+                            c_name = c.get("name", "") if isinstance(c, dict) else getattr(c, "name", str(c))
+                            c_layer = c.get("boundary", "") if isinstance(c, dict) else getattr(c, "boundary", "")
+                            if isinstance(c_layer, dict):
+                                c_layer = c_layer.get("value", str(c_layer))
+                            c_resp = c.get("responsibilities", []) if isinstance(c, dict) else getattr(c, "responsibilities", [])
+                            resp_str = ", ".join(c_resp) if isinstance(c_resp, list) else str(c_resp)
+                            matrix.append({
+                                "component": c_name,
+                                "layer": str(c_layer),
+                                "responsibilities": resp_str,
+                            })
+                        hld_payload = {
+                            "schema_version": "1.0",
+                            "job_id": job_id,
+                            "agent": "hld",
+                            "component_responsibility_matrix": matrix,
+                            "quality_evidence": arch.get("scores", {}),
+                            "artifact_uris": arch.get("artifact_uris", {}),
+                        }
+            except Exception as _e:
+                logger.warning(f"Could not build hld_annex for SRS: {_e}")
+
+        lld_payload = None
+        if lld_annex:
+            try:
+                if isinstance(lld_annex, LLDPackage):
+                    lld_payload = lld_to_srs_adapt(lld_annex).model_dump(mode="json")
+                elif hasattr(lld_annex, "model_dump"):
+                    lld_payload = lld_annex.model_dump(mode="json")
+                elif isinstance(lld_annex, dict):
+                    lld_payload = lld_annex
+            except Exception as _e:
+                logger.warning(f"Could not adapt lld_annex for SRS: {_e}")
+
+        ui_payload = None
+        if ui_annex:
+            try:
+                if hasattr(ui_annex, "model_dump"):
+                    ui_payload = ui_annex.model_dump(mode="json")
+                elif isinstance(ui_annex, dict):
+                    ui_payload = ui_annex
+            except Exception as _e:
+                logger.warning(f"Could not extract ui_annex for SRS: {_e}")
+
+        # Fallback for requirements if not in memory
+        if not reqs:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(f"http://127.0.0.1:8001/requirements/{job_id}")
+                    if resp.status_code == 200:
+                        reqs = resp.json()
+            except Exception as _re:
+                logger.warning(f"Could not fetch requirements fallback from Agent 1: {_re}")
+
+        reqs_data = reqs.model_dump(mode="json") if hasattr(reqs, "model_dump") else (reqs or {})
+        if isinstance(reqs_data, dict):
+            if not reqs_data.get("job_id"):
+                reqs_data["job_id"] = job_id
+            if not reqs_data.get("project_name") and job:
+                reqs_data["project_name"] = job.project_name
 
         srs_payload = {
-            "requirements": reqs.model_dump(mode="json"),
-            "hld_annex":    hld_annex.model_dump(mode="json"),
-            "lld_annex":    lld_to_srs_adapt(lld_annex).model_dump(mode="json") if isinstance(lld_annex, LLDPackage) else {},
-            "ui_annex":     ui_annex.model_dump(mode="json")  if isinstance(ui_annex,  SRSDesignAnnex) else {},
+            "requirements": reqs_data,
+            "hld_annex": hld_payload,
+            "lld_annex": lld_payload,
+            "ui_annex": ui_payload,
         }
 
         try:
             srs_result = await call_stage_http("srs", AGENT_URLS["srs"], srs_payload)
-            JOB_ARTIFACTS[job_id]["srs"] = srs_result
+            JOB_ARTIFACTS.setdefault(job_id, {})["srs"] = srs_result
         except Exception as exc:
             srs_result = {"status": "generated_with_warnings", "detail": str(exc)}
-            JOB_ARTIFACTS[job_id]["srs"] = srs_result
+            JOB_ARTIFACTS.setdefault(job_id, {})["srs"] = srs_result
 
         dur_srs = int((datetime.utcnow() - t0_srs).total_seconds() * 1000)
         update_stage_status(job_id, "srs", "complete", duration_ms=dur_srs)

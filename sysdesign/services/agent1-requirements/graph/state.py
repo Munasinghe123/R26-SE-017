@@ -60,9 +60,6 @@ class GraphState(TypedDict):
     final_requirements: Optional[Dict]
     reconciliation_analysis: Optional[Dict]
 
-    # srs
-    srs_text: Optional[Dict]
-    pdf_path: Optional[str]
 
     # identifiers
     meeting_id: Optional[str]

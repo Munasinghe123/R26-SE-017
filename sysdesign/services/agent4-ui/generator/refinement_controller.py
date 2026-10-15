@@ -13,14 +13,14 @@ Deliberately a plain bounded loop — no LangGraph needed.
 """
 
 from typing import Dict, List, Optional
+import config
 
 from evaluator.composite_scorer import evaluate, detect_regression
 from generator.ui_generator import generate_ui, refine_ui
 from prompts.refinement_templates import get_refinement_instructions
 
-MAX_ITERATIONS = 5
-WEAK_THRESHOLD = 2   # sub-metric scores at or below this get included in fix
-
+MAX_ITERATIONS = config.MAX_REFINEMENT_ITERATIONS
+WEAK_THRESHOLD = config.WEAK_SUBMETRIC_THRESHOLD   # sub-metric scores at or below this get included in fix
 
 def _collect_weak_instructions(report: dict, stalled_metrics: Optional[set] = None) -> tuple:
     """
@@ -59,7 +59,7 @@ def _collect_weak_instructions(report: dict, stalled_metrics: Optional[set] = No
             fixes.append({"standard": "Nielsen", "metric": metric, "score": score, "instructions": instructions})
 
     # WCAG — use weakest_pour if WCAG score is low
-    if report.get("wcag_score", 100) < 70:
+    if report.get("wcag_score", 100) < config.WCAG_REFINE_TRIGGER:
         weakest_pour = report.get("wcag_details", {}).get("weakest_pour", "unavailable")
         instructions = get_refinement_instructions("WCAG", weakest_pour)
         if ("WCAG", weakest_pour) in stalled_metrics:
@@ -134,7 +134,7 @@ def run_refinement_loop(
 
             wcag_details = report.get("wcag_details", {})
             current_weakest_pour = wcag_details.get("weakest_pour", "unavailable")
-            if ("WCAG", current_weakest_pour) in previously_targeted and report.get("wcag_score", 100) < 70:
+            if ("WCAG", current_weakest_pour) in previously_targeted and report.get("wcag_score", 100) < config.WCAG_REFINE_TRIGGER:
                 stalled.add(("WCAG", current_weakest_pour))
 
         entry = {
@@ -178,7 +178,7 @@ def run_refinement_loop(
     return {
         "final_html": best_entry["html"],
         "final_report": best_entry["report"],
-        "passed": best_entry["report"]["total_score"] >= 85,  # final-quality gate; intentionally fixed, not per-iteration
+        "passed": best_entry["report"]["total_score"] >= config.SCORE_THRESHOLD,  # final-quality gate
         "iterations": len(history),
         "history": history,
         "regressed": regressed,

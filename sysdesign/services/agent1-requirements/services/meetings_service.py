@@ -15,7 +15,8 @@ async def save_meeting_requirements(
     requirements: Dict[str, Any],
     client_view: Optional[Dict[str, Any]] = None,
     version: int = 1,
-    project_id: Optional[str] = None
+    project_id: Optional[str] = None,
+    status: str = "ready_for_review"
 ) -> str:
     """Save extracted or refined requirements to DB and local cache."""
     if not meeting_id:
@@ -29,7 +30,8 @@ async def save_meeting_requirements(
             "requirements": requirements,
             "client_view": client_view,
             "version": version,
-            "project_id": project_id
+            "project_id": project_id,
+            "status": status
         }
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(cache_data, f, indent=2, default=str)
@@ -63,6 +65,7 @@ async def save_meeting_requirements(
                         INSERT INTO meetings (id, project_id, status, requirements, client_view, version, updated_at)
                         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, now())
                         ON CONFLICT (id) DO UPDATE SET
+                            status = EXCLUDED.status,
                             requirements = EXCLUDED.requirements,
                             client_view = EXCLUDED.client_view,
                             version = EXCLUDED.version,
@@ -70,12 +73,81 @@ async def save_meeting_requirements(
                         """,
                         m_uuid,
                         p_uuid,
-                        "ready_for_review",
+                        status,
                         reqs_json,
                         cview_json,
                         version
                     )
-                logger.info(f"Persisted meeting {meeting_id} to database successfully.")
+                    logger.info(f"Persisted meeting {meeting_id} to database successfully.")
+
+                    # If status is ready_for_review, notify the client to review requirements
+                    if status == "ready_for_review":
+                        try:
+                            target_proj_id = p_uuid
+                            if not target_proj_id and m_uuid:
+                                p_row = await conn.fetchrow("SELECT id FROM projects WHERE id = $1;", m_uuid)
+                                if p_row:
+                                    target_proj_id = p_row["id"]
+                                else:
+                                    m_row = await conn.fetchrow("SELECT project_id FROM meetings WHERE id = $1;", m_uuid)
+                                    if m_row and m_row["project_id"]:
+                                        target_proj_id = m_row["project_id"]
+
+                            if target_proj_id:
+                                project = await conn.fetchrow(
+                                    "SELECT id, name, client_id FROM projects WHERE id = $1;",
+                                    target_proj_id
+                                )
+                                if project and project["client_id"]:
+                                    client_id = project["client_id"]
+                                    proj_name = project["name"] or "Project"
+
+                                    existing_notif = await conn.fetchrow(
+                                        """
+                                        SELECT id FROM notifications
+                                        WHERE user_id = $1 AND project_id = $2 AND type = 'REVIEW_REQUIREMENTS' AND is_read = FALSE;
+                                        """,
+                                        client_id,
+                                        project["id"]
+                                    )
+
+                                    if not existing_notif:
+                                        notif_row = await conn.fetchrow(
+                                            """
+                                            INSERT INTO notifications (
+                                                id,
+                                                user_id,
+                                                title,
+                                                message,
+                                                type,
+                                                project_id,
+                                                is_read,
+                                                created_at
+                                            )
+                                            VALUES (
+                                                gen_random_uuid(),
+                                                $1,
+                                                'Review Requirements',
+                                                $2,
+                                                'REVIEW_REQUIREMENTS',
+                                                $3,
+                                                FALSE,
+                                                now()
+                                            )
+                                            RETURNING id, user_id, title, message, type, project_id, is_read, created_at;
+                                            """,
+                                            client_id,
+                                            f"Requirements for '{proj_name}' are ready for your review.",
+                                            project["id"]
+                                        )
+                                        logger.info(f"Created 'Review Requirements' notification for client {client_id}.")
+                                        try:
+                                            from services.notification_service import push_notification_to_user
+                                            await push_notification_to_user(str(client_id), notif_row)
+                                        except Exception as sse_err:
+                                            logger.warning(f"Could not push SSE notification: {sse_err}")
+                        except Exception as notif_err:
+                            logger.warning(f"Could not create review notification for client: {notif_err}")
     except Exception as e:
         logger.warning(f"Failed to persist meeting to database: {e}")
 
@@ -120,6 +192,7 @@ async def get_meeting_requirements(meeting_id: str) -> Optional[Dict[str, Any]]:
                         cview = json.loads(cview)
                     return {
                         "id": str(row["id"]),
+                        "project_id": str(row["project_id"]) if row["project_id"] else None,
                         "requirements": reqs,
                         "client_view": cview,
                         "version": row["version"] or 1,

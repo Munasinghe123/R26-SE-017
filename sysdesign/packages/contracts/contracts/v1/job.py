@@ -15,7 +15,17 @@ class JobState(BaseModel):
     job_id: str
     tenant_id: str = "dev"
     project_name: str
-    status: Literal["queued", "running", "needs_review", "complete", "failed"]
+    status: Literal[
+        "queued",
+        "running",
+        "needs_review",
+        "waiting_for_hld",
+        "waiting_for_lld_ui",
+        "waiting_for_ui",
+        "waiting_for_srs",
+        "complete",
+        "failed",
+    ] | str = "running"
     current_stage: Optional[str] = None
     stages: List[StageResult] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -1,3 +1,5 @@
+"""SUPERSEDED by run_validation_v2.py (T2 here counts non-refined scenarios as 0).
+Kept only because run_validation_v2.py imports SCENARIOS from this file."""
 """
 run_validation.py
 ==================

@@ -37,22 +37,20 @@ except Exception:
 
 async def approve_endpoint(req):
     """
-    1. Resume the LangGraph checkpoint (generates SRS PDF via Agent 1 own flow).
+    1. Resume the LangGraph checkpoint to finalize requirements.
     2. Fetch the final approved requirements from DB.
-    3. POST to Orchestrator /jobs to start the full 4-agent pipeline.
+    3. POST to Orchestrator /jobs to start the full downstream multi-agent pipeline.
     4. Return {status, job_id} so the frontend can navigate to /pipeline/{job_id}.
     """
     meeting_id: str = req.meeting_id
-    pdf_path = None
 
-    # Step 1 — Resume LangGraph (Agent 1 internal: generates PDF)
+    # Step 1 — Resume LangGraph checkpoint with approved status
     if LANGGRAPH_AVAILABLE:
         try:
-            result = graph.invoke(
+            graph.invoke(
                 Command(resume={"status": "approved", "feedback": None}),
                 config={"configurable": {"thread_id": meeting_id}},
             )
-            pdf_path = result.get("pdf_path")
         except Exception as exc:
             logger.warning(f"LangGraph resume failed: {exc} — continuing to orchestrator.")
 
@@ -72,7 +70,7 @@ async def approve_endpoint(req):
 
     return {
         "status": "approved",
-        "pdf_path": pdf_path,
+        "pdf_path": None,
         "job_id": orchestrator_job_id or job_id,
         "pipeline_url": f"/pipeline/{orchestrator_job_id or job_id}",
         "message": "Requirements approved. Full pipeline started.",

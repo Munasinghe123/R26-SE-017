@@ -27,9 +27,10 @@ except Exception as e:
 try:
     from routes.search_routes import user_routes
     from routes.project_routes import project_routes
+    from routes.notification_routes import notification_routes
     SEARCH_AVAILABLE = True
 except Exception as e:
-    print(f"[WARNING] search/project routes failed to load: {e}")
+    print(f"[WARNING] search/project/notification routes failed to load: {e}")
     SEARCH_AVAILABLE = False
 
 # Approve routes — no heavy deps
@@ -65,8 +66,25 @@ async def lifespan(app: FastAPI):
     if DB_AVAILABLE:
         try:
             await connect_db()
-        except Exception:
-            pass
+            import db.config as db_conf
+            if db_conf.pool:
+                async with db_conf.pool.acquire() as conn:
+                    await conn.execute("""
+                        CREATE TABLE IF NOT EXISTS notifications (
+                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            title TEXT NOT NULL,
+                            message TEXT NOT NULL,
+                            type TEXT NOT NULL DEFAULT 'PROJECT_ASSIGNED',
+                            project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+                            is_read BOOLEAN NOT NULL DEFAULT FALSE,
+                            created_at TIMESTAMPTZ DEFAULT now()
+                        );
+                        CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+                        CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+                    """)
+        except Exception as e:
+            print(f"[WARNING] DB connection/migration error: {e}")
     yield
     if DB_AVAILABLE:
         try:
@@ -91,6 +109,7 @@ if AUTH_AVAILABLE:
 if SEARCH_AVAILABLE:
     app.include_router(user_routes)
     app.include_router(project_routes)
+    app.include_router(notification_routes)
 
 if APPROVE_AVAILABLE:
     app.include_router(approve_routes)

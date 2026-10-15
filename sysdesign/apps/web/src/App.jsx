@@ -2,18 +2,15 @@ import React from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 
 import Home from "./Pages/Home";
-import UploadAudio from "./Pages/UploadAudio";
+import UploadAudio from "./Pages/Protected/UploadAudio";
 import Header from "./components/Header";
 import StarBackground from "./components/StartBackGround";
-import RequirementReview from "./Pages/client/RequirementReview";
+import RequirementReview from "./Pages/Protected/Dashboard/RequirementReview";
 import GetStarted from "./Pages/Get-Started";
-import SelectMode from "./Pages/Select-Mode";
-import TestMeeting from "./Pages/Test-Meeting";
+import SelectMode from "./Pages/Protected/Select-Mode";
+import TestMeeting from "./Pages/Protected/Test-Meeting";
 import ProjectDashboard from "./Pages/Protected/Dashboard/Project-Dashboard";
-import UserDashboard from "./Pages/Protected/Dashboard/User-Dashboard";
-import CreateProject from "./Pages/Protected/Create-Project";
-import ClientDashboard from "./Pages/Client/ClientDashboard";
-import ClientRequirementReview from "./Pages/Client/ClientRequirementReview";
+import UserPage from "./Pages/Protected/User/User-Page";
 import Footer from "./components/Footer";
 
 // ── New Pipeline Pages ─────────────────────────────────────────────────────
@@ -24,21 +21,40 @@ import UIReview           from "./Pages/Protected/Pipeline/UIReview";
 import DesignArtifacts    from "./Pages/Protected/Pipeline/DesignArtifacts";
 import SRSDownload        from "./Pages/Protected/Pipeline/SRSDownload";
 
+import { NotificationProvider } from "./context/NotificationContext";
+import NotificationToast from "./components/Notifications/NotificationToast";
+import { Toaster } from "react-hot-toast";
+
 function AppLayout() {
   const location = useLocation();
 
   // Pages where we suppress the shared shell (Header / StarBackground / Footer)
-  const isMeetingUI      = location.pathname === "/test-meeting";
-  const isUserDashboard  = location.pathname === "/user-dashboard";
-  const isCreateProject  = location.pathname === "/create-project";
+  const isMeetingUI         = location.pathname === "/test-meeting";
+  const isUserDashboard     = location.pathname === "/user-dashboard";
+  const isProjectDashboard  = location.pathname.startsWith("/project-dashboard");
 
   // Pipeline pages get the StarBackground but no Footer (they're full-screen experiences)
   const isPipelinePage   = location.pathname.startsWith("/pipeline/");
 
   return (
     <>
-      {!isMeetingUI && <StarBackground />}
-      {!isMeetingUI && <Header />}
+      <Toaster
+        position="top-right"
+        containerStyle={{ zIndex: 999999 }}
+        toastOptions={{
+          style: {
+            background: "#0B0F1E",
+            color: "#ffffff",
+            border: "1px solid rgba(34, 211, 238, 0.3)",
+            boxShadow: "0 0 25px rgba(0, 0, 0, 0.8)",
+            fontSize: "13px",
+            borderRadius: "12px",
+          },
+        }}
+      />
+      <NotificationToast />
+      {!isMeetingUI && !isProjectDashboard && <StarBackground />}
+      {!isMeetingUI && !isProjectDashboard && <Header />}
 
       <Routes>
         {/* ── Public ────────────────────────────────────────────────── */}
@@ -49,24 +65,10 @@ function AppLayout() {
         <Route path="/test-meeting" element={<TestMeeting />} />
 
         {/* ── Protected — Dashboard ─────────────────────────────────── */}
-        <Route path="/user-dashboard"    element={<UserDashboard />} />
+        <Route path="/user"    element={<UserPage />} />
         <Route path="/project-dashboard" element={<ProjectDashboard />} />
-        <Route path="/client-dashboard"  element={<ClientDashboard />} />
-        <Route path="/create-project"    element={<CreateProject />} />
+        <Route path="/project-dashboard/:projectId" element={<ProjectDashboard />} />
 
-        {/* ── Client Requirements Portal & Review Routes ───────────── */}
-        <Route
-          path="/client/requirements/:meetingId"
-          element={<ClientRequirementReview />}
-        />
-        <Route
-          path="/client/requirements"
-          element={<ClientRequirementReview />}
-        />
-        <Route
-          path="/client-review/:meetingId"
-          element={<ClientRequirementReview />}
-        />
 
         {/* ── Protected — Requirements Review (Agent 1 output) ─────── */}
         <Route
@@ -121,7 +123,7 @@ function AppLayout() {
       </Routes>
 
       {/* Footer: hide on meeting, dashboard, create-project, and pipeline pages */}
-      {!isMeetingUI && !isUserDashboard && !isCreateProject && !isPipelinePage && (
+      {!isMeetingUI && !isUserDashboard && !isPipelinePage && !isProjectDashboard && (
         <Footer />
       )}
     </>
@@ -131,7 +133,9 @@ function AppLayout() {
 function App() {
   return (
     <BrowserRouter>
-      <AppLayout />
+      <NotificationProvider>
+        <AppLayout />
+      </NotificationProvider>
     </BrowserRouter>
   );
 }

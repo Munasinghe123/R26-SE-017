@@ -1,8 +1,13 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from uuid import UUID
+from typing import Optional
 
-from services.project_service import create_project_service, get_projects_by_user_service
+from services.project_service import (
+    create_project_service,
+    get_user_projects_service,
+    assign_client_to_project_service,
+)
 
 project_routes = APIRouter()
 
@@ -12,6 +17,11 @@ class CreateProjectRequest(BaseModel):
     projectDescription: str
     clientId: UUID
     creatorId: UUID
+
+
+class AssignClientRequest(BaseModel):
+    clientId: UUID
+    assignedById: Optional[UUID] = None
 
 
 @project_routes.post("/projects", status_code=201)
@@ -24,10 +34,29 @@ async def create_project(
     )
 
 
+@project_routes.post("/projects/{project_id}/client")
+async def assign_client(
+    project_id: str,
+    data: AssignClientRequest
+):
+    return await assign_client_to_project_service(
+        project_id,
+        str(data.clientId),
+        str(data.assignedById) if data.assignedById else None
+    )
+
+
 from typing import Optional
 
-@project_routes.get("/projects")
-async def get_projects(
-    userId: Optional[str] = None
+# @project_routes.get("/projects")
+# async def get_projects(
+#     userId: Optional[str] = None
+# ):
+#     return await get_projects_by_user_service(userId)
+
+
+@project_routes.get("/projects/user/{user_id}")
+async def get_projects_by_user(
+    user_id: str
 ):
-    return await get_projects_by_user_service(userId)
+    return await get_user_projects_service(user_id)
