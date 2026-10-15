@@ -142,7 +142,7 @@ class AgenticReconciliationTests(unittest.TestCase):
         with patch(
             "Services.agenticReconciliation.ValidationService.validate",
             side_effect=validations,
-        ):
+        ), patch("Services.agenticReconciliation.MAX_AGENT_ITERATIONS", 3):
             result = AgenticReconciliationService.reconcile(
                 selected_final_ir=VALID_IR,
                 requirements="REQ-001 Save orders.",
@@ -166,7 +166,7 @@ class AgenticReconciliationTests(unittest.TestCase):
         with patch(
             "Services.agenticReconciliation.ValidationService.validate",
             side_effect=[validation_result(False), validation_result(False)],
-        ) as validate:
+        ) as validate, patch("Services.agenticReconciliation.MAX_AGENT_ITERATIONS", 3):
             result = AgenticReconciliationService.reconcile(
                 selected_final_ir=VALID_IR,
                 requirements="REQ-001 Save orders.",

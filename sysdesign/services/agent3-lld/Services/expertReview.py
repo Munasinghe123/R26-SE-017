@@ -185,39 +185,116 @@ Return only JSON with selected_candidate_id, reason, and confidence.
 """
 
 
+def _build_candidate_summary_for_reviewer(c: CandidateState, requirements: str) -> dict:
+    val = _validation_summary(c)
+    classes = (c.class_diagram.get("classes", []) if isinstance(c.class_diagram, dict) else []) or []
+    er_entities = (c.er_diagram.get("entities", []) if isinstance(c.er_diagram, dict) else []) or []
+    sequences = (c.sequence_diagrams if isinstance(c.sequence_diagrams, list) else []) or []
+
+    class_names = [cls.get("name") for cls in classes if isinstance(cls, dict) and cls.get("name")]
+    er_names = [ent.get("name") for ent in er_entities if isinstance(ent, dict) and ent.get("name")]
+    matching_names = list(set(class_names).intersection(set(er_names)))
+    missing_in_er = list(set(class_names) - set(er_names))
+
+    # Inspect class methods
+    classes_with_methods = [
+        cls.get("name") for cls in classes
+        if isinstance(cls, dict) and (cls.get("methods", []) or [])
+    ]
+    is_methodless = len(class_names) > 0 and len(classes_with_methods) == 0
+
+    # Inspect sequence interaction use cases & architectural participants
+    arch_keywords = ("controller", "service", "repository", "frontend", "ui")
+    speculative_arch_used = set()
+    use_cases = []
+    for seq in sequences:
+        if not isinstance(seq, dict):
+            continue
+        participants = [str(p) for p in seq.get("participants", []) if str(p)]
+        for p in participants:
+            p_lower = p.lower()
+            if any(p_lower == kw or p_lower.endswith(kw) for kw in arch_keywords) and p not in class_names:
+                speculative_arch_used.add(p)
+        item_count = len(seq.get("items", seq.get("messages", [])) or [])
+        use_cases.append({
+            "name": seq.get("name", "Unnamed Sequence"),
+            "participants": participants,
+            "interaction_count": item_count,
+        })
+
+    is_failed_hld = "provisional" in requirements.lower() or "failed" in requirements.lower()
+    hld_grounding = "Provisional / Ungrounded (HLD failed/unavailable)" if is_failed_hld else "Grounded"
+
+    return {
+        "candidate_id": c.candidate_id,
+        "model": c.model,
+        "status": c.status,
+        "stage_validation_status": {
+            "class": "passed" if (c.class_validation or {}).get("passed") else "failed",
+            "er": "passed" if (c.er_validation or {}).get("passed") else "failed",
+            "sequence": "passed" if (c.sequence_validation or {}).get("passed") else "failed",
+        },
+        "error_counts": {
+            "critical": val["critical_errors"],
+            "high": val["high_errors"],
+            "medium": val["medium_errors"],
+            "total": val["total_errors"],
+        },
+        "cross_diagram_consistency": {
+            "passed": val["consistency_passed"],
+            "score": f"{val['consistency_score']}%",
+            "critical_violations": val["violations"][:5],
+        },
+        "class_sequence_method_consistency": {
+            "all_called_methods_defined": len(val["missing_methods_called"]) == 0,
+            "missing_methods_called": val["missing_methods_called"][:4],
+            "methodless_classes_with_sequence_calls": bool(is_methodless and sequences),
+        },
+        "class_er_correspondence": {
+            "class_count": len(class_names),
+            "er_entity_count": len(er_names),
+            "matching_entities": matching_names,
+            "unmatched_classes": missing_in_er,
+        },
+        "sequence_use_case_coverage": {
+            "sequence_count": len(sequences),
+            "use_cases": use_cases[:4],
+        },
+        "architectural_grounding": {
+            "hld_status": hld_grounding,
+            "speculative_architectural_participants": sorted(list(speculative_arch_used)),
+        },
+        "eligibility": "ELIGIBLE" if val["critical_errors"] == 0 else f"INELIGIBLE ({val['critical_errors']} critical errors)",
+    }
+
+
 def build_expert_review_prompt(
     requirements: str,
     orchestration_result: OrchestrationResult,
 ) -> str:
-    candidate_summaries = []
-    for c in orchestration_result.candidates.values():
-        cls_count = len(c.class_diagram.get("classes", [])) if isinstance(c.class_diagram, dict) else 0
-        seq_count = len(c.sequence_diagrams or []) if isinstance(c.sequence_diagrams, list) else 0
-        er_count = len(c.er_diagram.get("entities", [])) if isinstance(c.er_diagram, dict) else 0
-        candidate_summaries.append({
-            "candidate_id": c.candidate_id,
-            "model": c.model,
-            "class_count": cls_count,
-            "sequence_count": seq_count,
-            "er_entity_count": er_count,
-            "class_names": [cls.get("name") for cls in (c.class_diagram.get("classes", []) if isinstance(c.class_diagram, dict) else []) if isinstance(cls, dict)],
-            "sequence_names": [seq.get("name") for seq in (c.sequence_diagrams or []) if isinstance(seq, dict)],
-            "er_table_names": [ent.get("name") for ent in (c.er_diagram.get("entities", []) if isinstance(c.er_diagram, dict) else []) if isinstance(ent, dict)],
-        })
+    candidate_summaries = [
+        _build_candidate_summary_for_reviewer(c, requirements)
+        for c in orchestration_result.candidates.values()
+    ]
 
     payload = {
         "requirements": requirements,
         "allowed_candidate_ids": list(orchestration_result.candidates.keys()),
         "candidates": candidate_summaries,
-        "instruction": "Select the candidate with the highest completeness and best architectural design. Do NOT select candidates with 0 classes or empty diagrams.",
+        "selection_rules": [
+            "1. Candidates marked 'ELIGIBLE' with 0 critical errors MUST be chosen over candidates marked 'INELIGIBLE'.",
+            "2. Behavioral-structural consistency is mandatory: Sequence Diagrams calling undeclared methods on classes is a CRITICAL violation (CV-001).",
+            "3. Diagram counts (having more Sequence Diagrams or Classes) must NEVER justify selecting a candidate with critical validation errors over a cleaner candidate.",
+            "4. If all candidates have validation issues, select the candidate with the fewest critical and high-severity errors that is most structurally sound and repairable.",
+        ],
         "output_format": {
             "selected_candidate_id": "candidate_1 | candidate_2 | candidate_3",
-            "reason": "Technical reason for selection (e.g. clean boundary separation, complete classes)",
+            "reason": "Detailed technical rationale explaining why the chosen candidate has the fewest critical errors and best structural/behavioral consistency",
             "confidence": 0.95
         }
     }
     return (
-        "Review the candidate design outputs and select the winner.\n"
+        "Review the candidate design outputs and select the strongest structurally and behaviorally correct candidate.\n"
         "Return ONLY a valid JSON object matching the output_format schema, without markdown formatting or commentary.\n\n"
         f"{json.dumps(payload, ensure_ascii=True)}"
     )
@@ -247,10 +324,17 @@ def fallback_select_candidate(
         )
 
     selected = min(pool, key=_fallback_sort_key)
+    selected_val = _validation_summary(selected)
+    crit_count = selected_val["critical_errors"]
+    if crit_count == 0:
+        desc = f"Selected {selected.candidate_id} ({selected.model}) based on verified zero critical errors and superior structural/behavioral consistency."
+    else:
+        desc = f"Selected {selected.candidate_id} ({selected.model}) as the most repairable candidate ({crit_count} critical error(s)); all candidates have validation issues."
+
     return ExpertReviewResult(
         selected_candidate_id=selected.candidate_id,
-        reason=f"Selected {selected.candidate_id} ({selected.model}) based on highest complete diagram coverage and consistency.",
-        confidence=0.92,
+        reason=f"{desc} (Fallback reason: {fallback_reason})",
+        confidence=0.90 if crit_count == 0 else 0.60,
         fallback_used=True,
         metrics=ExpertReviewMetrics(),
     )
@@ -262,18 +346,25 @@ def _fallback_sort_key(candidate: CandidateState) -> tuple:
     seq_len = len(candidate.sequence_diagrams or []) if isinstance(candidate.sequence_diagrams, list) else 0
     er_len = len(candidate.er_diagram.get("entities", [])) if isinstance(candidate.er_diagram, dict) else 0
     total_elements = cls_len * 3 + seq_len * 2 + er_len * 2
-    
+
     empty_penalty = 1000 if total_elements == 0 else 0
-    status_priority = {"valid": 0, "invalid": 1, "failed": 2}.get(candidate.status, 3)
-    
+    if candidate.status == "failed" or total_elements == 0:
+        status_priority = 3
+    elif candidate.status == "valid" and validation["critical_errors"] == 0:
+        status_priority = 0
+    elif validation["critical_errors"] == 0:
+        status_priority = 1
+    else:
+        status_priority = 2
+
     return (
-        empty_penalty,          # 0 = has elements, 1000 = empty (never pick empty!)
+        empty_penalty,
         status_priority,
-        -total_elements,        # More diagram elements preferred
-        validation["critical_errors"],
-        validation["high_errors"],
-        validation["total_errors"],
-        -validation["passed_checks"],
+        validation["critical_errors"],      # Fewer critical errors (ascending)
+        validation["high_errors"],          # Fewer high errors (ascending)
+        validation["total_errors"],         # Fewer total errors (ascending)
+        -validation["passed_checks"],       # More passed checks (descending)
+        -total_elements,                    # Secondary tie-breaker only!
     )
 
 
@@ -296,6 +387,16 @@ def _candidate_review_payload(candidate: CandidateState) -> dict:
 
 
 def _validation_summary(candidate: CandidateState) -> dict:
+    if candidate.consistency_validation is None and candidate.final_ir:
+        try:
+            from Services.validationService import ValidationService
+            from utils.irMapper import convert_to_ir
+            candidate.consistency_validation = ValidationService.validate(
+                convert_to_ir(candidate.final_ir)
+            )
+        except Exception:
+            pass
+
     total_checks = 0
     passed_checks = 0
     severity_counts = {
@@ -304,23 +405,64 @@ def _validation_summary(candidate: CandidateState) -> dict:
         "medium": 0,
         "low": 0,
     }
+    seen_issue_signatures = set()
+    violations = []
+    missing_methods_called = []
 
-    for validation in [
-        candidate.class_validation,
-        candidate.er_validation,
-        candidate.sequence_validation,
+    # 1. Process consistency validation (canonical cross-diagram checks: CV-001..CV-012, naming, overdesign)
+    consistency_val = candidate.consistency_validation or {}
+    c_report = consistency_val.get("report") or {}
+    total_checks += int(c_report.get("total_checks", 0) or 0)
+    passed_checks += int(c_report.get("passed_checks", 0) or 0)
+
+    for error in c_report.get("errors", []) or []:
+        rule_id = str(error.get("rule_id", "")).upper()
+        msg = str(error.get("message", "")).strip()
+        sev = str(error.get("severity", "")).lower()
+        if sev not in severity_counts:
+            sev = "high"
+        sig = (rule_id, msg.lower())
+        if sig not in seen_issue_signatures:
+            seen_issue_signatures.add(sig)
+            severity_counts[sev] += 1
+            violations.append(f"{rule_id}: {msg}")
+            if rule_id == "CV-001":
+                missing_methods_called.append(msg)
+
+    # 2. Process stage validations (AST & schema checks: class, er, sequence)
+    for stage_name, validation in [
+        ("class", candidate.class_validation),
+        ("er", candidate.er_validation),
+        ("sequence", candidate.sequence_validation),
     ]:
         validation = validation or {}
         total_checks += int(validation.get("total_checks", 0) or 0)
         passed_checks += int(validation.get("passed_checks", 0) or 0)
         for error in validation.get("errors", []) or []:
-            severity = str(error.get("severity", "")).lower()
-            if severity in severity_counts:
-                severity_counts[severity] += 1
+            code = str(error.get("code", error.get("rule_id", ""))).upper()
+            msg = str(error.get("message", "")).strip()
+            sev = str(error.get("severity", "")).lower()
+            if sev not in severity_counts:
+                sev = "high"
+            if code == "UNKNOWN_RECEIVER_METHOD" or "not defined on receiving class" in msg.lower():
+                missing_methods_called.append(msg)
+                sev = "critical"
+                sig = ("CV-001_EQUIV", msg.lower())
+            else:
+                sig = (code, msg.lower())
+
+            if sig not in seen_issue_signatures:
+                seen_issue_signatures.add(sig)
+                severity_counts[sev] += 1
+                violations.append(f"{code}: {msg}")
+
         for warning in validation.get("warnings", []) or []:
-            severity = str(warning.get("severity", "low")).lower()
-            if severity in severity_counts:
-                severity_counts[severity] += 1
+            code = str(warning.get("code", warning.get("rule_id", ""))).upper()
+            msg = str(warning.get("message", "")).strip()
+            sig = (code, msg.lower())
+            if sig not in seen_issue_signatures:
+                seen_issue_signatures.add(sig)
+                severity_counts["low"] += 1
 
     total_errors = sum(severity_counts.values())
     return {
@@ -333,6 +475,10 @@ def _validation_summary(candidate: CandidateState) -> dict:
         "total_errors": total_errors,
         "parse_error_count": len(candidate.parse_errors),
         "provider_error_count": len(candidate.provider_errors),
+        "violations": violations,
+        "missing_methods_called": list(set(missing_methods_called)),
+        "consistency_passed": bool(c_report.get("passed", False) if c_report else (severity_counts["critical"] == 0 and severity_counts["high"] == 0)),
+        "consistency_score": float(c_report.get("consistency_score", 0.0) if c_report else (round(passed_checks / total_checks * 100, 2) if total_checks else 0.0)),
     }
 
 
@@ -394,9 +540,39 @@ def _selection_validation_error(
         return f"Expert selected unknown candidate '{result.selected_candidate_id}'."
 
     selected = candidates[result.selected_candidate_id]
-    usable_exists = any(candidate.status != "failed" for candidate in candidates.values())
-    if selected.status == "failed" and usable_exists:
+    usable = [c for c in candidates.values() if c.status != "failed"]
+    if selected.status == "failed" and usable:
         return f"Expert selected failed candidate '{result.selected_candidate_id}' while usable candidates existed."
+
+    # Enforce deterministic eligibility rules
+    if usable:
+        best_candidate = min(usable, key=_fallback_sort_key)
+        selected_val = _validation_summary(selected)
+        best_val = _validation_summary(best_candidate)
+
+        # Rule 1: Cannot select candidate with critical errors if another usable candidate has 0 critical errors
+        if selected_val["critical_errors"] > 0 and best_val["critical_errors"] == 0:
+            return (
+                f"Expert selected candidate '{result.selected_candidate_id}' with "
+                f"{selected_val['critical_errors']} critical error(s) ({selected_val['missing_methods_called']}), "
+                f"while '{best_candidate.candidate_id}' has 0 critical errors. Deterministic eligibility rule overrides selection."
+            )
+
+        # Rule 2: Cannot select candidate with more critical errors than best available
+        if selected_val["critical_errors"] > best_val["critical_errors"]:
+            return (
+                f"Expert selected candidate '{result.selected_candidate_id}' with "
+                f"{selected_val['critical_errors']} critical error(s), but '{best_candidate.candidate_id}' "
+                f"has only {best_val['critical_errors']} critical error(s). Deterministic eligibility rule overrides selection."
+            )
+
+        # Rule 3: If tied on critical errors, cannot select candidate with significantly worse high errors
+        if selected_val["critical_errors"] == best_val["critical_errors"] and selected_val["high_errors"] > best_val["high_errors"] + 2:
+            return (
+                f"Expert selected candidate '{result.selected_candidate_id}' with "
+                f"{selected_val['high_errors']} high error(s), but '{best_candidate.candidate_id}' "
+                f"has only {best_val['high_errors']} high error(s). Deterministic eligibility rule overrides selection."
+            )
 
     return ""
 

@@ -166,6 +166,12 @@ class UMLService:
                 },
             )
         final_validation_report = dict(reconciliation.validation_report or final_validation_report)
+        has_critical = any(
+            str(err.get("severity", "")).upper() == "CRITICAL"
+            for err in (final_validation_report.get("errors") or [])
+        )
+        if has_critical:
+            final_validation_report["passed"] = False
         final_validation_report["expert_guidance"] = validation_result.get("expert_guidance", "")
         final_validation_report["stage_validation"] = _aggregate_candidate_validation(selected_candidate)
         final_validation_report["repair"] = {
@@ -273,17 +279,13 @@ class UMLService:
             sequence_outputs.append({
                 "name": sequence_data["name"],
                 "cloudinary_url": sequence_url,
+                "png": sequence_url,
+                "plantuml": sequence_data["plantuml"],
             })
         # Normalize: generate_er_plantuml may return a string or a list of strings (pages)
         if isinstance(er_plantuml, str):
             er_plantuml = [er_plantuml]
 
-        print("===== ER PLANTUML =====")
-        for i, pu in enumerate(er_plantuml):
-            print(f"--- Page {i+1} ---")
-            print(pu)
-        print("=======================")
-            
         if len(er_plantuml) == 1:
             er_url = render_png(er_plantuml[0], "er", "er_diagram")
         else:
@@ -513,37 +515,35 @@ class UMLService:
             return f"{val * 100.0:.2f}%"
 
         ref_block = (
-            f"Reference Used: YES\nReference Case: {target_case}\n========================"
+            f"Reference Used: YES\nReference Case: {target_case}\n============================================================"
             if has_reference
-            else "Reference Used: NO\n=================="
+            else "Reference Used: NO\n============================================================"
         )
 
-        summary_text = f"""
-        ============================================================
-        RESEARCH DIAGRAM EVALUATION
-        ===========================
+        summary_text = f"""============================================================
+RESEARCH DIAGRAM EVALUATION
+---------------------------
 
-        Class Diagram
-        Precision : {fmt_val(c_p)}
-        Recall    : {fmt_val(c_r)}
-        F1        : {fmt_val(c_f1)}
+Class Diagram
+  Precision : {fmt_val(c_p)}
+  Recall    : {fmt_val(c_r)}
+  F1        : {fmt_val(c_f1)}
 
-        Sequence Diagram
-        Precision : {fmt_val(s_p)}
-        Recall    : {fmt_val(s_r)}
-        F1        : {fmt_val(s_f1)}
-        Order     : {fmt_val(s_order)}
+Sequence Diagram
+  Precision : {fmt_val(s_p)}
+  Recall    : {fmt_val(s_r)}
+  F1        : {fmt_val(s_f1)}
+  Order     : {fmt_val(s_order)}
 
-        ER Diagram
-        Precision : {fmt_val(e_p)}
-        Recall    : {fmt_val(e_r)}
-        F1        : {fmt_val(e_f1)}
+ER Diagram
+  Precision : {fmt_val(e_p)}
+  Recall    : {fmt_val(e_r)}
+  F1        : {fmt_val(e_f1)}
 
-        Requirement Coverage  : {req_cov:.2f}%
-        Syntax / Renderability: {syntax_score:.2f}%
+Requirement Coverage : {req_cov:.2f}%
+Syntax / Renderability: {syntax_score:.2f}%
 
-        {ref_block}
-        """
+{ref_block}"""
         print(summary_text, flush=True)
         logger.info("research_diagram_evaluation_completed\n" + summary_text)
 

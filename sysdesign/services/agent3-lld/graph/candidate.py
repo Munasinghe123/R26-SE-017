@@ -5,21 +5,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Literal
 
-from Services.artifactRepair import ArtifactRepairConfig, ArtifactRepairService
-from graph.candidate_prompts import (
-    build_class_prompt,
-    build_er_prompt,
-    build_sequence_prompt,
-    build_unified_lld_prompt,
-)
 from llm.provider import LLMProvider, LLMResponse
 from utils.jsonCleaner import clean_json_response
-from validators.stage_validators import (
-    validate_class_diagram,
-    validate_er_diagram,
-    validate_sequence_diagrams,
-)
-
 
 CandidateStatus = Literal["valid", "invalid", "failed"]
 MAX_REPAIR_ATTEMPTS = int(os.getenv("MAX_REPAIR_ATTEMPTS", "2"))
@@ -73,6 +60,7 @@ class CandidateState:
     sequence_validation: dict | None = None
 
     final_ir: dict | None = None
+    consistency_validation: dict | None = None
     repair_metadata: dict[str, dict] = field(default_factory=dict)
     parse_errors: list[dict] = field(default_factory=list)
     provider_errors: list[dict] = field(default_factory=list)
@@ -85,111 +73,14 @@ def run_candidate(
     requirement_ids: list[str] | None = None,
     provider: LLMProvider | None = None,
 ) -> CandidateState:
-    state = CandidateState(
-        candidate_id=config.candidate_id,
-        provider=config.provider,
-        model=config.model,
+    from graph.candidate_graph import run_candidate_graph
+
+    return run_candidate_graph(
+        config=config,
+        requirements=requirements,
+        requirement_ids=requirement_ids,
+        provider=provider,
     )
-    if provider is None:
-        from llm.factory import get_llm_provider
-
-        llm_provider = get_llm_provider(config.provider)
-    else:
-        llm_provider = provider
-
-    unified_prompt = build_unified_lld_prompt(requirements, requirement_ids)
-    response = _complete_stage(
-        state,
-        config,
-        llm_provider,
-        "unified",
-        [
-            {
-                "role": "system",
-                "content": "You are a Principal Software Architect. Return only valid JSON for Low-Level Design (class_diagram, er_diagram, sequence_diagrams).",
-            },
-            {
-                "role": "user",
-                "content": unified_prompt,
-            },
-        ],
-    )
-    if response is None or not response.content:
-        return state
-
-    parsed_json = clean_json_response(response.content)
-    if not isinstance(parsed_json, dict):
-        state.parse_errors.append({"stage": "unified", "error": "Output was not a JSON object"})
-        return state
-
-    state.class_diagram = parsed_json.get("class_diagram") or {}
-    state.er_diagram = parsed_json.get("er_diagram") or {}
-    state.sequence_diagrams = parsed_json.get("sequence_diagrams") or []
-
-    state.final_ir = {
-        "class_diagram": state.class_diagram,
-        "er_diagram": state.er_diagram,
-        "sequence_diagrams": state.sequence_diagrams,
-    }
-    state.status = "valid"
-    return state
-
-
-def _validate_and_repair_stage(
-    *,
-    state: CandidateState,
-    repair_service: ArtifactRepairService,
-    stage: Literal["class", "er", "sequence"],
-    artifact,
-    requirements: str,
-    dependencies: dict,
-    validator,
-):
-    initial_validation = validator(artifact)
-    current_artifact = artifact
-    current_validation = initial_validation
-    repair_errors: list[dict] = []
-    repair_attempts = 0
-
-    while not current_validation.get("passed") and repair_attempts < repair_service.config.max_attempts:
-        repair_attempts += 1
-        repair_result = repair_service.repair(
-            stage=stage,
-            artifact=current_artifact,
-            validation_result=current_validation,
-            requirements=requirements,
-            dependencies=dependencies,
-        )
-        if repair_result.metrics:
-            _record_repair_metrics(state.metrics, stage, repair_attempts, repair_result.metrics)
-        if repair_result.error:
-            repair_errors.append(repair_result.error)
-            break
-        if repair_result.artifact is None:
-            repair_errors.append({
-                "stage": stage,
-                "error_type": "InvalidRepairOutput",
-                "message": "Repair returned no artifact.",
-            })
-            break
-
-        current_artifact = repair_result.artifact
-        current_validation = validator(current_artifact)
-
-    repair_success = bool(
-        repair_attempts > 0
-        and not initial_validation.get("passed")
-        and current_validation.get("passed")
-    )
-    state.repair_metadata[stage] = {
-        "initial_validation": initial_validation,
-        "final_validation": current_validation,
-        "repair_attempts": repair_attempts,
-        "repair_success": repair_success,
-        "repair_errors": repair_errors,
-        "max_repair_attempts": repair_service.config.max_attempts,
-    }
-    return current_artifact, current_validation
 
 
 def _complete_stage(
@@ -208,11 +99,42 @@ def _complete_stage(
         )
     except Exception as exc:
         state.status = "failed"
-        state.provider_errors.append({
-            "stage": stage,
-            "message": str(exc),
-            "error_type": exc.__class__.__name__,
-        })
+        state.provider_errors.append(
+            {
+                "stage": stage,
+                "message": str(exc),
+                "error_type": exc.__class__.__name__,
+            }
+        )
+        return None
+
+    _record_stage_metrics(state.metrics, stage, response)
+    return response
+
+
+async def _acomplete_stage(
+    state: CandidateState,
+    config: CandidateConfig,
+    provider: LLMProvider,
+    stage: str,
+    messages: list[dict],
+) -> LLMResponse | None:
+    try:
+        response = await provider.acomplete(
+            model=config.model,
+            messages=messages,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        )
+    except Exception as exc:
+        state.status = "failed"
+        state.provider_errors.append(
+            {
+                "stage": stage,
+                "message": str(exc),
+                "error_type": exc.__class__.__name__,
+            }
+        )
         return None
 
     _record_stage_metrics(state.metrics, stage, response)
@@ -229,24 +151,30 @@ def _parse_stage_object(
         parsed = clean_json_response(content)
     except json.JSONDecodeError as exc:
         state.status = "failed"
-        state.parse_errors.append({
-            "stage": stage,
-            "message": str(exc),
-        })
+        state.parse_errors.append(
+            {
+                "stage": stage,
+                "message": str(exc),
+            }
+        )
         return None
 
     value = parsed.get(expected_key) if isinstance(parsed, dict) else None
     if value is None:
         state.status = "failed"
-        state.parse_errors.append({
-            "stage": stage,
-            "message": f"Missing expected key '{expected_key}'.",
-        })
+        state.parse_errors.append(
+            {
+                "stage": stage,
+                "message": f"Missing expected key '{expected_key}'.",
+            }
+        )
         return None
     return value
 
 
-def _record_stage_metrics(metrics: CandidateMetrics, stage: str, response: LLMResponse) -> None:
+def _record_stage_metrics(
+    metrics: CandidateMetrics, stage: str, response: LLMResponse
+) -> None:
     metrics.stages[stage] = StageMetrics(
         provider=response.provider,
         model=response.model,
@@ -292,8 +220,18 @@ def _record_repair_metrics(
 
 
 def _all_stage_validations_passed(state: CandidateState) -> bool:
-    return all([
-        bool((state.class_validation or {}).get("passed")),
-        bool((state.er_validation or {}).get("passed")),
-        bool((state.sequence_validation or {}).get("passed")),
-    ])
+    stages_ok = all(
+        [
+            bool((state.class_validation or {}).get("passed")),
+            bool((state.er_validation or {}).get("passed")),
+            bool((state.sequence_validation or {}).get("passed")),
+        ]
+    )
+    if state.consistency_validation is not None:
+        report = (state.consistency_validation or {}).get("report") or {}
+        has_critical_or_high = any(
+            str(err.get("severity", "")).lower() in ("critical", "high")
+            for err in (report.get("errors") or [])
+        )
+        return stages_ok and bool(report.get("passed")) and not has_critical_or_high
+    return stages_ok
