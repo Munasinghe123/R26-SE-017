@@ -16,8 +16,28 @@ build/
 *.swp
 *.swo
 
-# Results (generated at runtime)
+# Results & Runtime artifacts
 results/
+outputs/
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.puml
+*.svg
+*.png
+_temp*
+
+# Research & Evaluation Benchmark Scripts (paper/thesis-specific)
+run_eval_study.py
+run_iterative_eval_study.py
+compare_qwen_deepseek.py
+generate_hld_diagrams.py
+generate_visuals.py
+future_works_visual.py
+heatmap_by_llm.py
+render_full_hld_diagram.py
+HLD_SYSTEM_DESIGN.md
 
 # OS
 Thumbs.db
