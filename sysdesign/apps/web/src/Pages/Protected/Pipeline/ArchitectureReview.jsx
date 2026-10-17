@@ -41,8 +41,8 @@ import {
 } from "recharts";
 import beehiveBg from "../../../Images/beehive-bg.png";
 
-const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8000";
-const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "http://127.0.0.1:8002";
+const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
+const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "";
 
 const METRIC_INFO = {
   RTS:  { label: "RTS (Requirement Traceability Score)", desc: "Semantic alignment of requirements to components", weight: "29.17%" },

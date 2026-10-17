@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import QualityEvaluationModal from "../../../components/Project-Dashboard/Modals/QualityEvaluationModal";
 
-const AGENT1 = import.meta.env.VITE_AGENT1_URL || "http://127.0.0.1:8001";
+const AGENT1 = import.meta.env.VITE_AGENT1_URL || "";
 
 export default function RequirementReview() {
   const { meetingId } = useParams();

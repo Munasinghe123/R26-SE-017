@@ -35,7 +35,7 @@ import {
   Smile,
 } from "lucide-react";
 
-const AGENT1_BASE = import.meta.env.VITE_AGENT1_URL || "http://127.0.0.1:8001";
+const AGENT1_BASE = import.meta.env.VITE_AGENT1_URL || "";
 
 // ── Inner Meeting Room with Live AI Extraction & Data Sync ───────────────────
 function MeetingRoomInner({

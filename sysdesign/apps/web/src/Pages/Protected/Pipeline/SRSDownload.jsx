@@ -36,7 +36,7 @@ import {
 import axios from "axios";
 import beehiveBg from "../../../Images/beehive-bg.png";
 
-const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8000";
+const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 
 const SECTIONS = [
   { num: "§1", title: "Introduction & Scope",    Icon: FileText,      key: "introduction" },

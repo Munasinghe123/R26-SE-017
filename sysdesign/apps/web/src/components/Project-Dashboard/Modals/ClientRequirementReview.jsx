@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-const AGENT1 = import.meta.env.VITE_AGENT1_URL || "http://127.0.0.1:8001";
+const AGENT1 = import.meta.env.VITE_AGENT1_URL || "";
 
 // ---------------------------------------------------------------------------
 // Parse client_view sections/items into a flat editable list.

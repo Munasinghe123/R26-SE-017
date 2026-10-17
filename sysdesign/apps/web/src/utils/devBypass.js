@@ -8,7 +8,7 @@ import axios from "axios";
  * Can be safely deleted when dev testing is completed.
  */
 export async function devForceStartHLD(meetingId, projectName = "SDLC Project") {
-  const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8000";
+  const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 
   if (!meetingId) {
     throw new Error("No meetingId or projectId provided to devForceStartHLD.");

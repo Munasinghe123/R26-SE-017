@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import beehiveBg from "../../../Images/beehive-bg.png";
 
-const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8000";
+const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 
 const STAGES = [
   { key: "requirements", label: "Requirements",      icon: ClipboardList, color: "from-cyan-500 to-teal-400" },
