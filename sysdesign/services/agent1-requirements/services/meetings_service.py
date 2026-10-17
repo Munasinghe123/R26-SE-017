@@ -183,18 +183,24 @@ async def get_meeting_requirements(meeting_id: str) -> Optional[Dict[str, Any]]:
                         m_uuid
                     )
 
-                if row and row["requirements"]:
+                if row:
                     reqs = row["requirements"]
                     if isinstance(reqs, str):
-                        reqs = json.loads(reqs)
+                        try:
+                            reqs = json.loads(reqs)
+                        except Exception:
+                            reqs = {}
                     cview = row["client_view"]
                     if isinstance(cview, str):
-                        cview = json.loads(cview)
+                        try:
+                            cview = json.loads(cview)
+                        except Exception:
+                            cview = {}
                     return {
                         "id": str(row["id"]),
                         "project_id": str(row["project_id"]) if row["project_id"] else None,
-                        "requirements": reqs,
-                        "client_view": cview,
+                        "requirements": reqs or {},
+                        "client_view": cview or {},
                         "version": row["version"] or 1,
                         "status": row["status"]
                     }

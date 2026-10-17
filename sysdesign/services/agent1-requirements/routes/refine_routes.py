@@ -51,10 +51,11 @@ async def get_requirements(meeting_id: str):
     snapshot = await run_in_threadpool(graph.get_state, config)
     state = dict(snapshot.values) if snapshot and snapshot.values else {}
 
-    # Fallback to DB if memory state is empty (e.g. server restarted)
+    status = state.get("status")
+
+    # Fallback to DB if memory state is empty or missing requirements
     if not state.get("final_requirements") and not state.get("requirements"):
         try:
-            
             db_data = await get_meeting_requirements(meeting_id)
             if db_data:
                 db_reqs = db_data.get("requirements")
@@ -66,13 +67,23 @@ async def get_requirements(meeting_id: str):
                     "status": db_data.get("status", "completed"),
                     "version": db_data.get("version", 1),
                 }
+                status = db_data.get("status")
         except Exception as exc:
             print(f"Warning: could not fetch meeting from DB: {exc}")
 
     final_reqs = state.get("final_requirements") or state.get("requirements") or {}
 
+    if not status:
+        if final_reqs and len(final_reqs) > 0:
+            status = "ready_for_review"
+        else:
+            status = "processing"
+
     return {
         "meeting_id": meeting_id,
+        "status": status,
         "final_requirements": final_reqs,
         "requirements": state.get("requirements") or final_reqs,
+        "client_view": state.get("client_view"),
+        "version": state.get("version", 1),
     }

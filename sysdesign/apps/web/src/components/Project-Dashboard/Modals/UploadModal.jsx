@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, UploadCloud, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import axios from "axios";
 
@@ -9,12 +9,20 @@ export default function UploadModal({ onClose, projectId, onSubmit }) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState(null);
 
+  const pollTimerRef = useRef(null);
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
+    isMountedRef.current = true;
     const handleKeyDown = (e) => {
       if (e.key === "Escape" && onClose && !loading) onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      isMountedRef.current = false;
+      window.removeEventListener("keydown", handleKeyDown);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
   }, [onClose, loading]);
 
   const handleDrop = (e) => {
@@ -25,12 +33,79 @@ export default function UploadModal({ onClose, projectId, onSubmit }) {
     }
   };
 
+  const startPolling = (threadId, inputMethod) => {
+    let pollCount = 0;
+    const maxPolls = 120; // 120 * 2.5s = 300s (5 mins timeout protection)
+
+    const statusPhases = [
+      "Analyzing document structure & technical domain...",
+      "Extracting Functional & Non-Functional requirements (Multi-LLM)...",
+      "Evaluating IEEE 29148 standard compliance & quality scoring...",
+      "Synthesizing requirements hierarchy & finalizing client review...",
+    ];
+
+    pollTimerRef.current = setInterval(async () => {
+      pollCount++;
+
+      // Cycle status message smoothly every ~10s
+      const phaseIdx = Math.min(Math.floor(pollCount / 4), statusPhases.length - 1);
+      if (isMountedRef.current) {
+        setStatusText(statusPhases[phaseIdx]);
+      }
+
+      try {
+        const checkRes = await axios.get(`/requirements/${threadId}`);
+        const resultData = checkRes.data;
+
+        const hasRequirements =
+          resultData?.requirements &&
+          typeof resultData.requirements === "object" &&
+          Object.keys(resultData.requirements).length > 0;
+
+        const isReady = resultData?.status === "ready_for_review" || hasRequirements;
+
+        if (isReady) {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          if (isMountedRef.current) {
+            setStatusText("Extraction Complete! Loading review screen...");
+            setLoading(false);
+            if (onSubmit) {
+              onSubmit({ ...resultData, thread_id: threadId, input_method: inputMethod });
+            }
+          }
+          return;
+        }
+
+        if (resultData?.status === "failed") {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          if (isMountedRef.current) {
+            setError("Requirements extraction failed during multi-model processing. Please try again.");
+            setStatusText("");
+            setLoading(false);
+          }
+          return;
+        }
+      } catch (pollErr) {
+        console.warn("Background extraction polling check:", pollErr?.message);
+      }
+
+      if (pollCount >= maxPolls) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        if (isMountedRef.current) {
+          setError("Extraction is taking longer than expected. Please check your project dashboard or retry.");
+          setStatusText("");
+          setLoading(false);
+        }
+      }
+    }, 2500);
+  };
+
   const handleUpload = async () => {
     if (!file) return;
 
     setLoading(true);
     setError(null);
-    setStatusText("Analyzing file and extracting IEEE 29148 Software Requirements...");
+    setStatusText("Uploading document & initializing extraction...");
 
     const formData = new FormData();
     formData.append("file", file);
@@ -55,21 +130,29 @@ export default function UploadModal({ onClose, projectId, onSubmit }) {
         }
       }
 
-      setStatusText("Extraction Complete!");
       const isAudio = Boolean(file?.name?.match(/\.(mp3|wav|m4a)$/i));
       const inputMethod = isAudio ? "audio" : "document";
-      if (onSubmit) {
-        onSubmit({ ...data, thread_id: threadId, input_method: inputMethod });
+
+      // If backend already completed synchronously (e.g. cached), proceed directly
+      if (data.status === "ready_for_review" && (data.requirements || data.client_view)) {
+        setStatusText("Extraction Complete!");
+        if (onSubmit) {
+          onSubmit({ ...data, thread_id: threadId, input_method: inputMethod });
+        }
+        setLoading(false);
+        return;
       }
+
+      // Otherwise, poll asynchronously every 2.5 seconds
+      startPolling(threadId, inputMethod);
     } catch (err) {
       console.error("Extraction failed:", err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        "Extraction failed. Please check your file and backend connection.";
+        "Upload failed. Please check your file and backend connection.";
       setError(msg);
       setStatusText("");
-    } finally {
       setLoading(false);
     }
   };
