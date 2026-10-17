@@ -135,6 +135,10 @@ services:
     environment:
       - PORT=8005
       - ARTIFACT_ROOT=/app/outputs
+      - CLOUDINARY_CLOUD_NAME=${SRS_CLOUDINARY_CLOUD_NAME:-${CLOUDINARY_CLOUD_NAME}}
+      - CLOUDINARY_API_KEY=${SRS_CLOUDINARY_API_KEY:-${CLOUDINARY_API_KEY}}
+      - CLOUDINARY_API_SECRET=${SRS_CLOUDINARY_API_SECRET:-${CLOUDINARY_API_SECRET}}
+      - CLOUDINARY_SRS_FOLDER=${CLOUDINARY_SRS_FOLDER:-SRS_Documents}
     volumes:
       - artifacts_data:/app/outputs
     networks:

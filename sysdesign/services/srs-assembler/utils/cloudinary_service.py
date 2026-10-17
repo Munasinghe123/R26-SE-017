@@ -19,10 +19,10 @@ def get_cloudinary_config() -> tuple[str, str, str, str]:
     Retrieves isolated Cloudinary credentials for SRS Assembler.
     Defaults folder to 'SRS_Documents'.
     """
-    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
-    api_key = os.getenv("CLOUDINARY_API_KEY", "").strip()
-    api_secret = os.getenv("CLOUDINARY_API_SECRET", "").strip()
-    folder = os.getenv("CLOUDINARY_SRS_FOLDER", "SRS_Documents").strip()
+    cloud_name = (os.getenv("SRS_CLOUDINARY_CLOUD_NAME") or os.getenv("CLOUDINARY_CLOUD_NAME", "")).strip()
+    api_key = (os.getenv("SRS_CLOUDINARY_API_KEY") or os.getenv("CLOUDINARY_API_KEY", "")).strip()
+    api_secret = (os.getenv("SRS_CLOUDINARY_API_SECRET") or os.getenv("CLOUDINARY_API_SECRET", "")).strip()
+    folder = (os.getenv("CLOUDINARY_SRS_FOLDER") or os.getenv("SRS_CLOUDINARY_FOLDER") or "SRS_Documents").strip()
 
     if cloud_name and api_key and api_secret:
         cloudinary.config(
