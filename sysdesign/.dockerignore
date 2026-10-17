@@ -1,0 +1,41 @@
+.git
+.gitignore
+.gitattributes
+
+# Python
+**/__pycache__
+**/*.py[cod]
+**/*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Node / Web
+**/node_modules
+apps/web/node_modules
+
+# Logs & temp
+*.log
+*.tmp
+_temp*
+scratch/
+
+# Artifacts & Local DBs
+results/
+outputs/
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

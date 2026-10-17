@@ -1,41 +1,135 @@
+# Refer to the root docker-compose.yml
+# To run: docker compose -f docker-compose.yml up -d
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: sysdesign-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - sysdesign-net
+
   orchestrator:
     build:
       context: ..
       dockerfile: services/orchestrator/Dockerfile
+    container_name: sysdesign-orchestrator
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file:
+      - ../.env
     environment:
       - PORT=8000
-      - NEON_DATABASE_URL=${NEON_DATABASE_URL}
+      - AGENT1_URL=http://agent1-requirements:8001
+      - AGENT2_URL=http://agent2-hld:8002
+      - AGENT3_URL=http://agent3-lld:8003
+      - AGENT4_URL=http://agent4-ui:8004
+      - SRS_URL=http://srs-assembler:8005
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+      - agent1-requirements
       - agent2-hld
+      - agent3-lld
+      - agent4-ui
+      - srs-assembler
+    networks:
+      - sysdesign-net
+
+  agent1-requirements:
+    build:
+      context: ..
+      dockerfile: services/agent1-requirements/Dockerfile
+    container_name: sysdesign-agent1-requirements
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8001
+    networks:
+      - sysdesign-net
 
   agent2-hld:
     build:
       context: ..
       dockerfile: services/agent2-hld/Dockerfile
+    container_name: sysdesign-agent2-hld
+    restart: unless-stopped
     ports:
       - "8002:8002"
+    env_file:
+      - ../.env
     environment:
       - PORT=8002
-      - LLM_BACKEND=groq
-      - GROQ_API_KEY=${GROQ_API_KEY}
+    networks:
+      - sysdesign-net
 
-  redis:
-    image: redis:7-alpine
+  agent3-lld:
+    build:
+      context: ..
+      dockerfile: services/agent3-lld/Dockerfile
+    container_name: sysdesign-agent3-lld
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "8003:8003"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8003
+    networks:
+      - sysdesign-net
+
+  agent4-ui:
+    build:
+      context: ..
+      dockerfile: services/agent4-ui/Dockerfile
+    container_name: sysdesign-agent4-ui
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8004
+    networks:
+      - sysdesign-net
+
+  srs-assembler:
+    build:
+      context: ..
+      dockerfile: services/srs-assembler/Dockerfile
+    container_name: sysdesign-srs-assembler
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8005
+    networks:
+      - sysdesign-net
 
   web:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+    container_name: sysdesign-web
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "80:80"
+      - "3000:80"
     depends_on:
       - orchestrator
+      - agent1-requirements
+    networks:
+      - sysdesign-net
+
+networks:
+  sysdesign-net:
+    driver: bridge

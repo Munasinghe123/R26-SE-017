@@ -1,0 +1,163 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: sysdesign-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sysdesign-net
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
+    image: ${DOCKER_USER:-sysdesign}/sysdesign-orchestrator:latest
+    container_name: sysdesign-orchestrator
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+      - AGENT1_URL=http://agent1-requirements:8001
+      - AGENT2_URL=http://agent2-hld:8002
+      - AGENT3_URL=http://agent3-lld:8003
+      - AGENT4_URL=http://agent4-ui:8004
+      - SRS_URL=http://srs-assembler:8005
+      - REDIS_URL=redis://redis:6379/0
+      - ARTIFACT_ROOT=/app/outputs
+    volumes:
+      - artifacts_data:/app/outputs
+    depends_on:
+      - redis
+      - agent1-requirements
+      - agent2-hld
+      - agent3-lld
+      - agent4-ui
+      - srs-assembler
+    networks:
+      - sysdesign-net
+
+  agent1-requirements:
+    build:
+      context: .
+      dockerfile: services/agent1-requirements/Dockerfile
+    image: ${DOCKER_USER:-sysdesign}/sysdesign-agent1-requirements:latest
+    container_name: sysdesign-agent1-requirements
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - PORT=8001
+      - ARTIFACT_ROOT=/app/outputs
+    volumes:
+      - artifacts_data:/app/outputs
+    networks:
+      - sysdesign-net
+
+  agent2-hld:
+    build:
+      context: .
+      dockerfile: services/agent2-hld/Dockerfile
+    image: ${DOCKER_USER:-sysdesign}/sysdesign-agent2-hld:latest
+    container_name: sysdesign-agent2-hld
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    environment:
+      - PORT=8002
+      - ARTIFACT_ROOT=/app/outputs
+    volumes:
+      - artifacts_data:/app/outputs
+    networks:
+      - sysdesign-net
+
+  agent3-lld:
+    build:
+      context: .
+      dockerfile: services/agent3-lld/Dockerfile
+    image: ${DOCKER_USER:-sysdesign}/sysdesign-agent3-lld:latest
+    container_name: sysdesign-agent3-lld
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    environment:
+      - PORT=8003
+      - ARTIFACT_ROOT=/app/outputs
+    volumes:
+      - artifacts_data:/app/outputs
+    networks:
+      - sysdesign-net
+
+  agent4-ui:
+    build:
+      context: .
+      dockerfile: services/agent4-ui/Dockerfile
+    image: ${DOCKER_USER:-sysdesign}/sysdesign-agent4-ui:latest
+    container_name: sysdesign-agent4-ui
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    env_file:
+      - .env
+    environment:
+      - PORT=8004
+      - ARTIFACT_ROOT=/app/outputs
+    volumes:
+      - artifacts_data:/app/outputs
+    networks:
+      - sysdesign-net
+
+  srs-assembler:
+    build:
+      context: .
+      dockerfile: services/srs-assembler/Dockerfile
+    image: ${DOCKER_USER:-sysdesign}/sysdesign-srs-assembler:latest
+    container_name: sysdesign-srs-assembler
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    env_file:
+      - .env
+    environment:
+      - PORT=8005
+      - ARTIFACT_ROOT=/app/outputs
+    volumes:
+      - artifacts_data:/app/outputs
+    networks:
+      - sysdesign-net
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: ${DOCKER_USER:-sysdesign}/sysdesign-web:latest
+    container_name: sysdesign-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    depends_on:
+      - orchestrator
+      - agent1-requirements
+    networks:
+      - sysdesign-net
+
+volumes:
+  artifacts_data:
+
+networks:
+  sysdesign-net:
+    driver: bridge

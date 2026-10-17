@@ -29,9 +29,9 @@ export default defineConfig({
       '/livekit':              { target: 'http://127.0.0.1:8001', changeOrigin: true },
       '/live-meeting':         { target: 'http://127.0.0.1:8001', changeOrigin: true },
       '/test/':                { target: 'http://127.0.0.1:8001', changeOrigin: true },
-      '/meetings':             { target: 'http://127.0.0.1:8001', changeOrigin: true },
       '/notifications':        { target: 'http://127.0.0.1:8001', changeOrigin: true },
-     
+      // Agent 4 — UI generator API
+      '/api':                  { target: 'http://127.0.0.1:8004', changeOrigin: true },
     },
   },
 

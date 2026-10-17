@@ -85,8 +85,8 @@ function ConvergenceChart({ history }) {
   );
 }
 
-const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "http://127.0.0.1:8000";
-const AGENT4_BASE = "http://127.0.0.1:8004";
+const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
+const AGENT4_BASE = import.meta.env.VITE_AGENT4_URL || "";
 
 
 export default function UIReview() {
