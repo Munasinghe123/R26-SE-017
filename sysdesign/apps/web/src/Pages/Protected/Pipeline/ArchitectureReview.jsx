@@ -40,6 +40,7 @@ import {
   Tooltip
 } from "recharts";
 import beehiveBg from "../../../Images/beehive-bg.png";
+import ArchitecturalWisdomTicker from "../../../components/Pipeline/ArchitecturalWisdomTicker";
 
 const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "";
@@ -562,8 +563,17 @@ export default function ArchitectureReview() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#05050f]">
-        <div className="text-cyan-400 animate-spin"><Network size={40} /></div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#05050f] px-6">
+        <div className="text-cyan-400 animate-spin mb-6"><Network size={48} /></div>
+        <h2 className="text-lg font-semibold tracking-wider text-cyan-200 mb-2" style={{ fontFamily: "Orbitron, sans-serif" }}>
+          Synthesizing Architecture Candidates & ATAM Trade-offs...
+        </h2>
+        <p className="text-xs text-white/50 mb-8 text-center max-w-md">
+          Evaluating system quality attributes, structural metrics, and security baselines deterministically.
+        </p>
+        <div className="w-full max-w-2xl">
+          <ArchitecturalWisdomTicker />
+        </div>
       </div>
     );
   }
@@ -633,6 +643,9 @@ export default function ArchitectureReview() {
             </span>
           </div>
         </div>
+
+        {/* ── Architectural Wisdom Banner ─────────────────────────────── */}
+        <ArchitecturalWisdomTicker />
 
         {/* ── Navigation Tabs (Production Enterprise Terminology) ───────── */}
         <div className="flex flex-wrap gap-2 border-b border-white/10 pb-3">
