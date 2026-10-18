@@ -24,6 +24,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import beehiveBg from "../../../Images/beehive-bg.png";
+import ArchitecturalWisdomTicker from "../../../components/Pipeline/ArchitecturalWisdomTicker";
+import AgentTaskvilleWorkspace from "../../../components/Pipeline/AgentTaskvilleWorkspace";
 
 const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 
@@ -268,6 +270,12 @@ export default function PipelineDashboard() {
             )}
           </div>
         </div>
+
+        {/* ── Collaborative Agent Mesh Workspace ─────────────────────── */}
+        <AgentTaskvilleWorkspace currentStage={STAGES[currentStageIndex]?.key || "hld"} />
+
+        {/* ── Architectural Wisdom Ticker ──────────────────────────────── */}
+        <ArchitecturalWisdomTicker />
 
         {/* ── Live Logs Card ────────────────────────────────────────────── */}
         <div
