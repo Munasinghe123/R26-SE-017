@@ -42,7 +42,7 @@ OPENROUTER_MODEL_1 = os.getenv(
 )
 OPENROUTER_MODEL_2 = os.getenv(
     "OPENROUTER_MODEL_2",
-    "qwen/qwen-2.5-72b-instruct",
+    "qwen/qwen-2.5-coder-32b-instruct",
 )
 OPENROUTER_MODEL_3 = os.getenv(
     "OPENROUTER_MODEL_3",
@@ -62,8 +62,8 @@ PROVIDER_MODELS = {
 # Temperature — configurable for research (temperature study)
 GENERATION_TEMPERATURE = float(os.getenv("GENERATION_TEMPERATURE", "0.1"))
 
-# Max candidates per model (adaptive: LLM decides 1-3 styles)
-MAX_CANDIDATES_PER_MODEL = int(os.getenv("MAX_CANDIDATES_PER_MODEL", "3"))
+# Max candidates per model (1 candidate per model = 3 distinct models in parallel)
+MAX_CANDIDATES_PER_MODEL = int(os.getenv("MAX_CANDIDATES_PER_MODEL", "1"))
 
 # For backward compatibility
 CANDIDATES_PER_MODEL = MAX_CANDIDATES_PER_MODEL
@@ -93,7 +93,7 @@ DIAGRAM_GENERATION_OPTIONS = {
 }
 
 # Retry configuration
-MAX_GENERATION_RETRIES = 3
+MAX_GENERATION_RETRIES = int(os.getenv("MAX_GENERATION_RETRIES", "1"))
 MAX_REGENERATION_LOOPS = 0  # Disabled: using Human-in-the-Loop
 
 # ──────────────────────────────────────────────

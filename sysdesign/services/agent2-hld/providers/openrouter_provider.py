@@ -26,9 +26,11 @@ class OpenRouterProvider(LLMProvider):
             raise ValueError(
                 "OPENROUTER_API_KEY not set. Get a key at https://openrouter.ai"
             )
+        timeout_val = float(os.getenv("OPENROUTER_TIMEOUT", "75.0"))
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
+            timeout=timeout_val,
         )
 
     @property
@@ -37,6 +39,7 @@ class OpenRouterProvider(LLMProvider):
 
     def generate(self, prompt: str, model: str, options: dict) -> str:
         """Generate architecture via OpenRouter API."""
+        timeout_val = options.get("timeout", float(os.getenv("OPENROUTER_TIMEOUT", "75.0")))
         response = self.client.chat.completions.create(
             model=model,
             messages=[
@@ -49,6 +52,7 @@ class OpenRouterProvider(LLMProvider):
             temperature=options.get("temperature", 0.1),
             max_tokens=options.get("max_tokens", 4000),
             seed=options.get("seed", None),
+            timeout=timeout_val,
         )
         return response.choices[0].message.content.strip()
 
