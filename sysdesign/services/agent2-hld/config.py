@@ -38,11 +38,11 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 # ──────────────────────────────────────────────
 OPENROUTER_MODEL_1 = os.getenv(
     "OPENROUTER_MODEL_1",
-    "meta-llama/llama-3.1-8b-instruct:free",
+    "openai/gpt-4o-mini",
 )
 OPENROUTER_MODEL_2 = os.getenv(
     "OPENROUTER_MODEL_2",
-    "qwen/qwen-2.5-7b-instruct:free",
+    "qwen/qwen-2.5-72b-instruct",
 )
 OPENROUTER_MODEL_3 = os.getenv(
     "OPENROUTER_MODEL_3",
