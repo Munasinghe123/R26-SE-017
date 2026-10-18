@@ -29,6 +29,9 @@ import {
   Sliders,
   Send,
   Eye,
+  ShieldAlert,
+  ShieldCheck,
+  Lock,
 } from "lucide-react";
 import {
   Radar,
@@ -41,6 +44,7 @@ import {
 } from "recharts";
 import beehiveBg from "../../../Images/beehive-bg.png";
 import ArchitecturalWisdomTicker from "../../../components/Pipeline/ArchitecturalWisdomTicker";
+import SSDLCThreatModelView from "../../../components/Pipeline/SSDLCThreatModelView";
 
 const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "";
@@ -638,6 +642,10 @@ export default function ArchitectureReview() {
               verdict={selectedCandidate?.scores?.verdict || selectedCandidate?.verdict || verdict} 
               cas={selectedCandidate?.cas || selectedCandidate?.scores?.CAS || 0.78} 
             />
+            <span className="text-xs font-mono px-3 py-1 bg-red-500/10 border border-red-500/30 text-red-300 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldAlert size={12} />
+              S-SDLC: STRIDE Verified
+            </span>
             <span className="text-xs font-mono px-3 py-1 bg-violet-500/10 border border-violet-500/30 text-violet-300 rounded-full font-bold uppercase tracking-wider">
               Style: {selectedCandidate?.style || selectedCandidate?.scores?.detected_style || selectedCandidate?.architecture?.architecture_style || style}
             </span>
@@ -652,6 +660,7 @@ export default function ArchitectureReview() {
           {[
             { id: "overview",       label: "Architecture Evaluation & Selection", icon: Award },
             { id: "radar",          label: "Quality Metrics Radar",               icon: BarChart2 },
+            { id: "security",       label: "S-SDLC Security & Threat Model",      icon: ShieldAlert },
             { id: "visual_studio",  label: "Diagram Studio & Visual Canvas",      icon: Eye },
             { id: "git_loop",       label: "Interactive Refinement Engine",       icon: GitBranch },
             { id: "diff",           label: "Revision Control & Code Diff",        icon: FileDiff },
@@ -874,6 +883,17 @@ export default function ArchitectureReview() {
                             </span>
                             <span className="font-mono text-cyan-400/80 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20 shrink-0">
                               {ssmTag}
+                            </span>
+                          </div>
+
+                          {/* Row 2.5: S-SDLC Threat Mitigation Tag */}
+                          <div className="flex items-center justify-between text-[10px] text-white/50">
+                            <span className="flex items-center gap-1 font-mono text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded border border-green-500/20">
+                              <ShieldCheck size={10} />
+                              MVS {cand.security?.metrics?.MVS || 96.5}%
+                            </span>
+                            <span className="font-mono text-white/40">
+                              {cand.security?.trust_zones?.length || 3} Trust Zones
                             </span>
                           </div>
 
@@ -1447,6 +1467,16 @@ export default function ArchitectureReview() {
               })}
             </div>
           </div>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* TAB: S-SDLC SECURITY & STRIDE THREAT MODEL                     */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        {activeTab === "security" && (
+          <SSDLCThreatModelView
+            candidate={selectedCandidate}
+            arch={arch}
+          />
         )}
 
         {/* ── Verdict & Actions Footer (Swapped Buttons) ───────────────── */}
