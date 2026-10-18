@@ -291,15 +291,15 @@ async def run_stage_hld(job_id: str) -> None:
 
     notify_listeners(job_id, {
         "event": "log",
-        "log": "🚀 [HLD] Dispatching candidate generation across OpenRouter models (Llama 3.3, Qwen 2.5 Coder, DeepSeek V3)..."
+        "log": "🚀 [HLD] Dispatching candidate generation across OpenRouter models (OpenAI GPT-4o-mini, Qwen 2.5, DeepSeek V3)..."
     })
 
     stop_heartbeat = asyncio.Event()
 
     async def _heartbeat():
         msgs = [
-            "⚙️ [HLD] Synthesizing structural layers and component boundaries...",
-            "⚙️ [HLD] Generating primary best-fit & alternative tradeoff candidate options...",
+            "⚙️ [HLD] Synthesizing structural layers and component boundaries via OpenRouter...",
+            "🛡️ [HLD] S-SDLC Audit: Auditing Trust Boundaries & STRIDE threat mitigations...",
             "📊 [HLD] Python Evaluation Engine: Loading SentenceTransformers semantic embeddings...",
             "📊 [HLD] Python Evaluation Engine: Computing RTS, QAC, CI, CoS, SSM₁, SSM₂, and AHP CAS...",
             "🎨 [HLD] Elaboration: Rendering high-resolution PlantUML & Mermaid architectural diagrams...",
