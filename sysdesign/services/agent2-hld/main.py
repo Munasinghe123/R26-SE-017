@@ -181,7 +181,25 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
             arch = extract_and_parse_json(c.raw_text)
             if not isinstance(arch, dict):
                 raise CAMParseError(f"Expected dict, got {type(arch).__name__}")
+        except (CAMParseError, json.JSONDecodeError) as pe:
+            logger.warning(f"Skipping unparseable candidate from {c.model}: {pe}")
+            all_candidates.append({
+                "model": c.model,
+                "candidate_num": c.candidate_num,
+                "raw_text": c.raw_text,
+                "error": f"Parse Error: {pe}",
+                "scores": {**ZERO_SCORES, "verdict": "Parse Failed"},
+                "llm": {
+                    "provider": getattr(c, "provider_name", ""),
+                    "duration_ms": c.duration_ms,
+                    "attempts": getattr(c, "attempts", []),
+                    "raw_text": c.raw_text,
+                },
+                "architecture": {"architecture_style": "Unparseable", "components": [], "connectors": []}
+            })
+            continue
 
+        try:
             scores = evaluate_architecture(arch, requirements)
             all_candidates.append({
                 "model": c.model,
@@ -197,21 +215,21 @@ def generate_and_rank(input_file: str | Path, models: list[str] = None,
                 },
                 "error": None
             })
-        except (CAMParseError, json.JSONDecodeError, Exception) as e:
-            logger.warning(f"Skipping unparseable candidate: {e}")
+        except Exception as ee:
+            logger.error(f"Evaluation error on valid candidate from {c.model}: {ee}", exc_info=True)
             all_candidates.append({
                 "model": c.model,
                 "candidate_num": c.candidate_num,
                 "raw_text": c.raw_text,
-                "error": f"Parse Error: {e}",
-                "scores": {**ZERO_SCORES, "verdict": "Parse Failed"},
+                "architecture": arch,
+                "scores": {**ZERO_SCORES, "verdict": "Evaluation Failed"},
                 "llm": {
                     "provider": getattr(c, "provider_name", ""),
                     "duration_ms": c.duration_ms,
                     "attempts": getattr(c, "attempts", []),
                     "raw_text": c.raw_text,
                 },
-                "architecture": {"architecture_style": "Unparseable", "components": [], "connectors": []}
+                "error": f"Evaluation Error: {ee}"
             })
 
     # Only rank candidates that actually parsed successfully
