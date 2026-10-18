@@ -647,16 +647,22 @@ async def run_hld_generation(payload: dict):
                 "requirement_ids": c.get("requirement_ids", [])
             })
 
+        connectors_raw = arch.get("connectors") or arch.get("interactions") or []
         connectors = []
-        for idx, conn in enumerate(arch.get("interactions", [])):
+        for idx, conn in enumerate(connectors_raw):
+            fc = conn.get("from_component") or conn.get("from") or ""
+            tc = conn.get("to_component") or conn.get("to") or ""
+            c_type = conn.get("connector_type") or conn.get("type") or "sync_call"
             connectors.append({
                 "id": f"K{idx+1}",
-                "from_component": conn.get("from", ""),
-                "to_component": conn.get("to", ""),
-                "connector_type": conn.get("type", "sync_call"),
+                "from_component": fc,
+                "to_component": tc,
+                "connector_type": c_type,
                 "protocol": conn.get("protocol", "REST"),
-                "data_transferred": conn.get("data", "")
+                "data_transferred": conn.get("data_transferred") or conn.get("data") or ""
             })
+
+        quality_provisions = arch.get("quality_provisions", [])
 
         metric_scores = {
             "RTS":  scores.get("RTS",  0.0),
@@ -668,18 +674,26 @@ async def run_hld_generation(payload: dict):
             "CAS":  scores.get("CAS",  0.0),
         }
 
-        verdict = "accepted" if metric_scores["CAS"] >= 0.60 else "marginal"
+        cas_val = metric_scores["CAS"]
+        if cas_val >= 0.75:
+            verdict = "accepted"
+        elif cas_val >= 0.60:
+            verdict = "marginal"
+        else:
+            verdict = "rejected"
+
+        detected_style = scores.get("detected_style") or arch.get("architecture_style", "Layered Architecture")
 
         return {
             "schema_version": "1.0",
             "job_id": job_id,
             "tenant_id": tenant_id,
             "project_name": project_name,
-            "architecture_style": arch.get("architecture_style", "Layered Microservices"),
-            "style_confidence": 0.95,
+            "architecture_style": detected_style,
+            "style_confidence": scores.get("style_confidences", {}).get(detected_style, 0.95) if isinstance(scores.get("style_confidences"), dict) else 0.95,
             "components": components,
             "connectors": connectors,
-            "quality_provisions": [],
+            "quality_provisions": quality_provisions,
             "scores": metric_scores,
             "verdict": verdict,
             "rejected_alternatives": candidates[1:] if len(candidates) > 1 else [],
