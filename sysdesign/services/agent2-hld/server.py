@@ -466,7 +466,7 @@ class RegenerateRequest(BaseModel):
 async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
     from generation.generator import regenerate_single
     from prompt.builder import build_architecture_prompt
-    from cam.parser import extract_json_from_text, CAMParseError
+    from cam.parser import extract_and_parse_json, CAMParseError
     from evaluation import evaluate_architecture
     
     path = RESULTS_DIR / "_temp_input.json"
@@ -502,8 +502,7 @@ async def regenerate_candidate_endpoint(run_id: str, req: RegenerateRequest):
         }
         
     try:
-        json_str = extract_json_from_text(result.raw_text)
-        arch = json.loads(json_str)
+        arch = extract_and_parse_json(result.raw_text)
         if not isinstance(arch, dict):
             raise CAMParseError(f"Expected dict, got {type(arch).__name__}")
         scores = evaluate_architecture(arch, requirements)
