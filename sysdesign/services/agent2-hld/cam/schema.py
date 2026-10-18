@@ -55,3 +55,4 @@ class RawCAMArchitecture(BaseModel):
     interactions: Optional[List[RawCAMConnector]] = Field(default_factory=list)
     connectors: Optional[List[RawCAMConnector]] = Field(default_factory=list)
     quality_provisions: Optional[List[RawCAMQualityProvision]] = Field(default_factory=list)
+    security: Optional[Dict[str, Any]] = Field(default=None, description="S-SDLC Trust Zones and STRIDE Threat Model")

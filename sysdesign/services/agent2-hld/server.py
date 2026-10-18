@@ -577,6 +577,15 @@ async def select_winner(run_id: str, req: SelectionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/security/analyze")
+async def analyze_security(payload: dict):
+    from evaluation.security_engine import analyze_security_architecture
+    components = payload.get("components", [])
+    connectors = payload.get("connectors", [])
+    quality_provisions = payload.get("quality_provisions", [])
+    return analyze_security_architecture(components, connectors, quality_provisions)
+
+
 @app.post("/run")
 @app.post("/generate")
 async def run_hld_generation(payload: dict):
@@ -684,6 +693,21 @@ async def run_hld_generation(payload: dict):
 
         detected_style = scores.get("detected_style") or arch.get("architecture_style", "Layered Architecture")
 
+        # Deterministic S-SDLC Threat Modeling & Trust Boundary Analysis
+        try:
+            from evaluation.security_engine import analyze_security_architecture
+            security_arch = analyze_security_architecture(components, connectors, quality_provisions)
+            if winner:
+                winner["security"] = security_arch
+            for c in candidates:
+                c_arch = c.get("architecture", {})
+                c_comps = c_arch.get("components", [])
+                c_conns = c_arch.get("connectors") or c_arch.get("interactions") or []
+                c["security"] = analyze_security_architecture(c_comps, c_conns, c_arch.get("quality_provisions", []))
+        except Exception as sec_err:
+            logger.warning(f"Security analysis error: {sec_err}")
+            security_arch = None
+
         return {
             "schema_version": "1.0",
             "job_id": job_id,
@@ -700,7 +724,10 @@ async def run_hld_generation(payload: dict):
             "candidates": candidates,
             "plantuml_code": plantuml_code,
             "mermaid_code": mermaid_code,
-            "generation_metadata": {"run_id": run_id},
+            "generation_metadata": {
+                "run_id": run_id,
+                "security_architecture": security_arch
+            },
             "artifact_uris": {}
         }
     except Exception as e:
