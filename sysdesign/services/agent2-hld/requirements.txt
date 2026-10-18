@@ -33,6 +33,7 @@ psycopg2-binary>=2.9.9        # Neon Postgres (shared thesis dataset)
 
 # ── Utilities ──────────────────────────────────────────────────
 python-dotenv>=1.0.0           # Load .env file
+json-repair>=0.30.0            # Fix corrupted LLM JSON formatting
 
 # ── Testing ────────────────────────────────────────────────────
 pytest>=8.0.0

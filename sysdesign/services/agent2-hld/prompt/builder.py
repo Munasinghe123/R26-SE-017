@@ -44,7 +44,8 @@ def build_architecture_prompt(requirements: dict, feedback: Optional[str] = None
         "You evaluate each project's requirements objectively without architectural bias.\n"
         f"For this specific candidate generation: **{priority_lens}**\n\n"
         "STRICT OUTPUT RULE: Do NOT output markdown commentary, markdown code fences (like ```json), or preambles. "
-        "Output ONLY the raw, valid JSON object adhering strictly to the required schema."
+        "Output ONLY the raw, valid JSON object adhering strictly to the required schema.\n"
+        "CRITICAL JSON SYNTAX RULE: All property keys and string values MUST be enclosed in double quotes (e.g. \"name\": \"...\", \"responsibilities\": [...]). Never output unquoted JavaScript keys (like name: or to:)."
     )
 
     # ── Layer 2: Context Injection ────────────────────────

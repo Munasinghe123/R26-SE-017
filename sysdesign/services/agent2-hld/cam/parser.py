@@ -60,6 +60,10 @@ def _attempt_json_repair(json_str: str) -> str:
     fixed = re.sub(r'//.*?$', '', fixed, flags=re.MULTILINE)
     # Remove multi-line comments /* ... */
     fixed = re.sub(r'/\*.*?\*/', '', fixed, flags=re.DOTALL)
+    # Fix corrupted key quotes e.g. "responsibilities: [ ... -> "responsibilities": [
+    fixed = re.sub(r'\"([a-zA-Z_][a-zA-Z0-9_]*):\s*([\[{])', r'"\1": \2', fixed)
+    # Fix unquoted JavaScript object keys e.g. name: "...", to: "..."
+    fixed = re.sub(r'(?<=[{,\n\r])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', fixed)
     # Remove trailing commas before } or ] (including across newlines)
     fixed = re.sub(r',\s*([\}\]])', r'\1', fixed)
     fixed = re.sub(r',\s*([\n\r\s]*[\}\]])', r'\1', fixed)
@@ -80,13 +84,22 @@ def extract_and_parse_json(raw_text: str) -> dict:
     except (json.JSONDecodeError, Exception):
         pass
 
-    # Pass 2: Cleaned with JSON repair (trailing commas, comments)
+    # Pass 2: Cleaned with JSON repair (unquoted keys, trailing commas, comments)
     fixed_str = _attempt_json_repair(json_str)
     try:
         data = json.loads(fixed_str)
         if isinstance(data, dict):
             return data
     except (json.JSONDecodeError, Exception):
+        pass
+
+    # Pass 2.5: Third-party robust json_repair if available
+    try:
+        from json_repair import repair_json
+        data = repair_json(fixed_str, return_objects=True)
+        if isinstance(data, dict) and "components" in data:
+            return data
+    except Exception:
         pass
 
     # Pass 3: Extract innermost or outermost curly braces from raw text
