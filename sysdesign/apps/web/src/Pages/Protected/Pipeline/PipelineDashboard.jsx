@@ -271,11 +271,13 @@ export default function PipelineDashboard() {
           </div>
         </div>
 
-        {/* ── Collaborative Agent Mesh Workspace ─────────────────────── */}
-        <AgentTaskvilleWorkspace currentStage={STAGES[currentStageIndex]?.key || "hld"} />
-
-        {/* ── Architectural Wisdom Ticker ──────────────────────────────── */}
-        <ArchitecturalWisdomTicker />
+        {/* ── Collaborative Agent Mesh Workspace (Only active during HLD phase) ── */}
+        {(job?.current_stage === "hld" || STAGES[currentStageIndex]?.key === "hld") && (
+          <>
+            <AgentTaskvilleWorkspace currentStage="hld" />
+            <ArchitecturalWisdomTicker />
+          </>
+        )}
 
         {/* ── Live Logs Card ────────────────────────────────────────────── */}
         <div
