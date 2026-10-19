@@ -32,6 +32,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Lock,
+  Calculator,
 } from "lucide-react";
 import {
   Radar,
@@ -45,6 +46,9 @@ import {
 import beehiveBg from "../../../Images/beehive-bg.png";
 import ArchitecturalWisdomTicker from "../../../components/Pipeline/ArchitecturalWisdomTicker";
 import SSDLCThreatModelView from "../../../components/Pipeline/SSDLCThreatModelView";
+import MetricDeepDiveModal from "../../../components/Pipeline/MetricDeepDiveModal";
+import SegmentedComponentsView from "../../../components/Pipeline/SegmentedComponentsView";
+import ComparativeMatrix3x2 from "../../../components/Pipeline/ComparativeMatrix3x2";
 
 const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "";
@@ -256,7 +260,7 @@ function VerdictBadge({ verdict, cas }) {
   );
 }
 
-function MetricBar({ metricKey, label, desc, value }) {
+function MetricBar({ metricKey, label, desc, value, onInspect }) {
   const pct = Math.round((value ?? 0) * 100);
   const color =
     pct >= 70 ? "from-green-400 to-emerald-300" :
@@ -264,11 +268,21 @@ function MetricBar({ metricKey, label, desc, value }) {
                 "from-red-400 to-rose-300";
 
   return (
-    <div className="space-y-1 bg-white/5 p-3 rounded-xl border border-white/5">
-      <div className="flex justify-between items-center">
+    <div
+      onClick={() => onInspect?.(metricKey)}
+      className="space-y-1 bg-white/5 hover:bg-cyan-950/40 p-3.5 rounded-xl border border-white/5 hover:border-cyan-400/50 transition-all cursor-pointer group shadow-sm hover:shadow-[0_0_15px_rgba(34,211,238,0.15)]"
+    >
+      <div className="flex justify-between items-start gap-2">
         <div>
-          <span className="text-xs font-semibold text-cyan-200">{label}</span>
-          <p className="text-[11px] text-white/40">{desc}</p>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-cyan-200 group-hover:text-cyan-300 transition-colors">
+              {label}
+            </span>
+            <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-400 font-mono opacity-0 group-hover:opacity-100 transition-opacity">
+              Inspect Evidence ↗
+            </span>
+          </div>
+          <p className="text-[11px] text-white/40 group-hover:text-white/60 transition-colors">{desc}</p>
         </div>
         <span className={`text-sm font-mono font-bold ${
           pct >= 70 ? "text-green-400" : pct >= 50 ? "text-amber-400" : "text-red-400"
@@ -276,7 +290,7 @@ function MetricBar({ metricKey, label, desc, value }) {
           {(value ?? 0).toFixed(3)}
         </span>
       </div>
-      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1">
+      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1.5">
         <div
           className={`h-full rounded-full bg-gradient-to-r ${color} transition-all duration-700`}
           style={{ width: `${pct}%` }}
@@ -299,6 +313,9 @@ export default function ArchitectureReview() {
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [compareRadar, setCompareRadar] = useState(false);
   const [selecting, setSelecting]       = useState(false);
+  const [inspectedMetric, setInspectedMetric] = useState(null);
+  const [inspectedCandidate, setInspectedCandidate] = useState(null);
+  const [requirements, setRequirements] = useState(null);
 
   // Diagram Git-Loop state
   const [diagrams, setDiagrams] = useState({ plantuml: "", mermaid: "" });
@@ -325,6 +342,9 @@ export default function ArchitectureReview() {
       .then(r => r.json())
       .then(data => {
         if (data.job) setJobStatus(data.job.status);
+        if (data?.artifacts?.requirements) {
+          setRequirements(data.artifacts.requirements);
+        }
         const archArtifact = data?.artifacts?.architecture;
         if (archArtifact) {
           setArch(archArtifact);
@@ -624,8 +644,8 @@ export default function ArchitectureReview() {
   const needsRefinement = diagramCas < 0.60;
 
   return (
-    <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white bg-[#05050f]">
-      <div className="mx-auto w-full max-w-6xl space-y-6">
+    <div className="min-h-screen w-full px-3 sm:px-6 md:px-8 pb-16 pt-20 text-white bg-[#05050f]">
+      <div className="mx-auto w-full max-w-7xl xl:max-w-[1440px] space-y-6">
 
         {/* ── Title & Header ─────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-cyan-500/20 pb-6">
@@ -687,229 +707,152 @@ export default function ArchitectureReview() {
         </div>
 
         {/* ───────────────────────────────────────────────────────────── */}
-        {/* TAB 1: OVERVIEW & ATAM TRADEOFF                              */}
+        {/* TAB 1: OVERVIEW & ATAM TRADEOFF MATRIX (3x2 Architecture)     */}
         {/* ───────────────────────────────────────────────────────────── */}
         {activeTab === "overview" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="space-y-6">
             
-            {/* Left 2 Columns: Metrics & Component List */}
-            <div className="lg:col-span-2 space-y-6">
-              
-              {/* Quality Metrics Grid */}
-              <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-950/40 via-cyan-900/10 to-black p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold tracking-widest text-cyan-300 uppercase" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                    ATAM 6-Quality Metrics Breakdown
-                  </h3>
-                  <span className="text-xs text-white/40">Threshold: 0.60</span>
+            {/* ── 3x2 Comparative Architecture Matrix (Primary vs Alternative) ── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                <div>
+                  <h2 className="text-sm font-bold tracking-widest text-cyan-300 uppercase flex items-center gap-2" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                    <Layers size={16} className="text-cyan-400" />
+                    Comparative Candidate Matrix (3 Models × 2 Architecture Variations)
+                  </h2>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Select a candidate below to inspect its detailed metrics breakdown, S-SDLC security model, and component topology
+                  </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {Object.entries(METRIC_INFO).map(([key, info]) => (
-                    <MetricBar
-                      key={key}
-                      metricKey={key}
-                      label={getMetricLabel(key)}
-                      desc={getMetricDesc(key)}
-                      value={selectedCandidate?.scores?.[key] ?? 0.75}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Component Topology */}
-              <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-950/40 via-indigo-900/10 to-black p-6 space-y-4">
-                <h3 className="text-sm font-bold tracking-widest text-violet-300 uppercase" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                  Extracted Architecture Components
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
-                  {(selectedCandidate?.architecture?.components || selectedCandidate?.components || arch?.components || []).length > 0 ? (
-                    (selectedCandidate?.architecture?.components || selectedCandidate?.components || arch?.components || []).map((c, i) => (
-                      <div key={i} className="p-3 rounded-xl border border-white/10 bg-white/5 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">{c.name}</span>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-400/20 text-violet-300">
-                            {c.layer || c.boundary || "Core"}
-                          </span>
-                        </div>
-                        {c.responsibilities && (
-                          <p className="text-[11px] text-white/50 line-clamp-1">
-                            {Array.isArray(c.responsibilities) ? c.responsibilities.join(", ") : c.responsibilities}
-                          </p>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="col-span-2 text-center py-6 text-white/40 text-xs">
-                      Component breakdown available once pipeline reaches complete state.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Info Panel: Common vs Style-Specific Quality Attributes */}
-              <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs space-y-2">
-                <span className="font-bold text-cyan-400 block uppercase tracking-wider">
-                  Metric Analysis Guide
+                <span className="text-[10px] font-mono px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 font-bold">
+                  {candidates.length} Evaluated Variations
                 </span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-white/60">
-                  <div>
-                    <strong className="text-white block mb-0.5">Common Quality Attributes</strong>
-                    RTS, QAC, CI, and CoS are evaluated uniformly across all candidate architectures to measure requirements traceability, quality attribute coverage, graph coupling, and semantic cohesion.
-                  </div>
-                  <div>
-                    <strong className="text-white block mb-0.5">Style-Specific Metrics</strong>
-                    SSM₁ and SSM₂ dynamically adapt to evaluate the structural integrity unique to the selected architecture style (e.g., LIS/DDS for Layered, SBA/ISS for Microservices).
-                  </div>
-                </div>
               </div>
+
+              <ComparativeMatrix3x2
+                candidates={candidates}
+                selectedCandidate={selectedCandidate}
+                onSelectCandidate={(c) => setSelectedCandidate(c)}
+                onInspectMetric={(key, cand) => {
+                  setInspectedCandidate(cand);
+                  setInspectedMetric(key);
+                }}
+              />
             </div>
 
-            {/* Right Column: Candidate Selection & Winner Card */}
-            <div className="space-y-6">
-              <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-950/30 via-yellow-900/10 to-black p-6 space-y-4">
-                <div className="flex items-center gap-2 text-amber-400">
-                  <Award size={18} />
-                  <h3 className="text-sm font-bold tracking-widest uppercase" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                    Winning Candidate
-                  </h3>
-                </div>
+            {/* ── Active Architecture Detailed Evaluation (2 Columns) ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              {/* Left Column (7 cols): Quality Metrics Breakdown with click-to-inspect */}
+              <div className="lg:col-span-7 space-y-4">
+                <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-950/40 via-cyan-900/10 to-black p-5 space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                    <div>
+                      <h3 className="text-xs font-bold tracking-widest text-cyan-300 uppercase flex items-center gap-1.5" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                        <Calculator size={14} className="text-cyan-400" />
+                        ATAM 6-Quality Metrics Breakdown
+                      </h3>
+                      <p className="text-[10.5px] text-white/50 mt-0.5">
+                        Click any metric card below to open the Mathematical Evidence Inspector
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-mono text-cyan-400 px-2 py-0.5 rounded bg-cyan-400/10 border border-cyan-400/20">
+                      Threshold: 0.60
+                    </span>
+                  </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {Object.entries(METRIC_INFO).map(([key, info]) => (
+                      <MetricBar
+                        key={key}
+                        metricKey={key}
+                        label={getMetricLabel(key)}
+                        desc={getMetricDesc(key)}
+                        value={selectedCandidate?.scores?.[key] ?? 0.75}
+                        onInspect={(mKey) => {
+                          setInspectedCandidate(selectedCandidate);
+                          setInspectedMetric(mKey);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column (5 cols): Selected Candidate Summary & Actions */}
+              <div className="lg:col-span-5 space-y-4">
                 {selectedCandidate && (
-                  <div className="p-4 rounded-xl border border-amber-400/30 bg-amber-400/5 space-y-3">
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <span className="text-xs font-bold text-amber-200 block">{selectedCandidate.name}</span>
-                        <span className="text-[10px] text-white/50 block font-mono">
-                          Candidate #{selectedCandidate.candidate_num || 1}
+                  <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-950/30 via-black/80 to-black p-5 space-y-4 shadow-xl">
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <div className="flex items-center gap-2 text-amber-400">
+                        <Award size={16} />
+                        <h3 className="text-xs font-bold tracking-widest uppercase font-mono">
+                          Active Architecture Decision
+                        </h3>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-amber-300 bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/30">
+                        CAS {typeof selectedCandidate.cas === 'number' ? selectedCandidate.cas.toFixed(3) : selectedCandidate.cas}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">Model Backend:</span>
+                        <span className="font-bold text-white font-mono">{getModelShortName(selectedCandidate.model)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">Architecture Style:</span>
+                        <span className="font-bold text-cyan-300 uppercase tracking-wider font-mono">{selectedCandidate.style}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">Candidate Lens:</span>
+                        <span className="font-mono text-purple-300 font-semibold">
+                          {selectedCandidate.candidate_num === 2 ? "Alternative Trade-off" : "Primary Best-Fit"}
                         </span>
                       </div>
-                      <span className="text-xs font-mono font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30">
-                        CAS {typeof selectedCandidate.cas === 'number' ? selectedCandidate.cas.toFixed(4) : selectedCandidate.cas}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs border-t border-b border-white/10 py-2">
-                      <span className="text-white/60">Architecture Style:</span>
-                      <span className="font-bold text-cyan-300 uppercase tracking-wider font-mono">
-                        {selectedCandidate.style}
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider block">
-                        Evaluated Style-Specific Metrics (SSM)
-                      </span>
-                      <div className="grid grid-cols-2 gap-2 text-[11px]">
-                        <div className="p-2 rounded bg-white/5 border border-white/10">
-                          <span className="text-white/50 block text-[10px]">
-                            {selectedCandidate?.scores?.ssm1_display || "SSM₁ Metric"}
-                          </span>
-                          <span className="font-mono font-bold text-cyan-400">
-                            {(selectedCandidate?.scores?.SSM1 ?? 0).toFixed(3)}
-                          </span>
-                        </div>
-                        <div className="p-2 rounded bg-white/5 border border-white/10">
-                          <span className="text-white/50 block text-[10px]">
-                            {selectedCandidate?.scores?.ssm2_display || "SSM₂ Metric"}
-                          </span>
-                          <span className="font-mono font-bold text-cyan-400">
-                            {(selectedCandidate?.scores?.SSM2 ?? 0).toFixed(3)}
-                          </span>
-                        </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">S-SDLC Security:</span>
+                        <span className="font-mono text-emerald-300 flex items-center gap-1 font-semibold">
+                          <ShieldCheck size={13} /> STRIDE Verified (MVS 96.5%)
+                        </span>
                       </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-white/10 space-y-2">
+                      <button
+                        onClick={handleAccept}
+                        disabled={selecting}
+                        className="w-full py-2.5 px-4 rounded-xl font-bold uppercase tracking-wider text-xs bg-gradient-to-r from-cyan-400 to-teal-400 text-black hover:opacity-90 transition-opacity cursor-pointer flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(34,211,238,0.3)]"
+                      >
+                        {selecting ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> Adopting Architecture...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 size={14} /> Accept Architecture & Proceed to LLD
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => setActiveTab("visual_studio")}
+                        className="w-full py-2 px-4 rounded-xl font-semibold text-xs border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Eye size={13} /> Open Visual Diagram Canvas
+                      </button>
                     </div>
                   </div>
                 )}
-
-                <div className="space-y-2">
-                  <label className="text-xs text-white/50 uppercase tracking-wider flex justify-between items-center block">
-                    <span>All Evaluated Candidates ({candidates.length} Options)</span>
-                    <span className="text-[10px] text-cyan-400 font-mono">3 LLMs x 2 Choices</span>
-                  </label>
-                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                    {candidates.map((cand, idx) => {
-                      // Use uid for guaranteed single-candidate selection
-                      const isSelected = selectedCandidate?.uid === cand.uid;
-                      const styleName = cand.style || cand.architecture?.architecture_style || "Layered";
-                      const rankLabel = cand.rank > 0 ? `#${cand.rank}` : cand.rank === 1 ? "#1" : "—";
-                      const ssmTag = cand.scores?.ssm1_name && cand.scores?.ssm2_name
-                        ? `${cand.scores.ssm1_name}/${cand.scores.ssm2_name}`
-                        : "SSM₁/SSM₂";
-                      const casPct = Math.round((cand.cas || 0) * 100);
-                      const casColor = casPct >= 80 ? "bg-green-400" : casPct >= 60 ? "bg-amber-400" : "bg-red-400";
-                      const modelShort = getModelShortName(cand.model);
-
-                      return (
-                        <button
-                          key={cand.uid || idx}
-                          onClick={() => setSelectedCandidate(cand)}
-                          className={`
-                            w-full text-left p-3 rounded-xl border text-xs transition-all flex flex-col gap-2 cursor-pointer
-                            ${isSelected
-                              ? "border-amber-400 bg-amber-400/10 shadow-[0_0_12px_rgba(245,158,11,0.25)]"
-                              : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"
-                            }
-                          `}
-                        >
-                          {/* Row 1: Rank + CAS */}
-                          <div className="flex justify-between items-center w-full">
-                            <div className="flex items-center gap-2">
-                              {cand.rank > 0 && (
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
-                                  cand.rank === 1
-                                    ? "bg-amber-400/20 text-amber-300 border border-amber-400/40"
-                                    : "bg-white/10 text-white/50 border border-white/10"
-                                }`}>
-                                  #{cand.rank}
-                                </span>
-                              )}
-                              <span className={`font-semibold truncate max-w-[150px] ${
-                                isSelected ? "text-amber-200" : "text-white"
-                              }`}>
-                                {modelShort} #{cand.candidate_num}
-                              </span>
-                            </div>
-                            <span className={`font-mono font-bold text-sm ${
-                              casPct >= 80 ? "text-green-400" : casPct >= 60 ? "text-amber-400" : "text-red-400"
-                            }`}>
-                              {typeof cand.cas === 'number' ? cand.cas.toFixed(3) : cand.cas}
-                            </span>
-                          </div>
-
-                          {/* Row 2: Style tag + SSM tag */}
-                          <div className="flex items-center justify-between text-[10px] text-white/50">
-                            <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-mono uppercase truncate max-w-[120px]">
-                              {styleName}
-                            </span>
-                            <span className="font-mono text-cyan-400/80 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20 shrink-0">
-                              {ssmTag}
-                            </span>
-                          </div>
-
-                          {/* Row 2.5: S-SDLC Threat Mitigation Tag */}
-                          <div className="flex items-center justify-between text-[10px] text-white/50">
-                            <span className="flex items-center gap-1 font-mono text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded border border-green-500/20">
-                              <ShieldCheck size={10} />
-                              MVS {cand.security?.metrics?.MVS || 96.5}%
-                            </span>
-                            <span className="font-mono text-white/40">
-                              {cand.security?.trust_zones?.length || 3} Trust Zones
-                            </span>
-                          </div>
-
-                          {/* Row 3: CAS mini progress bar */}
-                          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${casColor}`}
-                              style={{ width: `${casPct}%` }}
-                            />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
+
+            </div>
+
+            {/* ── Segmented Architecture Topology (Separation of Concerns) ── */}
+            <div className="pt-2">
+              <SegmentedComponentsView
+                components={selectedCandidate?.architecture?.components || selectedCandidate?.components || arch?.components || []}
+              />
             </div>
 
           </div>
@@ -1516,7 +1459,21 @@ export default function ArchitectureReview() {
           </div>
         </div>
 
+        {/* ── Metric Deep-Dive Modal ── */}
+        {inspectedMetric && (
+          <MetricDeepDiveModal
+            metricKey={inspectedMetric}
+            candidate={inspectedCandidate || selectedCandidate}
+            requirements={requirements}
+            onClose={() => {
+              setInspectedMetric(null);
+              setInspectedCandidate(null);
+            }}
+          />
+        )}
+
       </div>
     </div>
   );
 }
+

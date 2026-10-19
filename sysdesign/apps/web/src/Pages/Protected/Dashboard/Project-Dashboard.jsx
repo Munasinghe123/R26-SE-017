@@ -450,7 +450,7 @@ export default function ProjectDashboard() {
       <main className="min-w-0 flex-1 overflow-y-auto custom-scrollbar">
         <div className="flex min-h-full items-center justify-center py-10 px-4 md:px-8">
           {(currentUser?.role === "USER" || !currentUser?.role) &&
-          safeProjects.length === 0 ? (
+            safeProjects.length === 0 ? (
             <EmptyProjectState
               onCreateProject={() => setShowCreateProject(true)}
             />
@@ -564,8 +564,8 @@ export default function ProjectDashboard() {
 
                         {/* PRODUCT OWNER / USER */}
                         {currentUser?.role === "PRODUCT_OWNER" ||
-                        currentUser?.role === "USER" ||
-                        !currentUser?.role ? (
+                          currentUser?.role === "USER" ||
+                          !currentUser?.role ? (
                           analysisStatus === "waiting" ? (
                             <>
                               <div className="mt-6 flex w-fit items-center gap-3 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-5 py-3.5 text-sm font-medium uppercase tracking-[2px] text-cyan-300">
@@ -604,7 +604,7 @@ export default function ProjectDashboard() {
                                         className="relative z-10 text-cyan-300 group-hover:text-white transition-colors"
                                       />
                                       <span className="tracking-[2px]">
-                                        Continue for HLD (temp)
+                                        Continue for HLD
                                       </span>
                                     </>
                                   )}
@@ -672,7 +672,7 @@ export default function ProjectDashboard() {
                           )
                         ) : currentUser?.role === "CLIENT" ? (
                           analysisStatus === "waiting" ||
-                          activeProject?.latest_meeting_id ? (
+                            activeProject?.latest_meeting_id ? (
                             <div className="mt-5 space-y-3">
                               <div className="flex items-center gap-3 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-sm">
                                 <div>
@@ -785,12 +785,12 @@ export default function ProjectDashboard() {
               return prevList.map((project) =>
                 project.id === projectId
                   ? {
-                      ...project,
-                      thread_id: threadId,
-                      latest_meeting_id: threadId,
-                      meeting_id: threadId,
-                      analysis_status: "waiting",
-                    }
+                    ...project,
+                    thread_id: threadId,
+                    latest_meeting_id: threadId,
+                    meeting_id: threadId,
+                    analysis_status: "waiting",
+                  }
                   : project,
               );
             });

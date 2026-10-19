@@ -62,8 +62,8 @@ PROVIDER_MODELS = {
 # Temperature — configurable for research (temperature study)
 GENERATION_TEMPERATURE = float(os.getenv("GENERATION_TEMPERATURE", "0.1"))
 
-# Max candidates per model (1 candidate per model = 3 distinct models in parallel)
-MAX_CANDIDATES_PER_MODEL = int(os.getenv("MAX_CANDIDATES_PER_MODEL", "1"))
+# Max candidates per model (2 candidates per model = 3 models × 2 variations: Primary + Alternative)
+MAX_CANDIDATES_PER_MODEL = int(os.getenv("MAX_CANDIDATES_PER_MODEL", "2"))
 
 # For backward compatibility
 CANDIDATES_PER_MODEL = MAX_CANDIDATES_PER_MODEL

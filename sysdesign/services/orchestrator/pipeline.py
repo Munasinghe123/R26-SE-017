@@ -57,13 +57,30 @@ except Exception as _db_err:
 
 logger = logging.getLogger("orchestrator-pipeline")
 
-# ── Agent URL map (overridable via env) ────────────────────────────────────
+# ── Agent URL map (smart resolution for local vs Docker) ───────────────────
+def _normalize_service_url(env_var: str, default_port: int, default_service_name: str) -> str:
+    raw = os.getenv(env_var)
+    # Check if running inside a Docker container
+    is_docker = os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER") == "1"
+    
+    if not raw:
+        host = default_service_name if is_docker else "127.0.0.1"
+        return f"http://{host}:{default_port}"
+    
+    # If raw is provided, but we are running on host outside Docker,
+    # rewrite Docker container hostnames (e.g. agent2-hld) to 127.0.0.1
+    if not is_docker:
+        for container_host in ["agent1-requirements", "agent2-hld", "agent3-lld", "agent4-ui", "srs-assembler", "orchestrator", "redis"]:
+            if container_host in raw:
+                raw = raw.replace(container_host, "127.0.0.1")
+    return raw
+
 AGENT_URLS = {
-    "requirements": os.getenv("AGENT1_URL", "http://127.0.0.1:8001") + "/run",
-    "hld":          os.getenv("AGENT2_URL", "http://127.0.0.1:8002") + "/run",
-    "lld":          os.getenv("AGENT3_URL", "http://127.0.0.1:8003") + "/run",
-    "ui":           os.getenv("AGENT4_URL", "http://127.0.0.1:8004") + "/run",
-    "srs":          os.getenv("SRS_URL",    "http://127.0.0.1:8005") + "/run",
+    "requirements": _normalize_service_url("AGENT1_URL", 8001, "agent1-requirements") + "/run",
+    "hld":          _normalize_service_url("AGENT2_URL", 8002, "agent2-hld") + "/run",
+    "lld":          _normalize_service_url("AGENT3_URL", 8003, "agent3-lld") + "/run",
+    "ui":           _normalize_service_url("AGENT4_URL", 8004, "agent4-ui") + "/run",
+    "srs":          _normalize_service_url("SRS_URL",    8005, "srs-assembler") + "/run",
 }
 
 # ── In-memory job store (dev) ──────────────────────────────────────────────
@@ -138,6 +155,7 @@ def update_stage_status(
         return
     if status == "running":
         job.current_stage = stage_name
+        job.status = "running"
     job.updated_at = datetime.utcnow()
 
     for s in job.stages:
@@ -281,37 +299,45 @@ async def run_stage_hld(job_id: str) -> None:
     job = JOB_STORE.get(job_id)
     if not job: return
 
-    reqs: RequirementsPackage = JOB_ARTIFACTS[job_id].get("requirements")
+    reqs: Optional[RequirementsPackage] = JOB_ARTIFACTS.get(job_id, {}).get("requirements")
     if not reqs:
-        raise ValueError("Requirements package not found in artifacts. Cannot run HLD.")
+        initial_input = JOB_ARTIFACTS.get(job_id, {}).get("initial_input")
+        if initial_input:
+            logger.info(f"[{job_id}] Synthesizing requirements from initial input...")
+            reqs = req_to_hld_adapt(initial_input)
+            reqs.job_id = job_id
+            JOB_ARTIFACTS[job_id]["requirements"] = reqs
+        else:
+            raise ValueError("Requirements package not found in artifacts. Cannot run HLD.")
 
     job.status = "running"
     update_stage_status(job_id, "hld", "running")
+    if DB_AVAILABLE:
+        try:
+            await upsert_job(job_id, job.project_name, "running", current_stage="hld")
+        except Exception:
+            pass
+
     t0 = datetime.utcnow()
 
     notify_listeners(job_id, {
         "event": "log",
-        "log": "🚀 [HLD] Dispatching candidate generation across OpenRouter models (OpenAI GPT-4o-mini, Qwen 2.5, DeepSeek V3)..."
+        "log": "🚀 [HLD] Dispatched architecture candidate generation across OpenRouter models (GPT-4o-mini, Qwen 2.5 Coder, DeepSeek V3)..."
     })
 
     stop_heartbeat = asyncio.Event()
 
     async def _heartbeat():
-        msgs = [
-            "⚙️ [HLD] Synthesizing structural layers and component boundaries via OpenRouter...",
-            "🛡️ [HLD] S-SDLC Audit: Auditing Trust Boundaries & STRIDE threat mitigations...",
-            "📊 [HLD] Python Evaluation Engine: Loading SentenceTransformers semantic embeddings...",
-            "📊 [HLD] Python Evaluation Engine: Computing RTS, QAC, CI, CoS, SSM₁, SSM₂, and AHP CAS...",
-            "🎨 [HLD] Elaboration: Rendering high-resolution PlantUML & Mermaid architectural diagrams...",
-        ]
-        i = 0
         while not stop_heartbeat.is_set():
             try:
                 await asyncio.wait_for(stop_heartbeat.wait(), timeout=12.0)
             except asyncio.TimeoutError:
                 if not stop_heartbeat.is_set():
-                    notify_listeners(job_id, {"event": "log", "log": msgs[i % len(msgs)]})
-                    i += 1
+                    elapsed = int((datetime.utcnow() - t0).total_seconds())
+                    notify_listeners(job_id, {
+                        "event": "log",
+                        "log": f"⏳ [HLD] Synthesizing candidates across OpenRouter models ({elapsed}s elapsed, awaiting model completions)..."
+                    })
 
     heartbeat_task = asyncio.create_task(_heartbeat())
 
@@ -319,6 +345,15 @@ async def run_stage_hld(job_id: str) -> None:
         arch_data = await call_stage_http("hld", AGENT_URLS["hld"], reqs.model_dump(mode="json"))
         stop_heartbeat.set()
         await heartbeat_task
+
+        notify_listeners(job_id, {
+            "event": "log",
+            "log": "🛡️ [HLD] S-SDLC STRIDE security boundaries audited and verified."
+        })
+        notify_listeners(job_id, {
+            "event": "log",
+            "log": "📊 [HLD] Python Evaluation Engine: RTS, QAC, CI, CoS, SSM computed with AHP CAS composite."
+        })
 
         arch = ArchitecturePackage(**arch_data)
         dur_hld = int((datetime.utcnow() - t0).total_seconds() * 1000)

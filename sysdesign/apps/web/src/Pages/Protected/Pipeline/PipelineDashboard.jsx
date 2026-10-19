@@ -89,10 +89,32 @@ export default function PipelineDashboard() {
   const [architecture, setArchitecture] = useState(null);
   const logsRef = useRef(null);
   const esRef   = useRef(null);
+  const [isStartingHld, setIsStartingHld] = useState(false);
 
   const addLog = useCallback((msg) =>
     setLogs(prev => [...prev.slice(-49), `${new Date().toLocaleTimeString()} — ${msg}`]),
   []);
+
+  const handleStartHld = async () => {
+    if (isStartingHld) return;
+    setIsStartingHld(true);
+    setJob(prev => prev ? { ...prev, status: "running", current_stage: "hld" } : prev);
+    try {
+      const res = await fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-hld`, { method: "POST" });
+      if (!res.ok) {
+        setIsStartingHld(false);
+      }
+    } catch (err) {
+      console.error("Failed to start HLD:", err);
+      setIsStartingHld(false);
+    }
+  };
+
+  useEffect(() => {
+    if (job?.status && job.status !== "waiting_for_hld") {
+      setIsStartingHld(false);
+    }
+  }, [job?.status]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -106,9 +128,6 @@ export default function PipelineDashboard() {
           const stageMap = {};
           (data.job.stages || []).forEach(s => {
             stageMap[s.stage] = s;
-            if (s.status === "complete" || s.status === "running") {
-              addLog(`[${s.stage.toUpperCase()}] → ${s.status}${s.duration_ms ? ` (${(s.duration_ms/1000).toFixed(1)}s)` : ""}`);
-            }
           });
           setStages(stageMap);
         }
@@ -193,19 +212,19 @@ export default function PipelineDashboard() {
   const progress = Math.round((completeCount / STAGES.length) * 100);
 
   return (
-    <div className="min-h-screen w-full px-6 pb-20 pt-24 text-white">
-      <div className="mx-auto w-full max-w-6xl space-y-8">
+    <div className="min-h-screen w-full px-2 sm:px-6 md:px-8 pb-12 pt-16 text-white">
+      <div className="mx-auto w-full max-w-7xl xl:max-w-[1440px] space-y-4">
 
         {/* ── Heading ───────────────────────────────────────────────────── */}
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-1">
           <h1
-            className="text-5xl font-bold text-white"
+            className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white tracking-tight"
             style={{ fontFamily: "Orbitron, sans-serif" }}
           >
             Project <span className="text-cyan-300">Progress</span>
           </h1>
-          <p className="text-white/50 text-sm tracking-widest uppercase">
-            Job ID: <span className="text-cyan-400 font-mono">{jobId}</span>
+          <p className="text-white/50 text-xs sm:text-sm tracking-wider uppercase font-mono">
+            Job ID: <span className="text-cyan-400 font-semibold">{jobId}</span>
             &nbsp;&nbsp;·&nbsp;&nbsp;
             Status: <span className={`font-bold ${sl.cls}`}>{sl.text}</span>
           </p>
@@ -214,11 +233,11 @@ export default function PipelineDashboard() {
         {/* ── Main Pipeline Card ────────────────────────────────────────── */}
         <div
           className="
-            relative w-full overflow-hidden rounded-3xl
+            relative w-full overflow-hidden rounded-2xl
             border border-cyan-400/20
-            bg-gradient-to-br from-cyan-800/60 via-cyan-950/70 to-black
-            shadow-[0_0_60px_rgba(34,211,238,0.20)]
-            p-8
+            bg-gradient-to-br from-cyan-900/40 via-black/80 to-black
+            shadow-[0_0_50px_rgba(34,211,238,0.12)]
+            p-4 sm:p-5
           "
         >
           {/* Beehive decorations */}
@@ -226,7 +245,7 @@ export default function PipelineDashboard() {
           <img src={beehiveBg} alt="" className="pointer-events-none absolute -bottom-20 -right-20 w-72 rotate-180 opacity-10" />
 
           {/* Progress bar */}
-          <div className="relative z-10 mb-8">
+          <div className="relative z-10 mb-4 sm:mb-6">
             <div className="flex justify-between text-xs text-white/40 mb-1">
               <span>Overall Progress</span>
               <span>{progress}%</span>
@@ -282,22 +301,24 @@ export default function PipelineDashboard() {
         {/* ── Live Logs Card ────────────────────────────────────────────── */}
         <div
           className="
-            relative w-full overflow-hidden rounded-3xl
+            relative w-full overflow-hidden rounded-2xl
             border border-white/10
             bg-black/50 backdrop-blur-md
             shadow-[0_0_30px_rgba(34,211,238,0.05)]
-            p-6
+            p-4 sm:p-5
           "
         >
-          <h2
-            className="text-lg font-semibold text-white/70 mb-3 uppercase tracking-widest"
-            style={{ fontFamily: "Orbitron, sans-serif" }}
-          >
-            Live Logs
-          </h2>
+          <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/5">
+            <h2
+              className="text-xs font-semibold text-white/70 uppercase tracking-widest font-mono"
+            >
+              Live Pipeline Stream
+            </h2>
+            <span className="text-[10px] font-mono text-cyan-400">SSE Real-Time</span>
+          </div>
           <div
             ref={logsRef}
-            className="h-48 overflow-y-auto font-mono text-xs text-green-300/80 space-y-1 pr-2"
+            className="h-36 overflow-y-auto font-mono text-xs text-green-300/80 space-y-1 pr-2"
           >
             {logs.length === 0 ? (
               <span className="text-white/30">Waiting for pipeline events...</span>
@@ -310,73 +331,89 @@ export default function PipelineDashboard() {
         </div>
 
         {/* ── Status-specific Action Cards ─────────────────────────────── */}
-        {job?.status === "running" && (
-          <div className="relative overflow-hidden rounded-3xl border border-cyan-400/40 bg-gradient-to-br from-cyan-900/30 to-black shadow-[0_0_40px_rgba(34,211,238,0.15)] p-6 flex items-center justify-between gap-4">
+        {(job?.status === "running" || stages?.hld?.status === "running" || isStartingHld) && (
+          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-gradient-to-br from-cyan-900/30 via-black/80 to-black shadow-xl p-5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <Loader2 className="text-cyan-400 animate-spin" size={24} />
+              <Loader2 className="text-cyan-400 animate-spin" size={20} />
               <div>
-                <h2 className="text-xl font-bold text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                  Executing {STAGES[currentStageIndex]?.label || "Pipeline Stage"}...
+                <h2 className="text-base font-bold text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>
+                  Executing {STAGES[currentStageIndex]?.label || "High-Level Architecture (HLD)"}...
                 </h2>
-                <p className="text-white/50 text-sm">Multi-agent models are synthesizing diagrams and architecture in real-time.</p>
+                <p className="text-white/50 text-xs mt-0.5">Multi-agent models are synthesizing diagrams and architecture in real-time.</p>
               </div>
             </div>
           </div>
         )}
 
-        {job?.status === "waiting_for_hld" && (
-          <div className="relative overflow-hidden rounded-3xl border border-cyan-400/40 bg-gradient-to-br from-cyan-900/30 to-black shadow-[0_0_40px_rgba(34,211,238,0.15)] p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+        {job?.status === "waiting_for_hld" && !isStartingHld && stages?.hld?.status !== "running" && (
+          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-gradient-to-br from-cyan-950/40 via-black/80 to-black shadow-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>Requirements Approved</h2>
-              <p className="text-white/50 text-sm">Ready to generate High-Level Design Architecture.</p>
+              <h2 className="text-lg font-bold text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>Requirements Approved</h2>
+              <p className="text-white/50 text-xs mt-0.5">Ready to synthesize multi-model High-Level Architecture candidates.</p>
             </div>
-            <button onClick={() => fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-hld`, { method: "POST" })} className="flex items-center gap-2 px-5 py-3 text-sm font-medium uppercase tracking-widest text-cyan-900 bg-cyan-400 rounded-full cursor-pointer hover:bg-cyan-300 transition-colors duration-200">
-              Generate HLD <ChevronRight size={16} />
+            <button
+              disabled={isStartingHld}
+              onClick={handleStartHld}
+              className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider rounded-full transition-all duration-200 cursor-pointer ${
+                isStartingHld
+                  ? "bg-cyan-950/80 text-cyan-400/50 border border-cyan-500/30 cursor-not-allowed"
+                  : "text-cyan-950 bg-cyan-400 hover:bg-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.25)]"
+              }`}
+            >
+              {isStartingHld ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> Starting HLD...
+                </>
+              ) : (
+                <>
+                  Generate HLD <ChevronRight size={14} />
+                </>
+              )}
             </button>
           </div>
         )}
 
         {job?.status === "waiting_for_lld_ui" && (
-          <div className="relative overflow-hidden rounded-3xl border border-violet-400/40 bg-gradient-to-br from-violet-900/30 to-black shadow-[0_0_40px_rgba(139,92,246,0.15)] p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="relative overflow-hidden rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-900/30 via-black/80 to-black shadow-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-violet-300" style={{ fontFamily: "Orbitron, sans-serif" }}>Architecture Generated</h2>
-              <p className="text-white/50 text-sm">Review the architecture and confirm to proceed to Low-Level Design.</p>
+              <h2 className="text-lg font-bold text-violet-300" style={{ fontFamily: "Orbitron, sans-serif" }}>Architecture Generated</h2>
+              <p className="text-white/50 text-xs mt-0.5">Review the evaluated candidates and proceed to Low-Level Design.</p>
             </div>
-            <button onClick={() => navigate(`/pipeline/${jobId}/architecture`)} className="flex items-center gap-2 px-5 py-3 text-sm font-medium uppercase tracking-widest text-violet-900 bg-violet-400 rounded-full cursor-pointer hover:bg-violet-300 transition-colors duration-200">
-              Review Architecture <ChevronRight size={16} />
+            <button onClick={() => navigate(`/pipeline/${jobId}/architecture`)} className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-violet-900 bg-violet-400 rounded-full cursor-pointer hover:bg-violet-300 transition-colors duration-200 shadow-[0_0_20px_rgba(139,92,246,0.25)]">
+              Review Architecture <ChevronRight size={14} />
             </button>
           </div>
         )}
 
         {job?.status === "waiting_for_ui" && (
-          <div className="relative overflow-hidden rounded-3xl border border-blue-400/40 bg-gradient-to-br from-blue-900/30 to-black shadow-[0_0_40px_rgba(59,130,246,0.15)] p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-gradient-to-br from-blue-900/30 via-black/80 to-black shadow-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-blue-300" style={{ fontFamily: "Orbitron, sans-serif" }}>Low-Level Design Complete</h2>
-              <p className="text-white/50 text-sm">Review the multi-model UML generation and proceed to UI Prototypes.</p>
+              <h2 className="text-lg font-bold text-blue-300" style={{ fontFamily: "Orbitron, sans-serif" }}>Low-Level Design Complete</h2>
+              <p className="text-white/50 text-xs mt-0.5">Inspect the generated class and sequence diagrams before proceeding.</p>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={() => navigate(`/pipeline/${jobId}/lld`)} className="flex items-center gap-2 px-5 py-3 text-sm font-medium uppercase tracking-widest text-white/90 bg-blue-950/80 border border-blue-400/50 rounded-full cursor-pointer hover:bg-blue-900 transition-colors duration-200">
-                Review LLD <ChevronRight size={16} />
-              </button>
-              <button onClick={() => fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-ui`, { method: "POST" })} className="flex items-center gap-2 px-5 py-3 text-sm font-medium uppercase tracking-widest text-blue-900 bg-blue-400 rounded-full cursor-pointer hover:bg-blue-300 transition-colors duration-200">
-                Generate UI <ChevronRight size={16} />
+              <button
+                onClick={() => navigate(`/pipeline/${jobId}/lld`)}
+                className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-white bg-blue-950/80 border border-blue-400/50 rounded-full cursor-pointer hover:bg-blue-900 transition-colors duration-200 shadow-[0_0_20px_rgba(59,130,246,0.25)]"
+              >
+                Review LLD Diagrams <ChevronRight size={14} />
               </button>
             </div>
           </div>
         )}
 
         {job?.status === "waiting_for_srs" && (
-          <div className="relative overflow-hidden rounded-3xl border border-pink-400/40 bg-gradient-to-br from-pink-900/30 to-black shadow-[0_0_40px_rgba(236,72,153,0.15)] p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="relative overflow-hidden rounded-2xl border border-pink-400/30 bg-gradient-to-br from-pink-900/30 via-black/80 to-black shadow-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-pink-300" style={{ fontFamily: "Orbitron, sans-serif" }}>UI Prototypes Complete</h2>
-              <p className="text-white/50 text-sm">Review the interactive UI prototypes or assemble the final SRS.</p>
+              <h2 className="text-lg font-bold text-pink-300" style={{ fontFamily: "Orbitron, sans-serif" }}>UI Prototypes Complete</h2>
+              <p className="text-white/50 text-xs mt-0.5">Review the interactive UI prototypes or assemble the final SRS.</p>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={() => navigate(`/pipeline/${jobId}/ui`)} className="flex items-center gap-2 px-5 py-3 text-sm font-medium uppercase tracking-widest text-white/90 bg-pink-950/80 border border-pink-400/50 rounded-full cursor-pointer hover:bg-pink-900 transition-colors duration-200">
-                Review UI <ChevronRight size={16} />
+              <button onClick={() => navigate(`/pipeline/${jobId}/ui`)} className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-white/90 bg-pink-950/80 border border-pink-400/50 rounded-full cursor-pointer hover:bg-pink-900 transition-colors duration-200">
+                Review UI <ChevronRight size={14} />
               </button>
-              <button onClick={() => fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-srs`, { method: "POST" })} className="flex items-center gap-2 px-5 py-3 text-sm font-medium uppercase tracking-widest text-pink-900 bg-pink-400 rounded-full cursor-pointer hover:bg-pink-300 transition-colors duration-200">
-                Assemble SRS <ChevronRight size={16} />
+              <button onClick={() => fetch(`${ORCHESTRATOR}/jobs/${jobId}/start-srs`, { method: "POST" })} className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-pink-900 bg-pink-400 rounded-full cursor-pointer hover:bg-pink-300 transition-colors duration-200 shadow-[0_0_20px_rgba(236,72,153,0.25)]">
+                Assemble SRS <ChevronRight size={14} />
               </button>
             </div>
           </div>

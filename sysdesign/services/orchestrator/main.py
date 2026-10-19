@@ -69,8 +69,16 @@ async def start_hld(job_id: str, background_tasks: BackgroundTasks):
     job = get_job_state(job_id) or await restore_job_from_db(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    job.status = "running"
+    job.current_stage = "hld"
+    update_stage_status(job_id, "hld", "running")
+    if DB_AVAILABLE:
+        try:
+            await upsert_job(job_id, job.project_name, "running", current_stage="hld")
+        except Exception:
+            pass
     background_tasks.add_task(run_stage_hld, job_id)
-    return {"job_id": job_id, "status": "queued", "message": "HLD stage queued"}
+    return {"job_id": job_id, "status": "running", "message": "HLD stage started", "job": job.model_dump(mode="json")}
 
 
 @app.post("/jobs/{job_id}/start-lld")

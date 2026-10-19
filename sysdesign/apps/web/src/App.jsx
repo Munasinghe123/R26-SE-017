@@ -34,7 +34,7 @@ function AppLayout() {
   const isProjectDashboard  = location.pathname.startsWith("/project-dashboard");
 
   // Pipeline pages get the StarBackground but no Footer (they're full-screen experiences)
-  const isPipelinePage   = location.pathname.startsWith("/pipeline/");
+  const isPipelinePage   = location.pathname.includes("/pipeline");
 
   return (
     <>

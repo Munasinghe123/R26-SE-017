@@ -24,7 +24,7 @@ OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/ap
 LLM_MODEL = os.getenv("AGENT4_LLM_MODEL", "qwen/qwen3-coder")
 LLM_TEMPERATURE = float(os.getenv("AGENT4_LLM_TEMPERATURE", "0.2"))
 PLANNER_MAX_TOKENS = int(os.getenv("AGENT4_PLANNER_MAX_TOKENS", "1800"))
-GENERATOR_MAX_TOKENS = int(os.getenv("AGENT4_GENERATOR_MAX_TOKENS", "4096"))
+GENERATOR_MAX_TOKENS = int(os.getenv("AGENT4_GENERATOR_MAX_TOKENS", "8192"))
 
 # ── Evaluation / refinement ──────────────────────────────
 SCORE_THRESHOLD = int(os.getenv("AGENT4_SCORE_THRESHOLD", "85"))
