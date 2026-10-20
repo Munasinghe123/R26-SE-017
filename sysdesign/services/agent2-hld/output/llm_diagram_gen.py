@@ -520,6 +520,12 @@ def _evaluate_plantuml(diagram: str, architecture: dict) -> tuple[float, dict, l
 
     syntax_score = 1.0 if syntax_ok else 0.0
 
+    # Diagram_CAS (Diagram Architectural Fidelity Score):
+    # Measures how accurately the visual diagram mirrors the underlying Canonical Architecture Model (CAM):
+    #   1. Component Coverage (35%): Ratio of CAM components successfully rendered as diagram nodes
+    #   2. Interaction Coverage (35%): Ratio of CAM connectors/edges correctly linked with directional arrows
+    #   3. Style Alignment (20%): Structural compliance with architectural paradigms (e.g., layers, boundaries)
+    #   4. Syntax Validation (10%): Deterministic grammar validity against PlantUML/Mermaid AST specs
     diagram_cas = (0.35 * component_cov) + (0.35 * interaction_cov) + (0.20 * style_score) + (0.10 * syntax_score)
 
     breakdown = {
@@ -624,8 +630,21 @@ def generate_diagram_with_iterations(
     title: str,
     max_iterations: int | None = None,
 ) -> dict:
-    """Generate a diagram in up to 2 iterations and return attempts + diff + final."""
-
+    """
+    Feedback-Driven Iterative Diagram Generation Subsystem.
+    
+    Academic Workflow:
+    1. Iteration 1 (Zero-Shot Synthesis):
+       Generates initial PlantUML or Mermaid specification from CAM structure.
+    2. Deterministic AST/Regex Evaluation:
+       Evaluates diagram against CAM components and connectors, calculating Diagram_CAS.
+       Extracts missing components, dangling edges, or syntax faults as structured issues.
+    3. Iteration 2 (Targeted Refinement):
+       Appends structured criticism and previous Diagram_CAS to prompt for targeted correction.
+       Applies deterministic repair passes if score does not monotonically improve.
+    4. Git-Style Unified Diff:
+       Computes unified diff (difflib) between Iteration 1 and 2 to visualize incremental architectural refinement.
+    """
     max_iterations = int(max_iterations or DIAGRAM_MAX_ITERATIONS)
     max_iterations = max(1, min(2, max_iterations))
 

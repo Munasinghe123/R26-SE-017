@@ -38,23 +38,48 @@ class OpenRouterProvider(LLMProvider):
         return "OpenRouter"
 
     def generate(self, prompt: str, model: str, options: dict) -> str:
-        """Generate architecture via OpenRouter API."""
+        """Generate architecture via OpenRouter API with automated model fallbacks."""
+        from config import MODEL_FALLBACKS
         timeout_val = options.get("timeout", float(os.getenv("OPENROUTER_TIMEOUT", "75.0")))
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert software architect. Respond ONLY with valid JSON.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=options.get("temperature", 0.1),
-            max_tokens=options.get("max_tokens", 4000),
-            seed=options.get("seed", None),
-            timeout=timeout_val,
+        
+        fallbacks = MODEL_FALLBACKS.get(model, [])
+        model_chain = [model] + [fb for fb in fallbacks if fb != model]
+
+        system_prompt = options.get(
+            "system_prompt",
+            "You are an expert software architect. Respond ONLY with valid JSON."
         )
-        return response.choices[0].message.content.strip()
+
+        last_error = None
+        for current_model in model_chain:
+            try:
+                extra_models = [current_model] + [m for m in model_chain if m != current_model]
+                response = self.client.chat.completions.create(
+                    model=current_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=options.get("temperature", 0.1),
+                    max_tokens=options.get("max_tokens", 4000),
+                    seed=options.get("seed", None),
+                    timeout=timeout_val,
+                    extra_body={"models": extra_models} if len(extra_models) > 1 else None,
+                )
+                content = response.choices[0].message.content.strip()
+                if content:
+                    return content
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    f"[OpenRouter] Model {current_model} call failed ({exc}). "
+                    f"Attempting fallback in chain: {model_chain}..."
+                )
+                continue
+
+        if last_error:
+            raise last_error
+        return ""
 
     def list_models(self) -> list[str]:
         """List available OpenRouter models."""

@@ -1,7 +1,14 @@
 """
-HLA Agent — Multi-Model LLM Generator
-Uses the provider abstraction to call any configured LLM backend.
-Generates architecture candidates with retries and timeouts.
+HLA Agent — Multi-Model LLM Architectural Generation Subsystem
+=============================================================================
+Academic Reference & Architectural Design:
+- Concurrency Model: Multi-threaded asynchronous dispatch via concurrent.futures.ThreadPoolExecutor
+- Synthesis Strategy: Multi-Model Diversity Mesh (LLaMA 3.3 70B, Qwen 2.5 Coder 32B, DeepSeek V3)
+- Exploration vs Exploitation:
+    * Candidate 1: Exploitation (seed=42, temp=0.10) -> High-conformity canonical synthesis
+    * Candidate 2: Exploration  (seed=137, temp=0.55) -> Diverse structural alternative (ATAM trade-off)
+- Resilience: Exponential backoff with non-retryable error classification and OpenRouter fallback routing
+=============================================================================
 """
 
 import time
@@ -22,7 +29,12 @@ logger = logging.getLogger(__name__)
 
 
 def _is_non_retryable_error(error: Exception) -> bool:
-    """Return True for errors that should fail fast without retries."""
+    """
+    Classify exceptions to avoid wasting retries on non-transient failures.
+    
+    Transient (retryable): 429 Rate Limits, 503 Upstream Overload, Network Timeouts.
+    Deterministic (non-retryable): 401 Auth Errors, 402 Insufficient Balance, 404 Route Not Found.
+    """
     text = str(error).lower()
 
     # Rate-limiting, temporary upstream issues, and timeouts should ALWAYS be retried
@@ -166,16 +178,23 @@ def generate_all(requirements: dict, models: list = None,
                  candidates_per_model: int = None,
                  progress_callback=None) -> list[GenerationResult]:
     """
-    Generate architecture candidates from all configured models.
+    Concurrent Multi-Model Synthesis Coordinator.
+    
+    Academic Rationale:
+    Instead of sequential generation (which would take ~6x longer and bottleneck the pipeline),
+    this function spawns worker threads via Python's ThreadPoolExecutor to query all model backends
+    simultaneously. For 3 models with 2 candidates each (6 candidate slots total):
+      - Slot 1 (Primary / Candidate 1): Focuses on optimal requirement alignment (Temp=0.10, Seed=42)
+      - Slot 2 (Alternative / Candidate 2): Introduces architectural variation for ATAM trade-off (Temp=0.55, Seed=137)
 
     Args:
-        requirements: Requirements dict
-        models: List of model names (defaults to config.MODELS)
-        candidates_per_model: How many candidates per model (defaults to config.MAX_CANDIDATES_PER_MODEL)
-        progress_callback: Optional callback(model, candidate_num, total, status)
+        requirements: Requirements dict containing FRs, NFRs, constraints, and business goals
+        models: List of model identifiers (defaulting to LLaMA 3.3, Qwen 2.5 Coder, DeepSeek V3)
+        candidates_per_model: Number of candidates per model family (defaults to 2)
+        progress_callback: Optional progress listener streaming live generation state
 
     Returns:
-        List of GenerationResult objects
+        List of GenerationResult objects containing raw text, latency, and execution metadata
     """
     models = models or MODELS
     candidates_per_model = candidates_per_model or MAX_CANDIDATES_PER_MODEL
@@ -183,6 +202,7 @@ def generate_all(requirements: dict, models: list = None,
     from prompt.builder import build_architecture_prompt
     from concurrent.futures import ThreadPoolExecutor
 
+    # Step 1: Pre-assemble generation tasks across the Model x Candidate matrix (e.g. 3 x 2 = 6 tasks)
     tasks = []
     for model in models:
         for candidate_num in range(1, candidates_per_model + 1):
@@ -192,18 +212,24 @@ def generate_all(requirements: dict, models: list = None,
     total = len(tasks)
     logger.info(f"Triggering parallel candidate generation for {total} tasks...")
 
+    # Step 2: Define worker closure executing individual HTTP REST calls to OpenRouter
     def run_task(task_args):
         model, prompt, candidate_num = task_args
         if progress_callback:
             progress_callback(model, candidate_num, total, "generating")
         
-        result = generate_single(model, prompt, candidate_num)
+        # Temperature Calibration:
+        # Candidate 1 = 0.10 (strict determinism, minimal hallucination, canonical best-fit)
+        # Candidate 2 = 0.55 (structural diversity, alternative architectural patterns)
+        opts = {"temperature": 0.55} if candidate_num > 1 else None
+        result = generate_single(model, prompt, candidate_num, options_override=opts)
         
         if progress_callback:
             status = "success" if result.success else "failed"
             progress_callback(model, candidate_num, total, status)
         return result
 
+    # Step 3: Dispatch I/O-bound LLM API calls concurrently across thread pool
     with ThreadPoolExecutor(max_workers=min(total, 8)) as executor:
         results = list(executor.map(run_task, tasks))
 

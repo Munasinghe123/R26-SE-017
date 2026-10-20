@@ -38,7 +38,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 # ──────────────────────────────────────────────
 OPENROUTER_MODEL_1 = os.getenv(
     "OPENROUTER_MODEL_1",
-    "openai/gpt-4o-mini",
+    "meta-llama/llama-3.3-70b-instruct",
 )
 OPENROUTER_MODEL_2 = os.getenv(
     "OPENROUTER_MODEL_2",
@@ -50,6 +50,13 @@ OPENROUTER_MODEL_3 = os.getenv(
 )
 
 MODELS = [OPENROUTER_MODEL_1, OPENROUTER_MODEL_2, OPENROUTER_MODEL_3]
+
+# Fallback models for robust execution (automatic switch if primary rate-limited or busy)
+MODEL_FALLBACKS = {
+    "meta-llama/llama-3.3-70b-instruct": ["meta-llama/llama-3.1-70b-instruct"],
+    "qwen/qwen-2.5-coder-32b-instruct": ["qwen/qwen-2.5-72b-instruct"],
+    "deepseek/deepseek-chat-v3-0324": ["deepseek/deepseek-chat"],
+}
 
 # All models route through OpenRouter
 PROVIDER_MODELS = {
@@ -145,11 +152,11 @@ THRESHOLDS = {
     "CoS":  0.50,   # Reasonable cohesion
     "SSM1": 0.50,   # Reasonable style conformance
     "SSM2": 0.40,   # Minimum style conformance
-    "CAS":  0.60,   # Overall acceptance gate
+    "CAS":  float(os.getenv("HLD_CAS_THRESHOLD", "0.75")),   # Overall acceptance gate (0.75 research standard)
 }
 
 # CAS verdict ranges
-CAS_ACCEPTED = 0.75
+CAS_ACCEPTED = float(os.getenv("HLD_CAS_THRESHOLD", "0.75"))
 CAS_MARGINAL = 0.60
 
 # ──────────────────────────────────────────────

@@ -308,6 +308,96 @@ async def improve_plantuml(run_id: str, payload: dict | None = None):
     return public_workflow_view(state)
 
 
+def _candidate_diagram_inputs(payload: dict) -> tuple[dict, dict, str]:
+    """Validate and unpack the stateless candidate-diagram payload."""
+    payload = payload or {}
+    architecture = payload.get("architecture") or {}
+    if not isinstance(architecture, dict) or not architecture.get("components"):
+        raise HTTPException(400, "Payload must include the selected candidate 'architecture' with components")
+    reqs = payload.get("requirements")
+    if not isinstance(reqs, dict) or not reqs:
+        reqs = _load_requirements_for_run()
+    model = payload.get("model") or (MODELS[0] if MODELS else "")
+    return architecture, reqs, model
+
+
+def _evaluate_candidate_diagram(diagram: str, architecture: dict, reqs: dict) -> dict:
+    from output.diagram_evaluator import evaluate_diagram_with_metrics
+    result = evaluate_diagram_with_metrics(
+        diagram=diagram,
+        kind="plantuml",
+        architecture=architecture,
+        requirements=reqs,
+    )
+    return {
+        "diagram_cas": result.get("diagram_cas"),
+        "breakdown": result.get("scores") or {},
+        "issues": result.get("issues") or [],
+    }
+
+
+def _looks_like_plantuml(text: str) -> bool:
+    t = (text or "").lower()
+    return "@startuml" in t and "@enduml" in t
+
+
+@app.post("/api/diagram/candidate/score")
+async def score_candidate_diagram(payload: dict):
+    """Deterministically rescore a user-edited PlantUML diagram against the SELECTED candidate."""
+    from output.llm_diagram_gen import extract_diagram_source
+    architecture, reqs, _model = _candidate_diagram_inputs(payload)
+    diagram = extract_diagram_source("plantuml", (payload or {}).get("diagram") or "")
+    if not _looks_like_plantuml(diagram):
+        raise HTTPException(422, "Diagram must contain @startuml ... @enduml")
+    evaluation = await asyncio.to_thread(_evaluate_candidate_diagram, diagram, architecture, reqs)
+    return {"diagram": diagram, "source": "manual", **evaluation}
+
+
+@app.post("/api/diagram/candidate/refine")
+async def refine_candidate_diagram(payload: dict):
+    """Prompt-driven PlantUML refinement for the SELECTED candidate (stateless)."""
+    from config import DIAGRAM_GENERATION_OPTIONS
+    from providers import get_provider_for_model
+    from prompt.builder import build_diagram_prompt
+    from output.llm_diagram_gen import extract_diagram_source
+
+    architecture, reqs, model = _candidate_diagram_inputs(payload)
+    notes = ((payload or {}).get("notes") or "").strip()
+    previous = (payload or {}).get("diagram") or ""
+    previous_cas = (payload or {}).get("diagram_cas")
+    previous_issues = (payload or {}).get("issues") or []
+    title = (payload or {}).get("title") or reqs.get("project", "System")
+
+    prompt = build_diagram_prompt(
+        architecture=architecture,
+        requirements=reqs,
+        diagram_kind="plantuml",
+        title=title,
+        iteration=2,
+        previous_diagram=previous or None,
+        previous_diagram_cas=previous_cas,
+        feedback_issues=previous_issues,
+        user_feedback=notes or None,
+    )
+
+    def _run() -> dict:
+        provider = get_provider_for_model(model)
+        raw = provider.generate(prompt, model=model, options=DIAGRAM_GENERATION_OPTIONS)
+        puml = extract_diagram_source("plantuml", raw)
+        if not _looks_like_plantuml(puml):
+            raise ValueError("The model did not return valid PlantUML (@startuml ... @enduml).")
+        evaluation = _evaluate_candidate_diagram(puml, architecture, reqs)
+        return {"diagram": puml, "source": "llm", "user_notes": notes or None, **evaluation}
+
+    try:
+        return await asyncio.to_thread(_run)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        logger.exception("Candidate diagram refinement failed")
+        raise HTTPException(500, f"Diagram refinement failed: {exc}")
+
+
 @app.post("/api/runs/{run_id}/diagram/plantuml/approve")
 async def approve_plantuml(run_id: str):
     """Approve PlantUML and generate Mermaid as the final step."""
