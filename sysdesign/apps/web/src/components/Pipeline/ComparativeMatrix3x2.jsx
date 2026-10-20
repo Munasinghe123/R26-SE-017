@@ -68,9 +68,9 @@ export default function ComparativeMatrix3x2({
   onSelectCandidate,
   onInspectMetric
 }) {
-  // Target 3 research models
+  // Target 3 research models (LLaMA 3.3, Qwen 2.5 Coder, DeepSeek V3)
   const TARGET_MODELS = [
-    { key: "gpt-4o-mini", match: "gpt" },
+    { key: "llama-3.3", match: "llama" },
     { key: "qwen-2.5", match: "qwen" },
     { key: "deepseek", match: "deepseek" },
   ];
@@ -201,7 +201,7 @@ export default function ComparativeMatrix3x2({
 
             <div className="text-right shrink-0">
               <span className="text-[9px] uppercase font-mono text-white/40 block">CAS Utility</span>
-              <span className={`text-base font-mono font-bold ${cas >= 0.70 ? "text-green-400" : cas >= 0.60 ? "text-amber-300" : "text-red-400"}`}>
+              <span className={`text-base font-mono font-bold ${cas >= 0.75 ? "text-green-400" : cas >= 0.60 ? "text-amber-300" : "text-red-400"}`}>
                 {cas.toFixed(3)}
               </span>
             </div>

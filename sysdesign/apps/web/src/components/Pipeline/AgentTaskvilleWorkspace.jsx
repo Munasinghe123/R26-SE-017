@@ -52,7 +52,7 @@ export default function AgentTaskvilleWorkspace({ logs = [], currentStage = "hld
       lower.includes("openrouter") ||
       lower.includes("candidate") ||
       lower.includes("synthesiz") ||
-      lower.includes("gpt") ||
+      lower.includes("llama") ||
       lower.includes("qwen") ||
       lower.includes("deepseek") ||
       lower.includes("model") ||
@@ -141,17 +141,17 @@ export default function AgentTaskvilleWorkspace({ logs = [], currentStage = "hld
       accentHex: "#a78bfa",
       stepNumber: "02",
       status: "active",
-      task: "Concurrent synthesis across GPT-4o-mini, Qwen 32B & DeepSeek V3",
+      task: "Concurrent synthesis across LLaMA 3.3 70B, Qwen Coder 32B & DeepSeek V3",
       badge: "3-Model Ensemble",
       thoughts: [
-        "Prompting openai/gpt-4o-mini for commercial baseline architecture...",
-        "Synthesizing open-weight models (qwen-2.5-coder-32b & deepseek-chat-v3)...",
-        "Constructing C4 Container topologies with REST & gRPC connector contracts...",
+        "Prompting meta-llama/llama-3.3-70b-instruct for high-capacity open foundation baseline...",
+        "Synthesizing qwen/qwen-2.5-coder-32b-instruct for precise code/boundary contracts...",
+        "Synthesizing deepseek/deepseek-chat-v3-0324 for decoupled multi-layer reasoning...",
         "Architecture packages generated and transmitted for S-SDLC security audit."
       ],
       description: "Executes 3 independent LLMs concurrently through the OpenRouter gateway. Produces structured Component Architecture Models (CAM) covering components, boundaries, and connectors.",
       specs: {
-        models: "GPT-4o-mini · Qwen 32B · DeepSeek V3",
+        models: "LLaMA 3.3 70B · Qwen Coder 32B · DeepSeek V3",
         topology: "C4 Container / Microservices / Layered",
         mode: "Parallel Non-Blocking Synthesis"
       }
@@ -276,8 +276,22 @@ export default function AgentTaskvilleWorkspace({ logs = [], currentStage = "hld
         {agents.map((agent) => {
           const isSelected = selectedAgent === agent.id;
           const isCurrentlyActive = activeAgentId === agent.id;
-          const currentThought =
-            liveAgentThoughts[agent.id] || agent.thoughts[activeSpeechIdx % agent.thoughts.length];
+          
+          // Honest status computation: only show active thoughts if the stage has actually reached or run
+          const stepOrder = ["supervisor", "architect", "security", "critic"];
+          const currentStepIdx = stepOrder.indexOf(activeAgentId);
+          const thisStepIdx = stepOrder.indexOf(agent.id);
+
+          let currentThought = "";
+          if (liveAgentThoughts[agent.id]) {
+            currentThought = liveAgentThoughts[agent.id];
+          } else if (thisStepIdx < currentStepIdx) {
+            currentThought = "Verified & Completed";
+          } else if (thisStepIdx === currentStepIdx) {
+            currentThought = agent.thoughts[activeSpeechIdx % agent.thoughts.length];
+          } else {
+            currentThought = "Standing by — awaiting previous pipeline stage";
+          }
 
           return (
             <div

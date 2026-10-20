@@ -215,7 +215,7 @@ export default function MetricDeepDiveModal({ metricKey, candidate, requirements
       category: "Holistic ATAM Utility",
       accreditation: "Saaty Analytical Hierarchy Process (AHP 1980)",
       formula: "CAS = w_RTS·RTS + w_QAC·QAC + w_CI·CI + w_CoS·CoS + w_SSM1·SSM1 + w_SSM2·SSM2",
-      thresholdText: "Acceptance Threshold: CAS ≥ 0.60 (CR = 0.013 < 0.10)",
+      thresholdText: "Acceptance Threshold: CAS ≥ 0.75 (CR = 0.013 < 0.10)",
       description:
         "The authoritative multi-attribute utility score. Integrates functional traceability, non-functional quality, structural decoupling, cohesion, and style conformance into an objective rank using eigenvector weights calibrated via AHP pairwise matrices.",
       evidenceExtractor: () => ({

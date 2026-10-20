@@ -49,6 +49,14 @@ import SSDLCThreatModelView from "../../../components/Pipeline/SSDLCThreatModelV
 import MetricDeepDiveModal from "../../../components/Pipeline/MetricDeepDiveModal";
 import SegmentedComponentsView from "../../../components/Pipeline/SegmentedComponentsView";
 import ComparativeMatrix3x2 from "../../../components/Pipeline/ComparativeMatrix3x2";
+import DiagramRefinementPanel from "../../../components/Pipeline/DiagramRefinementPanel";
+import DiagramDiffPanel from "../../../components/Pipeline/DiagramDiffPanel";
+import {
+  generateMermaid,
+  normalizeCode,
+  looksLikePlantUML,
+  renderMermaidSvg,
+} from "../../../utils/diagramTools";
 
 const ORCHESTRATOR = import.meta.env.VITE_ORCHESTRATOR_URL || "";
 const AGENT2_URL   = import.meta.env.VITE_AGENT2_URL || "";
@@ -85,63 +93,9 @@ function buildCandidateUid(c, idx) {
   return `${c.model || "unknown"}::${c.candidate_num ?? idx}::${idx}`;
 }
 
+/** Deterministic Mermaid for the given candidate architecture (hardened generator in utils/diagramTools). */
 function generateFallbackMermaidCode(architecture) {
-  if (!architecture) return "graph TD\n    A[Client] --> B[API Gateway]";
-  const comps = architecture.components || [];
-  const conns = (architecture.connectors?.length ? architecture.connectors : null)
-             || (architecture.interactions?.length ? architecture.interactions : null)
-             || [];
-
-  let lines = ["graph TD"];
-  const layers = architecture.layers || [];
-
-  if (layers.length > 0) {
-    layers.forEach(layer => {
-      const layerName = layer.name || layer.layer || "Layer";
-      const layerComps = comps.filter(c => (c.layer || c.boundary || "").toLowerCase() === layerName.toLowerCase());
-      if (layerComps.length > 0) {
-        const subId = layerName.replace(/[^a-zA-Z0-9]/g, "_");
-        lines.push(`    subgraph ${subId} ["${layerName}"]`);
-        layerComps.forEach(c => {
-          const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
-          lines.push(`        ${cId}["${c.name}"]`);
-        });
-        lines.push("    end");
-      }
-    });
-  } else {
-    const layerMap = {};
-    comps.forEach(c => {
-      const lName = c.layer || c.boundary || "Core";
-      if (!layerMap[lName]) layerMap[lName] = [];
-      layerMap[lName].push(c);
-    });
-    Object.entries(layerMap).forEach(([lName, lComps]) => {
-      const subId = lName.replace(/[^a-zA-Z0-9]/g, "_");
-      lines.push(`    subgraph ${subId} ["${lName}"]`);
-      lComps.forEach(c => {
-        const cId = c.name.replace(/[^a-zA-Z0-9]/g, "_");
-        lines.push(`        ${cId}["${c.name}"]`);
-      });
-      lines.push("    end");
-    });
-  }
-
-  conns.forEach(conn => {
-    const fromId = (conn.from_component || conn.from || conn.source || "").replace(/[^a-zA-Z0-9]/g, "_");
-    const toId = (conn.to_component || conn.to || conn.target || "").replace(/[^a-zA-Z0-9]/g, "_");
-    const label = conn.connector_type || conn.type || conn.protocol || "";
-    if (fromId && toId) {
-      if (label) {
-        const cleanLabel = String(label).replace(/["|]/g, "").trim();
-        lines.push(`    ${fromId} -->|${cleanLabel}| ${toId}`);
-      } else {
-        lines.push(`    ${fromId} --> ${toId}`);
-      }
-    }
-  });
-
-  return lines.join("\n");
+  return generateMermaid(architecture);
 }
 
 /**
@@ -317,13 +271,27 @@ export default function ArchitectureReview() {
   const [inspectedCandidate, setInspectedCandidate] = useState(null);
   const [requirements, setRequirements] = useState(null);
 
-  // Diagram Git-Loop state
+  // Diagram Git-Loop state — versions are tracked PER CANDIDATE so the diagram always follows the selection
   const [diagrams, setDiagrams] = useState({ plantuml: "", mermaid: "" });
-  const [iterations, setIterations] = useState([]);
-  const [activeVersion, setActiveVersion] = useState(null);
+  const [diagramStore, setDiagramStore] = useState({}); // candidate uid -> { versions: [], active }
   const [refinePrompt, setRefinePrompt]   = useState("");
   const [refining, setRefining]           = useState(false);
-  const [diffText, setDiffText]           = useState("");
+  const [applyingEdit, setApplyingEdit]   = useState(false);
+  const [draftCode, setDraftCode]         = useState("");
+  const [diffFrom, setDiffFrom]           = useState(null);
+  const [diffTo, setDiffTo]               = useState(null);
+  const [studioNotice, setStudioNotice]   = useState(null); // { type: "ok" | "warn" | "error", text }
+  const [renderedBy, setRenderedBy]       = useState("");
+
+  const candUid = selectedCandidate?.uid || "__none__";
+  const iterations = diagramStore[candUid]?.versions || [];
+  const activeVersion = diagramStore[candUid]?.active || null;
+  const activeIt = iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1] || null;
+  const setActiveVersion = (v) =>
+    setDiagramStore(prev => ({
+      ...prev,
+      [candUid]: { ...(prev[candUid] || { versions: [] }), active: v },
+    }));
 
   const [loading, setLoading]       = useState(true);
   const [restarting, setRestarting] = useState(false);
@@ -379,23 +347,8 @@ export default function ArchitectureReview() {
           setCandidates(mappedCandidates);
           setSelectedCandidate(mappedCandidates[0]);
 
-          // Ensure valid initial PlantUML diagram
-          let initialPuml = archArtifact.plantuml_code;
-          if (!isValidPlantUML(initialPuml)) {
-            initialPuml = generateFallbackPlantUML(
-              archArtifact,
-              archArtifact.architecture_style || "Architecture"
-            );
-          }
-
-          setDiagrams({ plantuml: initialPuml, mermaid: archArtifact.mermaid_code || "" });
-          setIterations([{
-            version: "v1",
-            cas: archArtifact.scores?.CAS ?? 0,
-            prompt: "Initial generation",
-            code: initialPuml
-          }]);
-          setActiveVersion("v1");
+          // Per-candidate diagram versions are seeded by an effect once a candidate is selected.
+          setDiagrams({ plantuml: archArtifact.plantuml_code || "", mermaid: archArtifact.mermaid_code || "" });
         } else if (data.job?.status === "failed") {
           setError(`Pipeline failed: ${data.job.error || "Unknown error. Check the agent2-hld server logs."}`);
         } else if (data.job?.status === "running" || data.job?.status === "pending") {
@@ -411,132 +364,207 @@ export default function ArchitectureReview() {
       });
   }, [jobId]);
 
-  // Compute diff text between v1 and v2
+  // Seed v1 for the selected candidate (deterministic render of ITS OWN architecture).
   useEffect(() => {
-    if (iterations.length >= 2) {
-      const rawV1 = (iterations[0].code || "").replace(/\\n/g, "\n");
-      const rawV2 = (iterations[iterations.length - 1].code || "").replace(/\\n/g, "\n");
-      const v1 = rawV1.split("\n");
-      const v2 = rawV2.split("\n");
+    if (!selectedCandidate) return;
+    const uid = selectedCandidate.uid;
+    setDiagramStore(prev => {
+      if (prev[uid]?.versions?.length) return prev;
+      const candArch = selectedCandidate.architecture || arch;
+      const title = candArch?.architecture_style || selectedCandidate.style || "Architecture";
+      return {
+        ...prev,
+        [uid]: {
+          versions: [{
+            version: "v1",
+            cas: selectedCandidate.cas ?? selectedCandidate.scores?.CAS ?? 0,
+            prompt: "Deterministic render of the selected candidate",
+            source: "seed",
+            code: generateFallbackPlantUML(candArch || null, title),
+            breakdown: selectedCandidate.scores || {},
+            issues: [],
+          }],
+          active: "v1",
+        },
+      };
+    });
+  }, [selectedCandidate, arch]);
 
-      let diffLines = [];
-      let i = 0, j = 0;
-      while (i < v1.length || j < v2.length) {
-        if (i < v1.length && j < v2.length && v1[i] === v2[j]) {
-          diffLines.push(`  ${v1[i]}`);
-          i++; j++;
-        } else {
-          if (i < v1.length) {
-            diffLines.push(`- ${v1[i]}`);
-            i++;
-          }
-          if (j < v2.length) {
-            diffLines.push(`+ ${v2[j]}`);
-            j++;
-          }
-        }
-      }
-      setDiffText(diffLines.join("\n"));
-    }
-  }, [iterations]);
-
-  // Kroki SVG rendering — fetches live vector SVG based on selected engine
+  // Reset transient studio state whenever the selected candidate changes.
   useEffect(() => {
-    const activeIt = (iterations && iterations.length > 0)
-      ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
-      : null;
+    setDiffFrom(null);
+    setDiffTo(null);
+    setStudioNotice(null);
+    setRefinePrompt("");
+  }, [candUid]);
+
+  // Keep the editable draft in sync with the active version.
+  useEffect(() => {
+    setDraftCode(normalizeCode(activeIt?.code));
+  }, [candUid, activeIt?.version, activeIt?.code]);
+
+  // Diagram rendering for the SELECTED candidate's ACTIVE version.
+  // PlantUML -> Kroki SVG; Mermaid -> rendered locally in the browser (no network).
+  // If the chosen engine fails, the other engine renders as a fallback and the badge says which one was used.
+  useEffect(() => {
+    if (!activeIt) return undefined;
 
     const targetArch = selectedCandidate?.architecture || arch;
-    const title = targetArch?.architecture_style
-               || selectedCandidate?.style
-               || "Architecture";
+    const title = targetArch?.architecture_style || selectedCandidate?.style || "Architecture";
+    const rawPuml = normalizeCode(activeIt.code).trim();
+    const pumlSource = looksLikePlantUML(rawPuml) ? rawPuml : generateFallbackPlantUML(targetArch || null, title);
 
-    let pumlRaw = (activeIt?.code || "").replace(/\\n/g, "\n").trim();
-    const fallbackPuml = isValidPlantUML(pumlRaw) ? pumlRaw : generateFallbackPlantUML(targetArch || null, title);
+    let cancelled = false;
+    let createdUrl = null;
 
-    let payloadText = "";
-    let endpoint = "";
+    const publish = (svgText, label) => {
+      if (cancelled) return;
+      createdUrl = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml" }));
+      setSvgUrl(createdUrl);
+      setRenderedBy(label);
+    };
 
-    if (diagramEngine === "mermaid") {
-      endpoint = "https://kroki.io/mermaid/svg";
-      payloadText = generateFallbackMermaidCode(targetArch);
-    } else {
-      endpoint = "https://kroki.io/plantuml/svg";
-      payloadText = fallbackPuml;
-    }
+    const renderMermaid = async () => {
+      publish(await renderMermaidSvg(generateMermaid(targetArch)), "Mermaid (local)");
+    };
+
+    const renderPlantUml = async () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      try {
+        const r = await fetch("https://kroki.io/plantuml/svg", {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: pumlSource,
+          signal: ctrl.signal,
+        });
+        if (!r.ok) throw new Error(`Kroki responded ${r.status}`);
+        publish(await r.text(), "PlantUML (Kroki)");
+      } finally {
+        clearTimeout(timer);
+      }
+    };
 
     setSvgError(false);
     setSvgUrl(null);
 
-    fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: payloadText,
-    })
-      .then(r => r.ok ? r.blob() : Promise.reject(r.status))
-      .then(blob => setSvgUrl(URL.createObjectURL(blob)))
-      .catch(() => {
-        // If Mermaid fails/times out on public Kroki, fall back to PlantUML vector SVG
-        if (diagramEngine === "mermaid") {
-          fetch("https://kroki.io/plantuml/svg", {
-            method: "POST",
-            headers: { "Content-Type": "text/plain" },
-            body: fallbackPuml,
-          })
-            .then(r => r.ok ? r.blob() : Promise.reject(r.status))
-            .then(blob => setSvgUrl(URL.createObjectURL(blob)))
-            .catch(() => setSvgError(true));
-        } else {
-          setSvgError(true);
+    (async () => {
+      try {
+        if (diagramEngine === "mermaid") await renderMermaid();
+        else await renderPlantUml();
+      } catch (primaryErr) {
+        console.warn(`${diagramEngine} render failed, trying the other engine:`, primaryErr);
+        try {
+          if (diagramEngine === "mermaid") await renderPlantUml();
+          else await renderMermaid();
+        } catch (fallbackErr) {
+          console.error("Both diagram renderers failed:", fallbackErr);
+          if (!cancelled) setSvgError(true);
         }
-      });
-  }, [iterations, activeVersion, selectedCandidate, arch, diagramEngine]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIt?.code, activeIt?.version, candUid, selectedCandidate, arch, diagramEngine]);
+
+  const callDiagramApi = async (action, body) => {
+    const res = await fetch(`${ORCHESTRATOR}/jobs/${jobId}/diagram/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || res.statusText || `HTTP ${res.status}`);
+    }
+    return res.json();
+  };
+
+  const candidatePayload = () => {
+    const targetArch = selectedCandidate?.architecture || arch;
+    return {
+      architecture: targetArch,
+      model: selectedCandidate?.model,
+      title: targetArch?.architecture_style || selectedCandidate?.style || "Architecture",
+    };
+  };
+
+  /** Append a new version to the SELECTED candidate's own history. */
+  const pushVersion = (uid, entry) =>
+    setDiagramStore(prev => {
+      const s = prev[uid] || { versions: [], active: null };
+      const ver = `v${s.versions.length + 1}`;
+      return { ...prev, [uid]: { versions: [...s.versions, { ...entry, version: ver }], active: ver } };
+    });
 
   const handleRefineDiagram = async () => {
-    if (!refinePrompt.trim()) return;
+    if (!selectedCandidate) return;
+    const uid = selectedCandidate.uid;
     setRefining(true);
-
+    setStudioNotice(null);
     try {
-      const res = await fetch(`${ORCHESTRATOR}/jobs/${jobId}/refine-diagram`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: refinePrompt })
+      const data = await callDiagramApi("refine", {
+        ...candidatePayload(),
+        notes: refinePrompt,
+        diagram: normalizeCode(activeIt?.code),
+        diagram_cas: activeIt?.cas,
+        issues: activeIt?.issues || [],
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        const pumlWorkflow = data.plantuml || {};
-        const history = pumlWorkflow.history || [];
-
-        if (history.length > 0) {
-          const newIterList = history.map((item, idx) => ({
-            version: `v${idx + 1}`,
-            cas: item.diagram_cas ?? 0,
-            prompt: item.source === "manual" ? "Manual Edit" : (item.llm_iteration > 1 ? refinePrompt : "Initial Generation"),
-            code: (item.diagram || "").replace(/\\n/g, "\n"),
-            breakdown: item.breakdown || {},
-            issues: item.issues || []
-          }));
-          setIterations(newIterList);
-          setActiveVersion(`v${newIterList.length}`);
-        } else if (data.plantuml_code) {
-          const nextVer = `v${iterations.length + 1}`;
-          setIterations([
-            ...iterations,
-            { version: nextVer, cas: data.new_cas || iterations[0].cas, prompt: refinePrompt, code: data.plantuml_code.replace(/\\n/g, "\n") }
-          ]);
-          setActiveVersion(nextVer);
-        }
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setError(`Refinement failed: ${errData.detail || res.statusText}`);
-      }
+      pushVersion(uid, {
+        cas: data.diagram_cas ?? activeIt?.cas ?? 0,
+        prompt: refinePrompt.trim() || "Automatic issue-based improvement",
+        source: "llm",
+        code: normalizeCode(data.diagram),
+        breakdown: data.breakdown || {},
+        issues: data.issues || [],
+      });
+      setStudioNotice({ type: "ok", text: "AI refinement applied as a new version. Review the git diff below." });
+      setRefinePrompt("");
     } catch (err) {
       console.error("Refine trigger failed:", err);
-      setError("Failed to connect to the orchestrator for diagram refinement.");
+      setStudioNotice({ type: "error", text: `Refinement failed: ${err.message}` });
     } finally {
       setRefining(false);
-      setRefinePrompt("");
+    }
+  };
+
+  const handleApplyManualEdit = async () => {
+    if (!selectedCandidate) return;
+    if (!looksLikePlantUML(draftCode)) {
+      setStudioNotice({ type: "error", text: "Invalid PlantUML: the diagram must start with @startuml and end with @enduml." });
+      return;
+    }
+    const uid = selectedCandidate.uid;
+    setApplyingEdit(true);
+    setStudioNotice(null);
+    try {
+      const data = await callDiagramApi("score", { ...candidatePayload(), diagram: draftCode });
+      pushVersion(uid, {
+        cas: data.diagram_cas ?? activeIt?.cas ?? 0,
+        prompt: "Manual edit",
+        source: "manual",
+        code: normalizeCode(data.diagram || draftCode),
+        breakdown: data.breakdown || {},
+        issues: data.issues || [],
+      });
+      setStudioNotice({ type: "ok", text: "Manual edit saved as a new version and rescored deterministically." });
+    } catch (err) {
+      // Scoring service unavailable: keep the edit (so the diff/diagram still work) but flag it as unscored.
+      pushVersion(uid, {
+        cas: activeIt?.cas ?? 0,
+        prompt: "Manual edit (unscored)",
+        source: "manual",
+        code: draftCode,
+        breakdown: activeIt?.breakdown || {},
+        issues: [`Not rescored: ${err.message}`],
+      });
+      setStudioNotice({ type: "warn", text: `Edit saved, but rescoring failed (${err.message}). CAS shown is carried over from the previous version.` });
+    } finally {
+      setApplyingEdit(false);
     }
   };
 
@@ -634,14 +662,12 @@ export default function ArchitectureReview() {
     return METRIC_INFO[key]?.desc || "";
   };
 
-  const activeIteration = (iterations && iterations.length > 0)
-    ? (iterations.find(it => it.version === activeVersion) || iterations[iterations.length - 1])
-    : { version: "v0", cas: 0, code: "' No diagram code generated" };
+  const activeIteration = activeIt || { version: "v0", cas: selectedCandidate?.cas ?? 0, code: "' No diagram code generated" };
 
   const diagramCas = activeIteration?.cas ?? selectedCandidate?.cas ?? (scores?.CAS ?? 0);
-  const isAcceptable = diagramCas >= 0.60;
+  const isAcceptable = diagramCas >= 0.75;
   // Only show AI refinement engine when diagram CAS is below threshold
-  const needsRefinement = diagramCas < 0.60;
+  const needsRefinement = diagramCas < 0.75;
 
   return (
     <div className="min-h-screen w-full px-3 sm:px-6 md:px-8 pb-16 pt-20 text-white bg-[#05050f]">
@@ -757,7 +783,7 @@ export default function ArchitectureReview() {
                       </p>
                     </div>
                     <span className="text-[10px] font-mono text-cyan-400 px-2 py-0.5 rounded bg-cyan-400/10 border border-cyan-400/20">
-                      Threshold: 0.60
+                      Threshold: 0.75
                     </span>
                   </div>
 
@@ -1021,16 +1047,26 @@ export default function ArchitectureReview() {
           return (
             <div className="space-y-6">
 
+              {/* Candidate binding banner: the canvas always shows the architecture selected in ATAM */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 rounded-2xl bg-cyan-950/30 border border-cyan-400/30 text-xs font-mono">
+                <span className="text-cyan-200">
+                  Showing diagram for: <strong className="text-white">{selectedCandidate?.name || "—"}</strong>
+                  <span className="text-white/40"> · version {activeIteration?.version}</span>
+                </span>
+                <span className="text-white/40">
+                  Change the candidate in <em>Architecture Evaluation &amp; Selection</em> to switch diagrams.
+                </span>
+              </div>
               {/* Status Gate Banner */}
               {isAcceptable ? (
                 <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-green-950/40 border border-green-400/30 text-green-300 text-xs font-semibold">
                   <CheckCircle2 size={16} />
-                  Architecture CAS {diagramCas.toFixed(3)} passed quality threshold (≥ 0.60). Visual review only — no AI intervention required.
+                  Architecture CAS {diagramCas.toFixed(3)} passed quality threshold (≥ 0.75). Visual review only — no AI intervention required.
                 </div>
               ) : (
                 <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-amber-950/40 border border-amber-400/30 text-amber-300 text-xs font-semibold">
                   <AlertTriangle size={16} />
-                  Architecture CAS {diagramCas.toFixed(3)} is below threshold (0.60). Switch to the <strong>Interactive Refinement Engine</strong> tab to improve it.
+                  Architecture CAS {diagramCas.toFixed(3)} is below threshold (0.75). Switch to the <strong>Interactive Refinement Engine</strong> tab to improve it.
                 </div>
               )}
 
@@ -1049,7 +1085,7 @@ export default function ArchitectureReview() {
                     <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
                       svgError ? "bg-red-500/20 text-red-300" : svgUrl ? "bg-green-500/20 text-green-300" : "bg-white/10 text-white/50"
                     }`}>
-                      {svgError ? "Render Offline" : svgUrl ? "Vector High-Res SVG" : "Rendering..."}
+                      {svgError ? "Render Offline" : svgUrl ? `Vector SVG · ${renderedBy}` : "Rendering..."}
                     </span>
                   </div>
 
@@ -1057,7 +1093,7 @@ export default function ArchitectureReview() {
                     {svgError ? (
                       <div className="text-center space-y-2 p-6">
                         <AlertTriangle className="mx-auto text-amber-400" size={32} />
-                        <p className="text-amber-300 text-xs font-mono font-semibold">Rendering via PlantUML Engine...</p>
+                        <p className="text-amber-300 text-xs font-mono font-semibold">Both diagram renderers failed for this version.</p>
                         <p className="text-white/40 text-[11px]">Inspect the live source code in the right panel.</p>
                       </div>
                     ) : svgUrl ? (
@@ -1202,214 +1238,35 @@ export default function ArchitectureReview() {
         {/* TAB 4: INTERACTIVE REFINEMENT ENGINE                         */}
         {/* ───────────────────────────────────────────────────────────── */}
         {activeTab === "git_loop" && (
-          <div className="space-y-6">
-            
-            {/* Version Control Timeline */}
-            <div className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
-              <div className="flex items-center gap-3">
-                <GitBranch className="text-cyan-400" size={18} />
-                <span className="text-xs font-bold uppercase tracking-wider text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                  Diagram Iteration History (PlantUML)
-                </span>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {iterations.map(it => (
-                  <button
-                    key={it.version}
-                    onClick={() => setActiveVersion(it.version)}
-                    className={`
-                      px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5
-                      ${activeVersion === it.version
-                        ? "bg-cyan-400 text-black shadow-[0_0_10px_rgba(45,220,255,0.4)]"
-                        : "bg-white/10 text-white/60 hover:bg-white/20"
-                      }
-                    `}
-                  >
-                    <GitCommit size={12} />
-                    {it.version} (CAS {typeof it.cas === 'number' ? it.cas.toFixed(3) : it.cas})
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Iteration Viewer & AI Refine Prompt */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* VSCode / AntiGravity Style Code Editor */}
-              <div className="lg:col-span-2 rounded-2xl border border-cyan-400/30 bg-[#0a0c1a] overflow-hidden flex flex-col font-mono shadow-2xl">
-                {/* Editor Header Bar */}
-                {(() => {
-                  const rawCode = (activeIteration.code || "").replace(/\\n/g, "\n").replace(/\\"/g, '"');
-                  // If LLM returned JSON instead of PlantUML, show the deterministic fallback
-                  const formattedCode = isValidPlantUML(rawCode)
-                    ? rawCode
-                    : generateFallbackPlantUML(
-                        selectedCandidate?.architecture || null,
-                        selectedCandidate?.architecture?.architecture_style || selectedCandidate?.style || "Architecture"
-                      );
-                  const isUsingFallback = !isValidPlantUML(rawCode);
-                  const codeLines = formattedCode.split("\n");
-
-                  return (
-                    <>
-                      <div className="flex items-center justify-between px-4 py-2.5 bg-[#050610] border-b border-white/10 text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
-                          <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
-                          <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
-                          <span className="ml-2 font-bold text-cyan-400 text-[11px] uppercase tracking-wider">
-                            architecture_diagram_{activeIteration.version}.puml
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 text-white/50 text-[11px]">
-                          <span className="px-2 py-0.5 rounded bg-cyan-400/10 text-cyan-300 font-semibold">
-                            CAS: {typeof activeIteration.cas === 'number' ? activeIteration.cas.toFixed(3) : activeIteration.cas}
-                          </span>
-                          <span>Lines: {codeLines.length}</span>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(formattedCode)}
-                            className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold cursor-pointer transition-all"
-                          >
-                            Copy Code
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Code Editor Body with Line Numbers */}
-                      <div className="p-4 overflow-x-auto max-h-[500px] overflow-y-auto flex text-xs leading-relaxed bg-[#060814]">
-                        {/* Line Numbers Gutter */}
-                        <div className="select-none pr-4 mr-4 text-right text-white/30 border-r border-white/10 font-mono space-y-0.5">
-                          {codeLines.map((_, i) => (
-                            <div key={i}>{i + 1}</div>
-                          ))}
-                        </div>
-
-                        {/* Code Text Content */}
-                        <div className="text-cyan-200 font-mono whitespace-pre space-y-0.5 flex-1">
-                          {codeLines.map((line, i) => (
-                            <div key={i} className="hover:bg-cyan-500/10 px-1 rounded transition-colors">
-                              {line || " "}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Conditional Right Panel */}
-              {needsRefinement ? (
-                /* CAS BELOW THRESHOLD — Show AI Refinement Engine */
-                <div className="p-6 rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-950/30 via-orange-950/10 to-black space-y-4 flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-amber-300">
-                      <AlertTriangle size={16} />
-                      <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                        Quality Threshold Not Met
-                      </h4>
-                    </div>
-                    <div className="p-3 rounded-xl bg-black/40 border border-amber-400/10 space-y-1">
-                      <p className="text-[11px] text-white/60 font-mono">CAS Score: <span className="text-amber-300 font-bold">{diagramCas.toFixed(3)}</span> / Threshold: <span className="text-white/80">0.600</span></p>
-                      {activeIteration?.issues?.length > 0 && (
-                        <ul className="text-[10px] text-amber-200/70 space-y-0.5 mt-1">
-                          {activeIteration.issues.slice(0, 4).map((iss, i) => (
-                            <li key={i} className="flex gap-1"><span className="text-amber-400">›</span>{iss}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-white/50">
-                      Provide optional guidance for the AI Refinement Engine, or trigger automatic issue-based improvement:
-                    </p>
-                    <textarea
-                      rows={4}
-                      value={refinePrompt}
-                      onChange={e => setRefinePrompt(e.target.value)}
-                      placeholder="Optional: e.g. Add a Redis Caching Layer between API Gateway and DB..."
-                      className="w-full p-3 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder:text-white/30 focus:border-amber-400 outline-none"
-                    />
-                  </div>
-                  <button
-                    onClick={handleRefineDiagram}
-                    disabled={refining}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-amber-400 text-black cursor-pointer hover:bg-amber-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Sparkles size={14} className={refining ? "animate-spin" : ""} />
-                    {refining ? "AI Refinement Running..." : "Run AI Improvement Pass"}
-                  </button>
-                </div>
-              ) : (
-                /* CAS PASSED THRESHOLD — Human Review Panel, no AI needed */
-                <div className="p-6 rounded-2xl border border-green-400/20 bg-gradient-to-br from-green-950/30 via-emerald-950/10 to-black space-y-4 flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-green-300">
-                      <CheckCircle2 size={16} />
-                      <h4 className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                        Human Review Gate
-                      </h4>
-                    </div>
-                    <div className="p-3 rounded-xl bg-black/40 border border-green-400/10 space-y-1">
-                      <p className="text-[11px] text-white/60 font-mono">CAS Score: <span className="text-green-300 font-bold">{diagramCas.toFixed(3)}</span> — <span className="text-green-400">PASSED ✓</span></p>
-                      <p className="text-[10px] text-white/40 mt-1">
-                        The evaluation engine determined this architecture meets all quality thresholds. No AI refinement is triggered.
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[11px] text-white/60 font-semibold">Your review checklist:</p>
-                      {[
-                        "Verify component layer separation is structurally sound",
-                        "Confirm all client-facing FRs are represented by named components",
-                        "Check that deployment boundaries match client infrastructure constraints",
-                      ].map((item, i) => (
-                        <label key={i} className="flex items-start gap-2 cursor-pointer">
-                          <input type="checkbox" className="mt-0.5 accent-cyan-400" />
-                          <span className="text-[11px] text-white/70">{item}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-white/30 text-center">
-                    Use <strong className="text-white/50">Accept & Proceed</strong> below when satisfied, or <strong className="text-white/50">Regenerate HLD</strong> to restart.
-                  </p>
-                </div>
-              )}
-
-            </div>
-
-          </div>
+          <DiagramRefinementPanel
+            candidateName={selectedCandidate?.name}
+            iterations={iterations}
+            activeVersion={activeVersion}
+            onSelectVersion={setActiveVersion}
+            draftCode={draftCode}
+            setDraftCode={setDraftCode}
+            onApplyEdit={handleApplyManualEdit}
+            applyingEdit={applyingEdit}
+            refinePrompt={refinePrompt}
+            setRefinePrompt={setRefinePrompt}
+            onRefine={handleRefineDiagram}
+            refining={refining}
+            notice={studioNotice}
+          />
         )}
 
         {/* ───────────────────────────────────────────────────────────── */}
         {/* TAB 4: SIDE-BY-SIDE DIFF VIEWER                               */}
         {/* ───────────────────────────────────────────────────────────── */}
         {activeTab === "diff" && (
-          <div className="rounded-2xl border border-cyan-400/20 bg-[#080818] p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2">
-                <FileDiff className="text-cyan-400" size={18} />
-                <h3 className="text-sm font-bold text-cyan-300" style={{ fontFamily: "Orbitron, sans-serif" }}>
-                  Unified Architecture Diff (v1 vs {iterations[iterations.length - 1]?.version || "v2"})
-                </h3>
-              </div>
-              <span className="text-xs text-white/40 font-mono">
-                showing additions (+) and deletions (-)
-              </span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-black/90 font-mono text-xs space-y-1 overflow-x-auto max-h-[500px] border border-white/10">
-              {diffText.split("\n").map((line, idx) => {
-                let colorCls = "text-white/60";
-                if (line.startsWith("+")) colorCls = "text-green-300 bg-green-950/60 px-2 py-0.5 rounded font-semibold";
-                if (line.startsWith("-")) colorCls = "text-red-300 bg-red-950/60 px-2 py-0.5 rounded font-semibold";
-                return (
-                  <div key={idx} className={`${colorCls} leading-relaxed whitespace-pre`}>
-                    {line}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <DiagramDiffPanel
+            candidateName={selectedCandidate?.name}
+            iterations={iterations}
+            diffFrom={diffFrom}
+            diffTo={diffTo}
+            setDiffFrom={setDiffFrom}
+            setDiffTo={setDiffTo}
+          />
         )}
 
         {/* ───────────────────────────────────────────────────────────── */}
@@ -1429,7 +1286,7 @@ export default function ArchitectureReview() {
           <div>
             <p className="text-sm font-semibold text-white">
               {isAcceptable
-                ? "The architecture passes ATAM quality threshold (CAS >= 0.60). Ready for LLD & UI design."
+                ? "The architecture passes ATAM quality threshold (CAS >= 0.75). Ready for LLD & UI design."
                 : "The architecture score requires manual review before proceeding."}
             </p>
             <p className="text-xs text-white/40 mt-0.5">
