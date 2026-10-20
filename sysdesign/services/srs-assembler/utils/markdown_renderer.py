@@ -105,7 +105,6 @@ def render_ieee_29148_markdown(
 
     lines = []
     lines.append("# Software Requirements Specification")
-    lines.append(f"## System: {project_name}\n")
     lines.append("---\n")
 
     # Section 1: Introduction

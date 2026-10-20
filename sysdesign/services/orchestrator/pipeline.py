@@ -188,8 +188,8 @@ def notify_listeners(job_id: str, data: dict) -> None:
 async def call_stage_http(
     stage_name: str, url: str, payload: dict, max_retries: int = 2
 ) -> dict:
-    """Call an agent HTTP endpoint with retry. Timeout = 300 s (LLM can be slow)."""
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    """Call an agent HTTP endpoint with retry. Timeout = 600 s (10m - LLM synthesis can be complex)."""
+    async with httpx.AsyncClient(timeout=600.0) as client:
         last_err = None
         for attempt in range(1, max_retries + 1):
             try:
@@ -362,7 +362,7 @@ async def run_stage_hld(job_id: str) -> None:
         await _db_persist_stage(job_id, "hld", "complete", arch.model_dump(mode="json"), dur_hld)
 
         cas_score = arch.scores.CAS if arch.scores else 0.0
-        cas_threshold = float(os.getenv("HLD_CAS_THRESHOLD", "0.60"))
+        cas_threshold = float(os.getenv("HLD_CAS_THRESHOLD", "0.75"))
         arch_style = arch.architecture_style or "Architecture"
 
         notify_listeners(job_id, {
@@ -762,7 +762,7 @@ async def select_candidate(job_id: str, payload: Dict[str, Any]) -> None:
         connectors=connectors,
         quality_provisions=[],
         scores=metric_scores,
-        verdict="accepted" if metric_scores["CAS"] >= 0.60 else "marginal",
+        verdict="accepted" if metric_scores["CAS"] >= 0.75 else "marginal",
         rejected_alternatives=old_rejected,
         candidates=old_candidates,
         plantuml_code=plantuml_code,
@@ -776,7 +776,7 @@ async def select_candidate(job_id: str, payload: Dict[str, Any]) -> None:
     await _db_persist_stage(job_id, "hld", "complete", new_arch.model_dump(mode="json"), 0)
 
     # Update job status
-    if metric_scores["CAS"] >= 0.60:
+    if metric_scores["CAS"] >= 0.75:
         job.status = "waiting_for_lld_ui"
     else:
         job.status = "needs_review"

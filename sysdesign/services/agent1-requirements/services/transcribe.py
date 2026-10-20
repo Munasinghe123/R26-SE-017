@@ -66,7 +66,7 @@ def transcribe_audio(file_path: str) -> list[dict]:
                 "https://openrouter.ai/api/v1/audio/transcriptions",
                 headers=headers,
                 json=payload,
-                timeout=180.0,
+                timeout=600.0,
             )
 
             if resp.status_code == 200:

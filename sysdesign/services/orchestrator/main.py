@@ -267,6 +267,37 @@ async def refine_diagram_endpoint(job_id: str, payload: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+async def _proxy_candidate_diagram(job_id: str, action: str, payload: Dict[str, Any]):
+    """Forward candidate-aware diagram requests (refine/score) to Agent 2 (stateless)."""
+    import httpx
+    job = get_job_state(job_id) or await restore_job_from_db(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    base = AGENT_URLS["hld"].rsplit("/run", 1)[0]
+    try:
+        async with httpx.AsyncClient(timeout=150.0) as client:
+            resp = await client.post(f"{base}/api/diagram/candidate/{action}", json=payload)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"HLD agent unreachable: {exc}")
+    if resp.status_code != 200:
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except Exception:
+            detail = resp.text
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+    return resp.json()
+
+
+@app.post("/jobs/{job_id}/diagram/refine")
+async def refine_candidate_diagram_endpoint(job_id: str, payload: Dict[str, Any]):
+    return await _proxy_candidate_diagram(job_id, "refine", payload)
+
+
+@app.post("/jobs/{job_id}/diagram/score")
+async def score_candidate_diagram_endpoint(job_id: str, payload: Dict[str, Any]):
+    return await _proxy_candidate_diagram(job_id, "score", payload)
+
+
 @app.get("/jobs")
 def list_jobs():
     return [j.model_dump(mode="json") for j in JOB_STORE.values()]

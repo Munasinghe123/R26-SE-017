@@ -135,7 +135,7 @@ async def _trigger_orchestrator(payload: dict) -> str | None:
     """POST to Orchestrator /jobs. Returns the job_id assigned by orchestrator."""
     url = f"{ORCHESTRATOR_URL}/jobs"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
